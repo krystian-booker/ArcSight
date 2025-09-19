@@ -2,9 +2,56 @@
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <h1 class="text-3xl font-bold mb-4">Dashboard</h1>
+
+<div class="mb-4">
+    <label for="camera-select" class="block text-sm font-medium text-gray-300 mb-2">Select Camera</label>
+    <select id="camera-select" class="custom-select">
+        {% if cameras %}
+            {% for camera in cameras %}
+                <option value="{{ camera.id }}">{{ camera.name }}</option>
+            {% endfor %}
+        {% else %}
+            <option value="">No cameras configured</option>
+        {% endif %}
+    </select>
+</div>
+
 <div class="bg-gray-800 rounded-lg p-4">
-    <div class="camera-feed bg-black h-96 flex items-center justify-center rounded">
-        <p class="text-gray-500">Camera feed placeholder</p>
+    <div class="camera-feed-container bg-black h-96 flex items-center justify-center rounded">
+        {% if cameras %}
+            <img id="camera-feed" src="{{ url_for('video_feed', camera_id=cameras[0].id) }}" alt="Camera Feed" class="max-h-full max-w-full">
+        {% else %}
+            <p class="text-gray-500">No camera feed available.</p>
+        {% endif %}
     </div>
 </div>
+
+{% if cameras %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const cameraSelect = document.getElementById('camera-select');
+        const cameraFeed = document.getElementById('camera-feed');
+        const feedContainer = document.querySelector('.camera-feed-container');
+
+        cameraSelect.addEventListener('change', function() {
+            const selectedCameraId = this.value;
+            if (selectedCameraId) {
+                const newFeedUrl = `/video_feed/${selectedCameraId}`;
+                
+                if (cameraFeed) {
+                    cameraFeed.src = newFeedUrl;
+                } else {
+                    // If the img element doesn't exist, create it
+                    feedContainer.innerHTML = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="max-h-full max-w-full">`;
+                }
+            } else {
+                // No camera selected or available
+                if (cameraFeed) {
+                    feedContainer.innerHTML = '<p class="text-gray-500">No camera feed available.</p>';
+                }
+            }
+        });
+    });
+</script>
+{% endif %}
 {% endblock %}

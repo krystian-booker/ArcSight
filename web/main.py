@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
 import db
 import camera_utils
 
@@ -6,7 +6,16 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 
 @app.route('/')
 def dashboard():
-    return render_template('index.html')
+    cameras = db.get_cameras()
+    return render_template('index.html', cameras=cameras)
+
+@app.route('/video_feed/<int:camera_id>')
+def video_feed(camera_id):
+    camera = db.get_camera(camera_id)
+    if camera:
+        return Response(camera_utils.get_camera_feed(camera),
+                        mimetype='multipart/x-mixed-replace; boundary=frame')
+    return "Camera not found", 404
 
 @app.route('/config')
 def config():
