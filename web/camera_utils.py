@@ -3,6 +3,7 @@ from harvesters.core import Harvester
 import os
 import db
 import threading
+import time
 
 # Global Harvester instance
 h = Harvester()
@@ -81,7 +82,7 @@ def check_camera_connection(camera):
 
 def get_camera_feed(camera):
     """
-    Generator function that yields JPEG frames from a camera.
+    Generator function that yields JPEG frames from a camera with FPS overlay.
     """
     if camera['camera_type'] == 'USB':
         cap = cv2.VideoCapture(int(camera['identifier']))
@@ -90,11 +91,31 @@ def get_camera_feed(camera):
             return
         
         try:
+            start_time = time.time()
+            frame_count = 0
+            fps = 0
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     print(f"Stopping feed for USB camera {camera['identifier']} as it appears to be disconnected.")
                     break
+
+                # Calculate FPS
+                frame_count += 1
+                elapsed_time = time.time() - start_time
+                if elapsed_time >= 1.0:
+                    fps = frame_count / elapsed_time
+                    frame_count = 0
+                    start_time = time.time()
+
+                # Draw FPS on the frame in the top-right corner
+                text = f"FPS: {fps:.2f}"
+                font_scale = 0.7
+                font_thickness = 2
+                text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                text_x = frame.shape[1] - text_size[0] - 10
+                text_y = text_size[1] + 10
+                cv2.putText(frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
                 
                 ret, buffer = cv2.imencode('.jpg', frame)
                 if ret:
@@ -105,10 +126,8 @@ def get_camera_feed(camera):
             cap.release()
 
     elif camera['camera_type'] == 'GenICam':
-        # Use the global harvester instance. Assumes it's been initialized.
         try:
             with harvester_lock:
-                # The 'with' statement ensures the image acquirer is released.
                 ia = h.create({'serial_number': camera['identifier']})
             
             if not ia:
@@ -117,14 +136,37 @@ def get_camera_feed(camera):
 
             with ia:
                 ia.start_acquisition()
+                start_time = time.time()
+                frame_count = 0
+                fps = 0
                 while True:
                     try:
                         with ia.fetch_buffer() as buffer:
                             component = buffer.payload.components[0]
                             img = component.data.reshape(component.height, component.width)
                             
+                            # Convert to BGR for color text overlay
                             if 'Bayer' in component.data_format:
                                 img = cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
+                            elif len(img.shape) == 2:
+                                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+                            # Calculate FPS
+                            frame_count += 1
+                            elapsed_time = time.time() - start_time
+                            if elapsed_time >= 1.0:
+                                fps = frame_count / elapsed_time
+                                frame_count = 0
+                                start_time = time.time()
+                            
+                            # Draw FPS on the frame in the top-right corner
+                            text = f"FPS: {fps:.2f}"
+                            font_scale = 0.7
+                            font_thickness = 2
+                            text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                            text_x = img.shape[1] - text_size[0] - 10
+                            text_y = text_size[1] + 10
+                            cv2.putText(img, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
 
                             ret, jpeg = cv2.imencode('.jpg', img)
                             if ret:
@@ -132,9 +174,6 @@ def get_camera_feed(camera):
                                        b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
                     except Exception as fetch_e:
                         print(f"Error fetching buffer for GenICam {camera['identifier']}: {fetch_e}")
-                        break # Exit the loop if fetching fails (e.g., camera disconnected)
-
+                        break
         except Exception as e:
             print(f"Error with GenICam feed for {camera['identifier']}: {e}")
-        # No h.reset() here, as we are using a global instance.
-        # The image acquirer 'ia' is cleaned up by its 'with' statement.
