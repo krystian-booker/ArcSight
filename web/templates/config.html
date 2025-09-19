@@ -1,30 +1,21 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuration</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <header>
-        <h1>Configuration</h1>
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="/config">Configuration</a>
-        </nav>
-    </header>
-    <main>
-        <form>
-            <h2>Add New Camera</h2>
-            <label for="camera-name">Camera Name:</label>
-            <input type="text" id="camera-name" name="camera-name">
-            <br>
-            <label for="camera-url">Camera URL:</label>
-            <input type="text" id="camera-url" name="camera-url">
-            <br>
-            <button type="submit">Add Camera</button>
-        </form>
-    </main>
-</body>
-</html>
+{% extends "layout.html" %}
+{% block title %}Configuration{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-4">Configuration</h1>
+<div class="bg-gray-800 rounded-lg p-4">
+    <form>
+        <h2 class="text-2xl font-bold mb-4">Add New Camera</h2>
+        <div class="mb-4">
+            <label for="camera-name" class="block text-sm font-medium text-gray-300">Camera Name:</label>
+            <input type="text" id="camera-name" name="camera-name" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+        </div>
+        <div class="mb-4">
+            <label for="camera-url" class="block text-sm font-medium text-gray-300">Camera URL:</label>
+            <input type="text" id="camera-url" name="camera-url" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+        </div>
+        <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            Add Camera
+        </button>
+    </form>
+</div>
+{% endblock %}

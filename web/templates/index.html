@@ -1,24 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <header>
-        <h1>Dashboard</h1>
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="/config">Configuration</a>
-        </nav>
-    </header>
-    <main>
-        <div class="camera-feed">
-            <!-- Camera feed will be displayed here -->
-            <p>Camera feed placeholder</p>
-        </div>
-    </main>
-</body>
-</html>
+{% extends "layout.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-4">Dashboard</h1>
+<div class="bg-gray-800 rounded-lg p-4">
+    <div class="camera-feed bg-black h-96 flex items-center justify-center rounded">
+        <p class="text-gray-500">Camera feed placeholder</p>
+    </div>
+</div>
+{% endblock %}
