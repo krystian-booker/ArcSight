@@ -81,6 +81,13 @@ def update_camera(camera_id, name):
     )
     conn.commit()
     conn.close()
+
+def clear_setting(key):
+    """Deletes a setting from the database by its key."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+    conn.commit()
+    conn.close()
     
 def delete_camera(camera_id):
     """Deletes a camera from the database by its ID."""
