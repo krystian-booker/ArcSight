@@ -117,6 +117,7 @@ def camera_status(camera_id):
     return jsonify({'error': 'Camera not found'}), 404
 
 if __name__ == '__main__':
-    # Initialize the database on startup
+    # Initialize the database and harvester on startup
     db.init_db()
+    camera_utils.initialize_harvester()
     app.run(host='0.0.0.0', port=8080, debug=True, use_reloader=False)
