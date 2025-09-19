@@ -1,8 +1,18 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import db
 import camera_utils
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
+UPLOAD_FOLDER = 'genicam_files'
+ALLOWED_EXTENSIONS = {'cti'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/')
 def dashboard():
@@ -34,7 +44,7 @@ def add_camera():
 
 @app.route('/cameras/update/<int:camera_id>', methods=['POST'])
 def update_camera(camera_id):
-    name = request.form.get('edit-camera-name')
+    name = request.form.get('camera-name')
     if name:
         db.update_camera(camera_id, name)
     return redirect(url_for('config'))
@@ -46,9 +56,27 @@ def delete_camera(camera_id):
 
 @app.route('/config/genicam/update', methods=['POST'])
 def update_genicam_settings():
-    cti_path = request.form.get('genicam-cti-path')
-    if cti_path is not None:
-        db.update_setting('genicam_cti_path', cti_path)
+    if 'genicam-cti-path' not in request.files:
+        return redirect(url_for('config'))
+        
+    file = request.files['genicam-cti-path']
+    
+    if file.filename == '':
+        return redirect(url_for('config'))
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Store the absolute path for the backend
+        absolute_filepath = os.path.abspath(filepath)
+        db.update_setting('genicam_cti_path', absolute_filepath)
+
     return redirect(url_for('config'))
 
 @app.route('/api/cameras/discover')

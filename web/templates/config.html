@@ -7,11 +7,12 @@
 <!-- GenICam Settings -->
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
     <h2 class="text-2xl font-bold mb-4">GenICam Settings</h2>
-    <form action="{{ url_for('update_genicam_settings') }}" method="POST">
+    <form action="{{ url_for('update_genicam_settings') }}" method="POST" enctype="multipart/form-data">
         <div class="mb-4">
             <label for="genicam-cti-path" class="block text-sm font-medium text-gray-300">GenTL Producer Path (.cti file):</label>
-            <input type="text" id="genicam-cti-path" name="genicam-cti-path" value="{{ genicam_cti_path }}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-            <p class="mt-2 text-sm text-gray-400">The absolute path to the .cti file from your camera's SDK.</p>
+            <span class="text-sm text-gray-400">Current: {{ genicam_cti_path or 'Not set' }}</span>
+            <input type="file" id="genicam-cti-path" name="genicam-cti-path" accept=".cti" class="mt-1 block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
+            <p class="mt-2 text-sm text-gray-400">Upload the .cti file from your camera's SDK. The server will store it.</p>
         </div>
         <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
             Save GenICam Settings
@@ -21,7 +22,12 @@
 
 <!-- Camera Listing -->
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
-    <h2 class="text-2xl font-bold mb-4">Configured Cameras</h2>
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-bold">Configured Cameras</h2>
+        <button onclick="openAddModal()" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            Add Camera
+        </button>
+    </div>
     <table class="min-w-full divide-y divide-gray-700">
         <thead class="bg-gray-700">
             <tr>
@@ -61,64 +67,54 @@
     </table>
 </div>
 
-<!-- Add New Camera Form -->
-<div class="bg-gray-800 rounded-lg p-4">
-    <form action="{{ url_for('add_camera') }}" method="POST">
-        <h2 class="text-2xl font-bold mb-4">Add New Camera</h2>
-        
-        <div class="mb-4">
-            <label for="camera-name" class="block text-sm font-medium text-gray-300">Camera Name:</label>
-            <input type="text" id="camera-name" name="camera-name" required class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-        </div>
+<!-- The "Add New Camera" form has been integrated into the modal below -->
 
-        <div class="mb-4">
-            <label for="camera-type" class="block text-sm font-medium text-gray-300">Camera Type:</label>
-            <select id="camera-type" name="camera-type" required class="custom-select">
-                <option value="">-- Select a Type --</option>
-                <option value="USB">Generic USB Camera</option>
-                <option value="GenICam">GenICam</option>
-            </select>
-        </div>
-
-        <!-- USB Camera Selection -->
-        <div id="usb-camera-section" class="mb-4 hidden">
-            <label for="usb-camera-select" class="block text-sm font-medium text-gray-300">Select USB Camera:</label>
-            <select id="usb-camera-select" name="usb-camera-select" class="custom-select">
-                <!-- Options will be populated by JavaScript -->
-            </select>
-        </div>
-
-        <!-- GenICam Camera Selection -->
-        <div id="genicam-camera-section" class="mb-4 hidden">
-            <label for="genicam-camera-select" class="block text-sm font-medium text-gray-300">Select GenICam Camera:</label>
-            <select id="genicam-camera-select" name="genicam-camera-select" class="custom-select">
-                <!-- Options will be populated by JavaScript -->
-            </select>
-        </div>
-
-        <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-            Add Camera
-        </button>
-    </form>
-</div>
-
-<!-- Edit Camera Modal -->
-<div id="edit-camera-modal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+<!-- Add/Edit Camera Modal -->
+<div id="camera-form-modal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
     <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
         <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
         <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
         <div class="inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-            <form id="edit-camera-form" method="POST">
+            <form id="camera-form" method="POST">
                 <div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <h3 class="text-lg leading-6 font-medium text-white" id="modal-title">Edit Camera</h3>
-                    <div class="mt-2">
-                        <label for="edit-camera-name" class="block text-sm font-medium text-gray-300">Camera Name</label>
-                        <input type="text" name="edit-camera-name" id="edit-camera-name" required class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <h3 class="text-lg leading-6 font-medium text-white" id="modal-title">Modal Title</h3>
+                    
+                    <div class="mt-4">
+                        <label for="camera-name" class="block text-sm font-medium text-gray-300">Camera Name</label>
+                        <input type="text" name="camera-name" id="camera-name-modal" required class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                     </div>
+
+                    <div id="add-camera-fields" class="hidden">
+                        <div class="mt-4">
+                            <label for="camera-type-modal" class="block text-sm font-medium text-gray-300">Camera Type:</label>
+                            <select id="camera-type-modal" name="camera-type" required class="custom-select">
+                                <option value="">-- Select a Type --</option>
+                                <option value="USB">Generic USB Camera</option>
+                                <option value="GenICam">GenICam</option>
+                            </select>
+                        </div>
+                
+                        <!-- USB Camera Selection -->
+                        <div id="usb-camera-section-modal" class="mt-4 hidden">
+                            <label for="usb-camera-select-modal" class="block text-sm font-medium text-gray-300">Select USB Camera:</label>
+                            <select id="usb-camera-select-modal" name="usb-camera-select" class="custom-select">
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                
+                        <!-- GenICam Camera Selection -->
+                        <div id="genicam-camera-section-modal" class="mt-4 hidden">
+                            <label for="genicam-camera-select-modal" class="block text-sm font-medium text-gray-300">Select GenICam Camera:</label>
+                            <select id="genicam-camera-select-modal" name="genicam-camera-select" class="custom-select">
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                    </div>
+
                 </div>
                 <div class="bg-gray-900 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                     <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
-                    <button type="button" onclick="closeEditModal()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-700 shadow-sm px-4 py-2 bg-gray-600 text-base font-medium text-white hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
+                    <button type="button" onclick="closeModal()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-700 shadow-sm px-4 py-2 bg-gray-600 text-base font-medium text-white hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
                 </div>
             </form>
         </div>
@@ -132,7 +128,6 @@ document.addEventListener('DOMContentLoaded', function() {
     cameraRows.forEach(row => {
         const cameraId = row.dataset.cameraId;
         const statusCell = row.querySelector('.status-cell');
-        
         fetch(`/api/cameras/status/${cameraId}`)
             .then(response => response.json())
             .then(data => {
@@ -148,33 +143,69 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     });
 
-    // --- Dynamic Form Logic ---
-    const cameraTypeSelect = document.getElementById('camera-type');
-    const usbSection = document.getElementById('usb-camera-section');
-    const genicamSection = document.getElementById('genicam-camera-section');
-    const usbSelect = document.getElementById('usb-camera-select');
-    const genicamSelect = document.getElementById('genicam-camera-select');
+    // --- Modal and Form Logic ---
+    const modal = document.getElementById('camera-form-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const cameraForm = document.getElementById('camera-form');
+    const cameraNameInput = document.getElementById('camera-name-modal');
+    const addCameraFields = document.getElementById('add-camera-fields');
+    
+    const cameraTypeSelect = document.getElementById('camera-type-modal');
+    const usbSection = document.getElementById('usb-camera-section-modal');
+    const genicamSection = document.getElementById('genicam-camera-section-modal');
+    const usbSelect = document.getElementById('usb-camera-select-modal');
+    const genicamSelect = document.getElementById('genicam-camera-select-modal');
 
-    // Get existing camera identifiers
-    const existingIdentifiers = new Set();
-    document.querySelectorAll('tr[data-camera-id]').forEach(row => {
-        const identifier = row.cells[2].textContent.trim();
-        existingIdentifiers.add(identifier);
-    });
+    // --- Modal Control ---
+    window.openAddModal = function() {
+        modalTitle.textContent = 'Add New Camera';
+        cameraForm.action = "{{ url_for('add_camera') }}";
+        cameraNameInput.value = '';
+        
+        addCameraFields.classList.remove('hidden');
+        cameraTypeSelect.required = true;
+        
+        // Reset and hide dynamic sections
+        cameraTypeSelect.value = '';
+        usbSection.classList.add('hidden');
+        genicamSection.classList.add('hidden');
+        usbSelect.disabled = true;
+        genicamSelect.disabled = true;
 
+        modal.classList.remove('hidden');
+    }
+
+    window.openEditModal = function(cameraId, cameraName) {
+        // Note: The onclick in the table still calls this function directly
+        modalTitle.textContent = 'Edit Camera';
+        cameraForm.action = `/cameras/update/${cameraId}`;
+        cameraNameInput.value = cameraName;
+        
+        addCameraFields.classList.add('hidden');
+        cameraTypeSelect.required = false;
+
+        modal.classList.remove('hidden');
+    }
+
+    window.closeModal = function() {
+        modal.classList.add('hidden');
+    }
+
+    // --- Dynamic Camera Discovery for Add Modal ---
     cameraTypeSelect.addEventListener('change', function() {
         const selectedType = this.value;
         
-        // Hide both sections initially
         usbSection.classList.add('hidden');
         genicamSection.classList.add('hidden');
-        
-        // Disable selects to prevent submission
         usbSelect.disabled = true;
         genicamSelect.disabled = true;
 
         if (selectedType === 'USB' || selectedType === 'GenICam') {
-            // Pass existing identifiers to the discover endpoint
+            const existingIdentifiers = new Set();
+            document.querySelectorAll('tr[data-camera-id]').forEach(row => {
+                const identifier = row.cells[2].textContent.trim();
+                existingIdentifiers.add(identifier);
+            });
             const url = `/api/cameras/discover?existing=${Array.from(existingIdentifiers).join(',')}`;
             
             fetch(url)
@@ -195,7 +226,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function populateSelect(selectElement, items) {
-        selectElement.innerHTML = ''; // Clear existing options
+        selectElement.innerHTML = '';
         if (items && items.length > 0) {
             items.forEach(item => {
                 const option = document.createElement('option');
@@ -205,25 +236,10 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         } else {
             const option = document.createElement('option');
-            option.textContent = 'No cameras found';
+            option.textContent = 'No available cameras found';
             option.disabled = true;
             selectElement.appendChild(option);
         }
-    }
-
-    // --- Edit Modal Logic ---
-    const editModal = document.getElementById('edit-camera-modal');
-    const editForm = document.getElementById('edit-camera-form');
-    const editCameraNameInput = document.getElementById('edit-camera-name');
-
-    window.openEditModal = function(cameraId, cameraName) {
-        editCameraNameInput.value = cameraName;
-        editForm.action = `/cameras/update/${cameraId}`;
-        editModal.classList.remove('hidden');
-    }
-
-    window.closeEditModal = function() {
-        editModal.classList.add('hidden');
     }
 });
 </script>
