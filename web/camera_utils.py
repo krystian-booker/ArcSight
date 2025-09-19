@@ -1,7 +1,16 @@
 import cv2
 from harvesters.core import Harvester
 import os
-import db # This assumes db.py is in the same directory
+import threading
+import time
+
+import numpy as np
+
+import db  # This assumes db.py is in the same directory
+
+
+_usb_capture_lock = threading.Lock()
+_active_usb_captures = {}
 
 def list_usb_cameras():
     """
@@ -60,17 +69,24 @@ def check_camera_connection(camera):
     if camera['camera_type'] == 'USB':
         try:
             index = int(camera['identifier'])
-            cap = cv2.VideoCapture(index)
-            is_connected = cap.isOpened()
-            cap.release()
-            return is_connected
         except (ValueError, TypeError):
             return False
-    
+
+        with _usb_capture_lock:
+            cap = _active_usb_captures.get(index)
+            if cap is not None and cap.isOpened():
+                return True
+
+        temp_cap = cv2.VideoCapture(index)
+        try:
+            return temp_cap.isOpened()
+        finally:
+            temp_cap.release()
+
     elif camera['camera_type'] == 'GenICam':
         connected_genicams = list_genicam_cameras()
         return any(cam['identifier'] == camera['identifier'] for cam in connected_genicams)
-        
+
     return False
 
 def get_camera_feed(camera):
@@ -78,21 +94,54 @@ def get_camera_feed(camera):
     Generator function that yields JPEG frames from a camera.
     """
     if camera['camera_type'] == 'USB':
-        cap = cv2.VideoCapture(int(camera['identifier']))
-        if not cap.isOpened():
-            print(f"Could not open USB camera {camera['identifier']}")
+        try:
+            index = int(camera['identifier'])
+        except (ValueError, TypeError):
+            print(f"Invalid USB camera identifier: {camera['identifier']}")
             return
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if ret:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        cap.release()
+        error_frame = _build_error_frame_chunk("Camera disconnected")
+
+        try:
+            while True:
+                cap = cv2.VideoCapture(index)
+                if not cap.isOpened():
+                    cap.release()
+                    if error_frame:
+                        yield error_frame
+                    time.sleep(1)
+                    continue
+
+                with _usb_capture_lock:
+                    _active_usb_captures[index] = cap
+
+                try:
+                    while True:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+
+                        ret, buffer = cv2.imencode('.jpg', frame)
+                        if not ret:
+                            break
+
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                except GeneratorExit:
+                    raise
+                except Exception as exc:
+                    print(f"Error streaming USB camera {camera['identifier']}: {exc}")
+                finally:
+                    with _usb_capture_lock:
+                        if _active_usb_captures.get(index) is cap:
+                            _active_usb_captures.pop(index, None)
+                    cap.release()
+
+                if error_frame:
+                    yield error_frame
+                time.sleep(1)
+        except GeneratorExit:
+            return
 
     elif camera['camera_type'] == 'GenICam':
         h = Harvester()
@@ -130,3 +179,18 @@ def get_camera_feed(camera):
             print(f"Error with GenICam feed: {e}")
         finally:
             h.reset()
+
+
+def _build_error_frame_chunk(message, width=640, height=480):
+    """Create a single multipart frame representing an error message."""
+    img = np.zeros((height, width, 3), np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text_size = cv2.getTextSize(message, font, 1, 2)[0]
+    text_x = (width - text_size[0]) // 2
+    text_y = (height + text_size[1]) // 2
+    cv2.putText(img, message, (text_x, text_y), font, 1, (255, 255, 255), 2)
+    ret, jpeg = cv2.imencode('.jpg', img)
+    if not ret:
+        return None
+    return (b'--frame\r\n'
+            b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
