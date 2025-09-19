@@ -11,7 +11,8 @@ def dashboard():
 @app.route('/config')
 def config():
     cameras = db.get_cameras()
-    return render_template('config.html', cameras=cameras)
+    genicam_cti_path = db.get_setting('genicam_cti_path')
+    return render_template('config.html', cameras=cameras, genicam_cti_path=genicam_cti_path)
 
 @app.route('/cameras/add', methods=['POST'])
 def add_camera():
@@ -34,6 +35,13 @@ def add_camera():
 @app.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
     db.delete_camera(camera_id)
+    return redirect(url_for('config'))
+
+@app.route('/config/genicam/update', methods=['POST'])
+def update_genicam_settings():
+    cti_path = request.form.get('genicam-cti-path')
+    if cti_path is not None:
+        db.update_setting('genicam_cti_path', cti_path)
     return redirect(url_for('config'))
 
 @app.route('/api/cameras/discover')

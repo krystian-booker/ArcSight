@@ -39,13 +39,6 @@ def init_db():
             value TEXT NOT NULL
         );
     """)
-    # Pre-populate the GenICam CTI path setting if it's not there.
-    # This is a common location for this file, but it will be configurable.
-    cursor.execute("SELECT value FROM settings WHERE key = 'genicam_cti_path'")
-    if cursor.fetchone() is None:
-        default_cti_path = '/Applications/Spinnaker/lib/spinnaker-gentl/Spinnaker_GenTL.cti'
-        cursor.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('genicam_cti_path', default_cti_path))
-    
     conn.commit()
     conn.close()
 
@@ -91,7 +84,7 @@ def get_setting(key):
     conn = get_db_connection()
     setting = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     conn.close()
-    return setting['value'] if setting else None
+    return setting['value'] if setting else ""
 
 def update_setting(key, value):
     """Updates or inserts a setting."""
