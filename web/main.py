@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
 import db
 import camera_utils
-
+import cv2
+import numpy as np
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
 @app.route('/')
@@ -9,13 +10,33 @@ def dashboard():
     cameras = db.get_cameras()
     return render_template('index.html', cameras=cameras)
 
+def create_error_image(message, width=640, height=480):
+    """Creates a black image with white text."""
+    img = np.zeros((height, width, 3), np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    
+    # Calculate text size and position for centering
+    text_size = cv2.getTextSize(message, font, 1, 2)[0]
+    text_x = (width - text_size[0]) // 2
+    text_y = (height + text_size[1]) // 2
+    
+    cv2.putText(img, message, (text_x, text_y), font, 1, (255, 255, 255), 2)
+    
+    ret, jpeg = cv2.imencode('.jpg', img)
+    return jpeg.tobytes()
+
 @app.route('/video_feed/<int:camera_id>')
 def video_feed(camera_id):
     camera = db.get_camera(camera_id)
-    if camera:
-        return Response(camera_utils.get_camera_feed(camera),
-                        mimetype='multipart/x-mixed-replace; boundary=frame')
-    return "Camera not found", 404
+    if not camera:
+        return "Camera not found", 404
+
+    if not camera_utils.check_camera_connection(camera):
+        error_img = create_error_image("Camera not connected")
+        return Response(error_img, mimetype='image/jpeg')
+
+    return Response(camera_utils.get_camera_feed(camera),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/config')
 def config():
