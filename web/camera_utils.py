@@ -1,16 +1,38 @@
 import cv2
 from harvesters.core import Harvester
 import os
-import db # This assumes db.py is in the same directory
+import db
+import threading
+import time
+
+# Global Harvester instance
+h = Harvester()
+
+# A lock to ensure thread-safe access to the harvester
+harvester_lock = threading.Lock()
+
+def initialize_harvester():
+    """
+    Initializes the global Harvester instance with the CTI file from the database.
+    This should be called once at application startup.
+    """
+    with harvester_lock:
+        cti_path = db.get_setting('genicam_cti_path')
+        if cti_path and os.path.exists(cti_path):
+            try:
+                h.add_file(cti_path)
+                h.update()
+                print("Harvester initialized successfully.")
+            except Exception as e:
+                print(f"Error initializing Harvester: {e}")
+        else:
+            print("GenICam CTI file not found or not configured. Harvester not initialized.")
 
 def list_usb_cameras():
     """
     Lists available USB cameras by trying to open them.
-    Returns a list of dictionaries, each with 'identifier' and 'name'.
     """
     usb_cameras = []
-    # Check up to 10 indices. A more robust solution might be needed
-    # on systems with many devices, but this is a common approach.
     for index in range(10):
         cap = cv2.VideoCapture(index)
         if cap.isOpened():
@@ -23,39 +45,24 @@ def list_usb_cameras():
 
 def list_genicam_cameras():
     """
-    Lists available GenICam cameras using the harvesters library.
-    Returns a list of dictionaries, each with 'identifier' and 'name'.
+    Lists available GenICam cameras using the global Harvester instance.
     """
     genicam_cameras = []
-    cti_path = db.get_setting('genicam_cti_path')
-
-    if not cti_path or not os.path.exists(cti_path):
-        print(f"GenICam CTI file not found or not configured: {cti_path}")
-        return genicam_cameras
-
-    h = Harvester()
-    try:
-        h.add_file(cti_path)
-        h.update()
-        for device_info in h.device_info_list:
-            identifier = device_info.serial_number
-            name = device_info.model
-            genicam_cameras.append({
-                'identifier': identifier,
-                'name': f"{name} ({identifier})"
-            })
-    except Exception as e:
-        print(f"Error listing GenICam cameras: {e}")
-    finally:
-        if h is not None:
-            h.reset()
-    
+    with harvester_lock:
+        try:
+            h.update()
+            for device_info in h.device_info_list:
+                genicam_cameras.append({
+                    'identifier': device_info.serial_number,
+                    'name': f"{device_info.model} ({device_info.serial_number})"
+                })
+        except Exception as e:
+            print(f"Error listing GenICam cameras: {e}")
     return genicam_cameras
 
 def check_camera_connection(camera):
     """
     Checks if a given camera is currently connected.
-    'camera' is a dictionary-like object from the database.
     """
     if camera['camera_type'] == 'USB':
         try:
@@ -75,58 +82,98 @@ def check_camera_connection(camera):
 
 def get_camera_feed(camera):
     """
-    Generator function that yields JPEG frames from a camera.
+    Generator function that yields JPEG frames from a camera with FPS overlay.
     """
     if camera['camera_type'] == 'USB':
         cap = cv2.VideoCapture(int(camera['identifier']))
         if not cap.isOpened():
             print(f"Could not open USB camera {camera['identifier']}")
             return
+        
+        try:
+            start_time = time.time()
+            frame_count = 0
+            fps = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    print(f"Stopping feed for USB camera {camera['identifier']} as it appears to be disconnected.")
+                    break
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if ret:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        cap.release()
+                # Calculate FPS
+                frame_count += 1
+                elapsed_time = time.time() - start_time
+                if elapsed_time >= 1.0:
+                    fps = frame_count / elapsed_time
+                    frame_count = 0
+                    start_time = time.time()
+
+                # Draw FPS on the frame in the top-right corner
+                text = f"FPS: {fps:.2f}"
+                font_scale = 0.7
+                font_thickness = 2
+                text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                text_x = frame.shape[1] - text_size[0] - 10
+                text_y = text_size[1] + 10
+                cv2.putText(frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
+                
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if ret:
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        finally:
+            print(f"Releasing USB camera {camera['identifier']}")
+            cap.release()
 
     elif camera['camera_type'] == 'GenICam':
-        h = Harvester()
-        cti_path = db.get_setting('genicam_cti_path')
-        if not cti_path or not os.path.exists(cti_path):
-            print(f"GenICam CTI file not found or not configured: {cti_path}")
-            return
-
-        h.add_file(cti_path)
-        h.update()
-
         try:
-            with h.create({'serial_number': camera['identifier']}) as ia:
-                ia.start_acquisition()
-                while True:
-                    with ia.fetch_buffer() as buffer:
-                        # This assumes a mono or bayer image, which is common.
-                        # For color, more complex handling is needed.
-                        component = buffer.payload.components[0]
-                        img = component.data.reshape(component.height, component.width)
-                        
-                        # Convert to 3-channel BGR for color display if needed,
-                        # assuming bayer pattern. This is a simplification.
-                        # For a real application, you'd check component.data_format
-                        if 'Bayer' in component.data_format:
-                            # This is a basic conversion, might need adjustment
-                            # based on the specific Bayer pattern (RG, GB, etc.)
-                            img = cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
+            with harvester_lock:
+                ia = h.create({'serial_number': camera['identifier']})
+            
+            if not ia:
+                print(f"Failed to create image acquirer for {camera['identifier']}")
+                return
 
-                        ret, jpeg = cv2.imencode('.jpg', img)
-                        if ret:
-                            yield (b'--frame\r\n'
-                                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+            with ia:
+                ia.start_acquisition()
+                start_time = time.time()
+                frame_count = 0
+                fps = 0
+                while True:
+                    try:
+                        with ia.fetch_buffer() as buffer:
+                            component = buffer.payload.components[0]
+                            img = component.data.reshape(component.height, component.width)
+                            
+                            # Convert to BGR for color text overlay
+                            if 'Bayer' in component.data_format:
+                                img = cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
+                            elif len(img.shape) == 2:
+                                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+                            # Calculate FPS
+                            frame_count += 1
+                            elapsed_time = time.time() - start_time
+                            if elapsed_time >= 1.0:
+                                fps = frame_count / elapsed_time
+                                frame_count = 0
+                                start_time = time.time()
+                            
+                            # Draw FPS on the frame in the top-right corner
+                            text = f"FPS: {fps:.2f}"
+                            font_scale = 0.7
+                            font_thickness = 2
+                            text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                            text_x = img.shape[1] - text_size[0] - 10
+                            text_y = text_size[1] + 10
+                            cv2.putText(img, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
+
+                            ret, jpeg = cv2.imencode('.jpg', img)
+                            if ret:
+                                yield (b'--frame\r\n'
+                                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                    except Exception as fetch_e:
+                        print(f"Error fetching buffer for GenICam {camera['identifier']}: {fetch_e}")
+                        break
         except Exception as e:
-            print(f"Error with GenICam feed: {e}")
-        finally:
-            h.reset()
+            print(f"Error with GenICam feed for {camera['identifier']}: {e}")
