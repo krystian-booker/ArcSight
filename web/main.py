@@ -32,6 +32,13 @@ def add_camera():
 
     return redirect(url_for('config'))
 
+@app.route('/cameras/update/<int:camera_id>', methods=['POST'])
+def update_camera(camera_id):
+    name = request.form.get('edit-camera-name')
+    if name:
+        db.update_camera(camera_id, name)
+    return redirect(url_for('config'))
+
 @app.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
     db.delete_camera(camera_id)
@@ -46,11 +53,18 @@ def update_genicam_settings():
 
 @app.route('/api/cameras/discover')
 def discover_cameras():
+    existing_identifiers = request.args.get('existing', '').split(',')
+    
     usb_cameras = camera_utils.list_usb_cameras()
     genicam_cameras = camera_utils.list_genicam_cameras()
+
+    # Filter out already configured cameras
+    filtered_usb = [cam for cam in usb_cameras if cam['identifier'] not in existing_identifiers]
+    filtered_genicam = [cam for cam in genicam_cameras if cam['identifier'] not in existing_identifiers]
+
     return jsonify({
-        'usb': usb_cameras,
-        'genicam': genicam_cameras
+        'usb': filtered_usb,
+        'genicam': filtered_genicam
     })
 
 @app.route('/api/cameras/status/<int:camera_id>')

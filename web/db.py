@@ -72,6 +72,16 @@ def get_camera(camera_id):
     conn.close()
     return camera
 
+def update_camera(camera_id, name):
+    """Updates a camera's name in the database."""
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE cameras SET name = ? WHERE id = ?",
+        (name, camera_id)
+    )
+    conn.commit()
+    conn.close()
+    
 def delete_camera(camera_id):
     """Deletes a camera from the database by its ID."""
     conn = get_db_connection()
