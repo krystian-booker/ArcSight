@@ -41,12 +41,12 @@
 <!-- GenICam Settings -->
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
     <h2 class="text-2xl font-bold mb-4">GenICam Settings</h2>
-    <form action="{{ url_for('update_genicam_settings') }}" method="POST" enctype="multipart/form-data">
+    <form action="{{ url_for('update_genicam_settings') }}" method="POST">
         <div class="mb-4">
             <label for="genicam-cti-path" class="block text-sm font-medium text-gray-300">GenTL Producer Path (.cti file):</label>
             <span class="text-sm text-gray-400">Current: {{ settings.genicam_cti_path or 'Not set' }}</span>
-            <input type="file" id="genicam-cti-path" name="genicam-cti-path" accept=".cti" class="mt-1 block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
-            <p class="mt-2 text-sm text-gray-400">Upload the .cti file from your camera's SDK. The server will store it.</p>
+            <input type="text" id="genicam-cti-path" name="genicam-cti-path" placeholder="C:\path\to\your\genicam.cti" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            <p class="mt-2 text-sm text-gray-400">Enter the full path to the .cti file from your camera's SDK. The application needs this path to communicate with the camera.</p>
         </div>
         <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
             Save GenICam Settings
@@ -57,17 +57,37 @@
 <!-- Device Control -->
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
     <h2 class="text-2xl font-bold mb-4">Device Control</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <button onclick="postToAction('{{ url_for('restart_app') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Restart Vision-Tools</button>
-        <button onclick="postToAction('{{ url_for('reboot_device') }}')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Restart Device</button>
-        <a href="{{ url_for('export_db') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center">Export Configuration</a>
-        <button onclick="document.getElementById('import-db-input').click()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded">Import Configuration</button>
-        <button onclick="postToAction('{{ url_for('factory_reset') }}', 'Are you sure you want to factory reset? This will delete all settings and cameras.')" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Factory Reset</button>
+    <div class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button onclick="postToAction('{{ url_for('restart_app') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Vision-Tools</button>
+            <button onclick="postToAction('{{ url_for('reboot_device') }}')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded w-full">Restart Device</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <a href="{{ url_for('export_db') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center w-full">Export Configuration</a>
+            <button onclick="document.getElementById('import-db-input').click()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded w-full">Import Configuration</button>
+        </div>
+        <div>
+            <button onclick="openFactoryResetModal()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded w-full">Factory Reset</button>
+        </div>
     </div>
     <form id="import-db-form" action="{{ url_for('import_db') }}" method="POST" enctype="multipart/form-data" class="hidden">
         <input type="file" name="database" id="import-db-input" onchange="document.getElementById('import-db-form').submit()">
     </form>
 </div>
+
+<!-- Factory Reset Modal -->
+<div id="factoryResetModal" class="modal-hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <h3 class="text-lg font-bold mb-4">Confirm Factory Reset</h3>
+        <p>Are you sure you want to factory reset? This will delete all settings and cameras and cannot be undone.</p>
+        <div class="mt-6 flex justify-end space-x-4">
+            <button onclick="closeFactoryResetModal()" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-md text-white">Cancel</button>
+            <button onclick="confirmFactoryReset()" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white">Factory Reset</button>
+        </div>
+    </div>
+</div>
+
 
 <script>
 function postToAction(url, confirmMsg) {
@@ -79,6 +99,19 @@ function postToAction(url, confirmMsg) {
     form.action = url;
     document.body.appendChild(form);
     form.submit();
+}
+
+function openFactoryResetModal() {
+    document.getElementById('factoryResetModal').classList.remove('modal-hidden');
+}
+
+function closeFactoryResetModal() {
+    document.getElementById('factoryResetModal').classList.add('modal-hidden');
+}
+
+function confirmFactoryReset() {
+    postToAction('{{ url_for('factory_reset') }}');
+    closeFactoryResetModal();
 }
 </script>
 {% endblock %}

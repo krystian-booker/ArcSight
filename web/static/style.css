@@ -24,3 +24,32 @@
     border-color: #6366f1; /* focus:border-indigo-500 */
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.5); /* focus:ring-indigo-500 */
 }
+
+/* Modal Styles */
+.modal-hidden {
+    display: none;
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.75);
+    z-index: 40;
+}
+
+.modal-content {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: #1f2937; /* bg-gray-800 */
+    color: #d1d5db; /* text-gray-300 */
+    padding: 2rem;
+    border-radius: 0.5rem;
+    z-index: 50;
+    width: 90%;
+    max-width: 500px;
+}
