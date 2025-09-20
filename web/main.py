@@ -1,8 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
+from flask import Flask, render_template, request, redirect, url_for, jsonify, Response, send_file
 import db
 import camera_utils
 import cv2
 import numpy as np
+import os
+import shutil
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
 @app.route('/')
@@ -38,11 +40,27 @@ def video_feed(camera_id):
     return Response(camera_utils.get_camera_feed(camera),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/config')
-def config():
+@app.route('/cameras')
+def cameras():
     cameras = db.get_cameras()
-    genicam_cti_path = db.get_setting('genicam_cti_path')
-    return render_template('config.html', cameras=cameras, genicam_cti_path=genicam_cti_path)
+    return render_template('cameras.html', cameras=cameras)
+
+@app.route('/settings')
+def settings():
+    all_settings = {
+        'genicam_cti_path': db.get_setting('genicam_cti_path'),
+        'team_number': db.get_setting('team_number'),
+        'ip_mode': db.get_setting('ip_mode'),
+        'hostname': db.get_setting('hostname'),
+    }
+    return render_template('settings.html', settings=all_settings)
+
+@app.route('/settings/global/update', methods=['POST'])
+def update_global_settings():
+    db.update_setting('team_number', request.form.get('team_number'))
+    db.update_setting('ip_mode', request.form.get('ip_mode'))
+    db.update_setting('hostname', request.form.get('hostname'))
+    return redirect(url_for('settings'))
 
 @app.route('/cameras/add', methods=['POST'])
 def add_camera():
@@ -55,24 +73,24 @@ def add_camera():
         identifier = request.form.get('genicam-camera-select')
     else:
         # Handle error: invalid camera type
-        return redirect(url_for('config'))
+        return redirect(url_for('cameras'))
 
     if name and camera_type and identifier:
         db.add_camera(name, camera_type, identifier)
 
-    return redirect(url_for('config'))
+    return redirect(url_for('cameras'))
 
 @app.route('/cameras/update/<int:camera_id>', methods=['POST'])
 def update_camera(camera_id):
     name = request.form.get('camera-name')
     if name:
         db.update_camera(camera_id, name)
-    return redirect(url_for('config'))
+    return redirect(url_for('cameras'))
 
 @app.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
     db.delete_camera(camera_id)
-    return redirect(url_for('config'))
+    return redirect(url_for('cameras'))
 
 @app.route('/config/genicam/update', methods=['POST'])
 def update_genicam_settings():
@@ -85,12 +103,12 @@ def update_genicam_settings():
         # If the path is empty, clear the setting
         db.clear_setting('genicam_cti_path')
     
-    return redirect(url_for('config'))
+    return redirect(url_for('settings'))
 
 @app.route('/config/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     db.clear_setting('genicam_cti_path')
-    return redirect(url_for('config'))
+    return redirect(url_for('settings'))
 
 @app.route('/api/cameras/discover')
 def discover_cameras():
@@ -150,6 +168,42 @@ def update_genicam_node(camera_id):
 
     status_code = status_code or 400
     return jsonify({'error': message or 'Failed to update node.'}), status_code
+
+@app.route('/control/restart-app', methods=['POST'])
+def restart_app():
+    # This is a placeholder. A real implementation would need a more robust way
+    # to restart the application, e.g., using a process manager.
+    print("Restarting application...")
+    os._exit(0)  # This will stop the current process.
+    return "Restarting...", 200
+
+@app.route('/control/reboot', methods=['POST'])
+def reboot_device():
+    # This is a placeholder. The actual command might vary by OS.
+    # Use with extreme caution.
+    print("Rebooting device...")
+    os.system("sudo reboot")
+    return "Rebooting...", 200
+
+@app.route('/control/export-db')
+def export_db():
+    return send_file(db.DB_PATH, as_attachment=True)
+
+@app.route('/control/import-db', methods=['POST'])
+def import_db():
+    if 'database' not in request.files:
+        return redirect(url_for('settings'))
+    file = request.files['database']
+    if file.filename == '':
+        return redirect(url_for('settings'))
+    if file:
+        file.save(db.DB_PATH)
+    return redirect(url_for('settings'))
+
+@app.route('/control/factory-reset', methods=['POST'])
+def factory_reset():
+    db.factory_reset()
+    return redirect(url_for('settings'))
 
 if __name__ == '__main__':
     # Initialize the database and harvester on startup

@@ -113,5 +113,14 @@ def update_setting(key, value):
     conn.commit()
     conn.close()
 
+def factory_reset():
+    """Deletes all data from all tables."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM cameras")
+    cursor.execute("DELETE FROM settings")
+    conn.commit()
+    conn.close()
+
 # Initialize the database when this module is first imported.
 init_db()

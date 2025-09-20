@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
-{% block title %}Configuration{% endblock %}
+{% block title %}Cameras{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold mb-4">Configuration</h1>
+<h1 class="text-3xl font-bold mb-4">Cameras</h1>
 
 
 <!-- Camera Listing -->
@@ -85,21 +85,6 @@
     </table>
 </div>
 
-<!-- GenICam Settings -->
-<div class="bg-gray-800 rounded-lg p-4 mb-8">
-    <h2 class="text-2xl font-bold mb-4">GenICam Settings</h2>
-    <form action="{{ url_for('update_genicam_settings') }}" method="POST" enctype="multipart/form-data">
-        <div class="mb-4">
-            <label for="genicam-cti-path" class="block text-sm font-medium text-gray-300">GenTL Producer Path (.cti file):</label>
-            <span class="text-sm text-gray-400">Current: {{ genicam_cti_path or 'Not set' }}</span>
-            <input type="file" id="genicam-cti-path" name="genicam-cti-path" accept=".cti" class="mt-1 block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
-            <p class="mt-2 text-sm text-gray-400">Upload the .cti file from your camera's SDK. The server will store it.</p>
-        </div>
-        <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-            Save GenICam Settings
-        </button>
-    </form>
-</div>
 
 <!-- Add/Edit Camera Modal -->
 <div id="camera-form-modal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
