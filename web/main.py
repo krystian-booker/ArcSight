@@ -14,7 +14,7 @@ def create_error_image(message, width=640, height=480):
     """Creates a black image with white text."""
     img = np.zeros((height, width, 3), np.uint8)
     font = cv2.FONT_HERSHEY_SIMPLEX
-    
+
     # Calculate text size and position for centering
     text_size = cv2.getTextSize(message, font, 1, 2)[0]
     text_x = (width - text_size[0]) // 2
@@ -24,6 +24,24 @@ def create_error_image(message, width=640, height=480):
     
     ret, jpeg = cv2.imencode('.jpg', img)
     return jpeg.tobytes()
+
+
+def _error_response(message, *, default_status=400):
+    """Utility to create a standardized error response."""
+
+    status = default_status
+    if message:
+        lowered = message.lower()
+        if 'not found' in lowered:
+            status = 404
+        elif 'unable to' in lowered or 'failed to' in lowered:
+            status = 500
+        elif 'not configured' in lowered or 'required' in lowered:
+            status = 400
+    else:
+        message = 'An unknown error occurred.'
+
+    return jsonify({'success': False, 'error': message}), status
 
 @app.route('/video_feed/<int:camera_id>')
 def video_feed(camera_id):
@@ -81,15 +99,18 @@ def update_genicam_settings():
     if path and path.lower().endswith('.cti'):
         # Basic validation: check if it's a non-empty string and ends with .cti
         db.update_setting('genicam_cti_path', path)
+        camera_utils.initialize_harvester(force_reload=True)
     elif not path:
         # If the path is empty, clear the setting
         db.clear_setting('genicam_cti_path')
-    
+        camera_utils.initialize_harvester(force_reload=True)
+
     return redirect(url_for('config'))
 
 @app.route('/config/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     db.clear_setting('genicam_cti_path')
+    camera_utils.initialize_harvester(force_reload=True)
     return redirect(url_for('config'))
 
 @app.route('/api/cameras/discover')
@@ -115,6 +136,48 @@ def camera_status(camera_id):
         is_connected = camera_utils.check_camera_connection(camera)
         return jsonify({'connected': is_connected})
     return jsonify({'error': 'Camera not found'}), 404
+
+
+@app.route('/api/cameras/<int:camera_id>/nodes', methods=['GET'])
+def get_camera_nodes(camera_id):
+    camera = db.get_camera(camera_id)
+    if not camera:
+        return _error_response('Camera not found.', default_status=404)
+
+    if camera['camera_type'] != 'GenICam':
+        return _error_response('Node map is only available for GenICam cameras.')
+
+    nodes, error = camera_utils.get_genicam_node_map(camera['identifier'])
+    if error:
+        return _error_response(error)
+
+    return jsonify({'success': True, 'nodes': nodes})
+
+
+@app.route('/api/cameras/<int:camera_id>/nodes', methods=['POST'])
+def update_camera_node(camera_id):
+    camera = db.get_camera(camera_id)
+    if not camera:
+        return _error_response('Camera not found.', default_status=404)
+
+    if camera['camera_type'] != 'GenICam':
+        return _error_response('Node updates are only supported for GenICam cameras.')
+
+    payload = request.get_json(silent=True) or {}
+    node_name = payload.get('node') or payload.get('name')
+    if not node_name:
+        return _error_response('Node name is required.')
+
+    value = payload.get('value') if 'value' in payload else None
+
+    success, error, updated_value = camera_utils.set_genicam_node_value(
+        camera['identifier'], node_name, value
+    )
+
+    if not success:
+        return _error_response(error)
+
+    return jsonify({'success': True, 'value': updated_value})
 
 if __name__ == '__main__':
     # Initialize the database and harvester on startup

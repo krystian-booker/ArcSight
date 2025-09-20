@@ -19,9 +19,8 @@
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type</th>
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Identifier</th>
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
-                <th scope="col" class="relative px-6 py-3">
-                    <span class="sr-only">Delete</span>
-                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Node Map</th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
             </tr>
         </thead>
         <tbody class="bg-gray-800 divide-y divide-gray-700">
@@ -35,6 +34,16 @@
                         Checking...
                     </span>
                 </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    {% if camera.camera_type == 'GenICam' %}
+                    <button type="button" class="text-indigo-400 hover:text-indigo-200 font-medium"
+                        onclick="toggleNodeMap(event, {{ camera.id }})" data-camera-name="{{ camera.name }}" data-expanded="false" aria-expanded="false">
+                        View Node Map
+                    </button>
+                    {% else %}
+                    <span class="text-xs text-gray-500">N/A</span>
+                    {% endif %}
+                </td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button class="text-indigo-500 hover:text-indigo-700 mr-4" onclick="openEditModal({{ camera.id }}, '{{ camera.name }}')">Edit</button>
                     <form action="{{ url_for('delete_camera', camera_id=camera.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this camera?');" class="inline">
@@ -42,9 +51,18 @@
                     </form>
                 </td>
             </tr>
+            {% if camera.camera_type == 'GenICam' %}
+            <tr class="node-map-row hidden" data-node-row="{{ camera.id }}" data-camera-name="{{ camera.name }}">
+                <td colspan="6" class="px-6 py-4 bg-gray-900">
+                    <div class="node-map-container text-sm text-gray-200">
+                        <div class="text-sm text-gray-400">Expand to view node map details.</div>
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
             {% else %}
             <tr>
-                <td colspan="5" class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-400">No cameras configured.</td>
+                <td colspan="6" class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-400">No cameras configured.</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -282,6 +300,407 @@ document.addEventListener('DOMContentLoaded', function() {
             selectElement.appendChild(option);
         }
     }
+
+    // --- GenICam Node Map Viewer ---
+    function formatNodeValue(node) {
+        if (node.value === null || node.value === undefined) {
+            return '—';
+        }
+        if (node.value_type === 'boolean') {
+            return node.value ? 'True' : 'False';
+        }
+        return String(node.value);
+    }
+
+    function createValueEditor(node) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'flex items-center space-x-2';
+        let control = null;
+
+        if (!node.editable) {
+            const valueSpan = document.createElement('span');
+            valueSpan.textContent = formatNodeValue(node);
+            valueSpan.className = 'text-gray-200';
+            wrapper.appendChild(valueSpan);
+            if (node.unit) {
+                const unitSpan = document.createElement('span');
+                unitSpan.className = 'text-xs text-gray-400';
+                unitSpan.textContent = node.unit;
+                wrapper.appendChild(unitSpan);
+            }
+            return { element: wrapper, control: null };
+        }
+
+        switch (node.value_type) {
+            case 'integer':
+            case 'float': {
+                control = document.createElement('input');
+                control.type = 'number';
+                control.className = 'w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-1 focus:ring-indigo-500';
+                if (node.value !== null && node.value !== undefined) {
+                    control.value = node.value;
+                }
+                if (node.min !== null && node.min !== undefined) {
+                    control.min = node.min;
+                }
+                if (node.max !== null && node.max !== undefined) {
+                    control.max = node.max;
+                }
+                if (node.value_type === 'integer') {
+                    control.step = node.increment ? node.increment : '1';
+                } else {
+                    control.step = 'any';
+                }
+                break;
+            }
+            case 'boolean': {
+                control = document.createElement('select');
+                control.className = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-1 focus:ring-indigo-500';
+                [['true', 'True'], ['false', 'False']].forEach(([value, label]) => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = label;
+                    control.appendChild(option);
+                });
+                if (node.value === true) {
+                    control.value = 'true';
+                } else if (node.value === false) {
+                    control.value = 'false';
+                }
+                break;
+            }
+            case 'enum': {
+                if (Array.isArray(node.options) && node.options.length > 0) {
+                    control = document.createElement('select');
+                    control.className = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-1 focus:ring-indigo-500';
+                    node.options.forEach(option => {
+                        const optionElement = document.createElement('option');
+                        optionElement.value = option.value;
+                        optionElement.textContent = option.name || option.value;
+                        control.appendChild(optionElement);
+                    });
+                    if (node.value !== null && node.value !== undefined) {
+                        control.value = node.value;
+                    }
+                }
+                break;
+            }
+            case 'string': {
+                control = document.createElement('input');
+                control.type = 'text';
+                control.className = 'w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-1 focus:ring-indigo-500';
+                control.value = node.value !== null && node.value !== undefined ? node.value : '';
+                if (node.max_length && Number(node.max_length) > 0) {
+                    control.maxLength = Number(node.max_length);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (!control) {
+            const valueSpan = document.createElement('span');
+            valueSpan.textContent = formatNodeValue(node);
+            valueSpan.className = 'text-gray-200';
+            wrapper.appendChild(valueSpan);
+            return { element: wrapper, control: null };
+        }
+
+        control.dataset.valueType = node.value_type;
+        control.dataset.nodeName = node.name || '';
+        wrapper.appendChild(control);
+
+        if ((node.value_type === 'integer' || node.value_type === 'float') && node.unit) {
+            const unitSpan = document.createElement('span');
+            unitSpan.className = 'text-xs text-gray-400';
+            unitSpan.textContent = node.unit;
+            wrapper.appendChild(unitSpan);
+        }
+
+        return { element: wrapper, control };
+    }
+
+    function parseControlValue(control) {
+        const type = control.dataset.valueType;
+        const rawValue = control.value;
+        if (type === 'integer') {
+            if (rawValue === '' || rawValue === null) {
+                throw new Error('Value is required.');
+            }
+            const parsed = parseInt(rawValue, 10);
+            if (Number.isNaN(parsed)) {
+                throw new Error('Enter a valid integer value.');
+            }
+            return parsed;
+        }
+        if (type === 'float') {
+            if (rawValue === '' || rawValue === null) {
+                throw new Error('Value is required.');
+            }
+            const parsed = parseFloat(rawValue);
+            if (Number.isNaN(parsed)) {
+                throw new Error('Enter a valid numeric value.');
+            }
+            return parsed;
+        }
+        if (type === 'boolean') {
+            return rawValue === 'true';
+        }
+        return rawValue;
+    }
+
+    function handleNodeUpdate(cameraId, node, control, button, statusSpan, valueWrapper) {
+        let parsedValue;
+        try {
+            parsedValue = parseControlValue(control);
+        } catch (error) {
+            statusSpan.textContent = error.message || 'Invalid value.';
+            statusSpan.className = 'ml-3 text-xs text-red-400';
+            return;
+        }
+
+        statusSpan.textContent = 'Saving...';
+        statusSpan.className = 'ml-3 text-xs text-gray-400';
+        control.disabled = true;
+        if (button) {
+            button.disabled = true;
+            button.classList.add('opacity-70');
+        }
+
+        fetch(`/api/cameras/${cameraId}/nodes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ node: node.name, value: parsedValue })
+        })
+            .then(response => response.json().then(data => ({ status: response.status, data })))
+            .then(({ status, data }) => {
+                if (status === 200 && data.success) {
+                    node.value = data.value;
+                    statusSpan.textContent = 'Updated';
+                    statusSpan.className = 'ml-3 text-xs text-green-400';
+
+                    if (control.dataset.valueType === 'boolean') {
+                        control.value = data.value === true ? 'true' : 'false';
+                    } else if (control.dataset.valueType === 'enum' && data.value !== undefined) {
+                        control.value = data.value;
+                    } else if (control.dataset.valueType === 'string') {
+                        control.value = data.value !== null && data.value !== undefined ? data.value : '';
+                    } else if (control.dataset.valueType === 'integer' || control.dataset.valueType === 'float') {
+                        if (data.value !== null && data.value !== undefined) {
+                            control.value = data.value;
+                        }
+                    }
+
+                    if (!node.editable && valueWrapper) {
+                        valueWrapper.textContent = formatNodeValue(node);
+                    }
+                } else {
+                    statusSpan.textContent = (data && data.error) ? data.error : 'Update failed.';
+                    statusSpan.className = 'ml-3 text-xs text-red-400';
+                }
+            })
+            .catch(error => {
+                console.error('Error updating node value:', error);
+                statusSpan.textContent = 'Update failed.';
+                statusSpan.className = 'ml-3 text-xs text-red-400';
+            })
+            .finally(() => {
+                control.disabled = false;
+                if (button) {
+                    button.disabled = false;
+                    button.classList.remove('opacity-70');
+                }
+            });
+    }
+
+    function renderNodeMapTable(cameraId, container, nodes, detailRow) {
+        container.innerHTML = '';
+
+        const header = document.createElement('div');
+        header.className = 'flex items-center justify-between mb-3';
+
+        const title = document.createElement('h3');
+        title.className = 'text-lg font-semibold text-white';
+        const cameraName = detailRow.dataset.cameraName || '';
+        title.textContent = cameraName ? `Node Map – ${cameraName}` : 'Node Map';
+
+        const refreshButton = document.createElement('button');
+        refreshButton.type = 'button';
+        refreshButton.className = 'px-3 py-1 text-xs font-medium rounded bg-gray-700 text-gray-200 hover:bg-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500';
+        refreshButton.textContent = 'Refresh';
+        refreshButton.addEventListener('click', () => {
+            detailRow.dataset.loaded = '';
+            loadNodeMap(cameraId, detailRow, { force: true });
+        });
+
+        header.appendChild(title);
+        header.appendChild(refreshButton);
+        container.appendChild(header);
+
+        if (!nodes || nodes.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'text-sm text-gray-400';
+            emptyState.textContent = 'No nodes were returned by the camera.';
+            container.appendChild(emptyState);
+            return;
+        }
+
+        const table = document.createElement('table');
+        table.className = 'min-w-full divide-y divide-gray-700 text-sm';
+
+        const thead = document.createElement('thead');
+        thead.className = 'bg-gray-700 text-xs uppercase text-gray-300';
+        const headerRow = document.createElement('tr');
+        ['Category', 'Display Name', 'Name', 'Type', 'Value', 'Access', 'Actions'].forEach((label) => {
+            const th = document.createElement('th');
+            th.scope = 'col';
+            th.textContent = label;
+            th.className = 'px-4 py-2 text-left font-medium tracking-wider';
+            if (label === 'Actions') {
+                th.className = 'px-4 py-2 text-right font-medium tracking-wider';
+            }
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        tbody.className = 'bg-gray-800 divide-y divide-gray-700';
+
+        nodes.forEach(node => {
+            const row = document.createElement('tr');
+            row.className = 'align-top';
+            row.dataset.nodeName = node.name || '';
+
+            const categoryCell = document.createElement('td');
+            categoryCell.className = 'px-4 py-3 text-sm text-gray-300';
+            categoryCell.textContent = node.category || '—';
+            row.appendChild(categoryCell);
+
+            const displayCell = document.createElement('td');
+            displayCell.className = 'px-4 py-3 text-sm text-white';
+            const titleSpan = document.createElement('div');
+            titleSpan.className = 'font-medium';
+            titleSpan.textContent = node.display_name || node.name || 'Unnamed';
+            displayCell.appendChild(titleSpan);
+            if (node.description) {
+                const desc = document.createElement('div');
+                desc.className = 'text-xs text-gray-400 mt-1';
+                desc.textContent = node.description;
+                displayCell.appendChild(desc);
+            }
+            row.appendChild(displayCell);
+
+            const nameCell = document.createElement('td');
+            nameCell.className = 'px-4 py-3 text-sm text-gray-300 break-all';
+            nameCell.textContent = node.name || '—';
+            row.appendChild(nameCell);
+
+            const typeCell = document.createElement('td');
+            typeCell.className = 'px-4 py-3 text-sm text-gray-300';
+            typeCell.textContent = node.value_type || 'unknown';
+            row.appendChild(typeCell);
+
+            const valueCell = document.createElement('td');
+            valueCell.className = 'px-4 py-3 text-sm text-gray-200';
+            const { element: valueElement, control } = createValueEditor(node);
+            valueCell.appendChild(valueElement);
+            row.appendChild(valueCell);
+
+            const accessCell = document.createElement('td');
+            accessCell.className = 'px-4 py-3 text-sm text-gray-300';
+            accessCell.textContent = node.access_mode || 'Unknown';
+            row.appendChild(accessCell);
+
+            const actionCell = document.createElement('td');
+            actionCell.className = 'px-4 py-3 text-right text-sm text-gray-200';
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'ml-3 text-xs';
+
+            if (control) {
+                const updateButton = document.createElement('button');
+                updateButton.type = 'button';
+                updateButton.className = 'px-3 py-1 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500';
+                updateButton.textContent = 'Update';
+                updateButton.addEventListener('click', () => {
+                    handleNodeUpdate(cameraId, node, control, updateButton, statusSpan, valueElement);
+                });
+                actionCell.appendChild(updateButton);
+            } else {
+                actionCell.textContent = '—';
+            }
+
+            actionCell.appendChild(statusSpan);
+            row.appendChild(actionCell);
+
+            tbody.appendChild(row);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+
+    function loadNodeMap(cameraId, detailRow, options = {}) {
+        if (!detailRow) {
+            return;
+        }
+        const container = detailRow.querySelector('.node-map-container');
+        if (!container) {
+            return;
+        }
+        if (detailRow.dataset.loading === 'true') {
+            return;
+        }
+        if (!options.force && detailRow.dataset.loaded === 'true') {
+            return;
+        }
+
+        detailRow.dataset.loading = 'true';
+        container.innerHTML = '<div class="text-sm text-gray-400">Loading node map...</div>';
+
+        fetch(`/api/cameras/${cameraId}/nodes`)
+            .then(response => response.json().then(data => ({ status: response.status, data })))
+            .then(({ status, data }) => {
+                if (status === 200 && data.success) {
+                    detailRow.dataset.loaded = 'true';
+                    renderNodeMapTable(cameraId, container, data.nodes, detailRow);
+                } else {
+                    detailRow.dataset.loaded = '';
+                    container.innerHTML = `<div class="text-sm text-red-400">${(data && data.error) ? data.error : 'Failed to load node map.'}</div>`;
+                }
+            })
+            .catch(error => {
+                console.error('Error loading node map:', error);
+                detailRow.dataset.loaded = '';
+                container.innerHTML = '<div class="text-sm text-red-400">Failed to load node map.</div>';
+            })
+            .finally(() => {
+                detailRow.dataset.loading = 'false';
+            });
+    }
+
+    window.toggleNodeMap = function(event, cameraId) {
+        const button = event.currentTarget;
+        const detailRow = document.querySelector(`tr[data-node-row="${cameraId}"]`);
+        if (!detailRow) {
+            return;
+        }
+
+        const isHidden = detailRow.classList.contains('hidden');
+        if (isHidden) {
+            detailRow.classList.remove('hidden');
+            button.dataset.expanded = 'true';
+            button.setAttribute('aria-expanded', 'true');
+            button.textContent = 'Hide Node Map';
+            loadNodeMap(cameraId, detailRow);
+        } else {
+            detailRow.classList.add('hidden');
+            button.dataset.expanded = 'false';
+            button.setAttribute('aria-expanded', 'false');
+            button.textContent = 'View Node Map';
+        }
+    };
 });
 </script>
 {% endblock %}
