@@ -188,6 +188,23 @@ def get_camera_feed(camera):
                             text_y = text_size[1] + 10
                             cv2.putText(img, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
 
+                            # Display DeviceTemperature if available
+                            try:
+                                temp_node = ia.remote_device.node_map.get_node('DeviceTemperature')
+                                if temp_node and genapi.EAccessMode(temp_node.get_access_mode()) in READABLE_ACCESS_MODES:
+                                    temp_value = temp_node.value
+                                    temp_text = f"DeviceTemperature: {temp_value:.2f} C"
+                                    temp_text_size, _ = cv2.getTextSize(temp_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                                    temp_text_x = img.shape[1] - temp_text_size[0] - 10
+                                    
+                                    # Position temperature text below the FPS text
+                                    temp_text_y = text_y + text_size[1] + 10
+                                    
+                                    cv2.putText(img, temp_text, (temp_text_x, temp_text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), font_thickness)
+                            except Exception as e:
+                                print(f"Could not read DeviceTemperature: {e}")
+
+
                             ret, jpeg = cv2.imencode('.jpg', img)
                             if ret:
                                 yield (b'--frame\r\n'
