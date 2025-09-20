@@ -235,10 +235,11 @@ def get_genicam_node_map(identifier):
             if interface_type not in SUPPORTED_INTERFACE_TYPES:
                 continue
 
-            access_value = node_wrapper.get_access_mode()
             try:
+                # Access mode should be checked on the node itself, not the wrapper
+                access_value = node_wrapper.node.get_access_mode()
                 access_mode = genapi.EAccessMode(access_value)
-            except ValueError:
+            except (ValueError, TypeError):
                 access_mode = None
 
             is_readable = access_mode in READABLE_ACCESS_MODES if access_mode else False
