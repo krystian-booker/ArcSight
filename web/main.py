@@ -140,9 +140,13 @@ def update_genicam_node(camera_id):
     node_name = payload.get('name')
     value = payload.get('value')
 
-    success, message, status_code = camera_utils.update_genicam_node(camera['identifier'], node_name, value)
+    success, message, status_code, updated_node = camera_utils.update_genicam_node(camera['identifier'], node_name, value)
     if success:
-        return jsonify({'success': True, 'message': message or 'Node updated successfully.'}), 200
+        return jsonify({
+            'success': True, 
+            'message': message or 'Node updated successfully.',
+            'node': updated_node
+        }), 200
 
     status_code = status_code or 400
     return jsonify({'error': message or 'Failed to update node.'}), status_code

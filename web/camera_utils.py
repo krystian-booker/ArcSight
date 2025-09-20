@@ -289,23 +289,81 @@ def get_genicam_node_map(identifier):
             print(f"Error releasing ImageAcquirer for {identifier}: {destroy_error}")
 
 
-def update_genicam_node(identifier, node_name, value):
-    """Update a GenICam node with a new value."""
+def get_genicam_node(identifier, node_name):
+    """Retrieve a single GenICam node's details."""
     if genapi is None:
-        return False, "GenICam runtime is not available on the server.", 500
-
-    if not node_name:
-        return False, "Node name is required.", 400
+        return None, "GenICam runtime is not available on the server."
 
     ia = _create_image_acquirer(identifier)
     if not ia:
-        return False, "Unable to establish a connection to the GenICam camera.", 500
+        return None, "Unable to establish a connection to the GenICam camera."
+
+    try:
+        node_map = ia.remote_device.node_map
+        node_wrapper = node_map.get_node(node_name)
+        if node_wrapper is None:
+            return None, f"Node '{node_name}' not found."
+
+        interface_type = genapi.EInterfaceType(node_wrapper.node.principal_interface_type)
+        if interface_type not in SUPPORTED_INTERFACE_TYPES:
+            return None, "Unsupported node type."
+        
+        access_value = node_wrapper.node.get_access_mode()
+        access_mode = genapi.EAccessMode(access_value)
+        
+        is_readable = access_mode in READABLE_ACCESS_MODES
+        is_writable = access_mode in WRITABLE_ACCESS_MODES
+
+        node = node_wrapper.node
+        display_name = str(getattr(node, 'display_name', '') or '')
+        description = str(getattr(node, 'tooltip', '') or getattr(node, 'description', '') or '')
+
+        node_info = {
+            'name': node_name,
+            'display_name': display_name or node_name,
+            'description': description.strip(),
+            'interface_type': SUPPORTED_INTERFACE_TYPES[interface_type],
+            'access_mode': access_mode.name,
+            'is_readable': is_readable,
+            'is_writable': is_writable,
+            'value': None,
+            'choices': []
+        }
+
+        if is_readable:
+            try:
+                node_info['value'] = str(node_wrapper.to_string())
+            except Exception as e:
+                print(f"Could not read value for node {node_name}: {e}")
+
+        if interface_type == genapi.EInterfaceType.intfIEnumeration:
+            node_info['choices'] = [str(symbol) for symbol in node_wrapper.symbolics]
+
+        return node_info, None
+    except Exception as error:
+        return None, f"Failed to retrieve node: {error}"
+    finally:
+        if ia:
+            ia.destroy()
+
+
+def update_genicam_node(identifier, node_name, value):
+    """Update a GenICam node and return its new state."""
+    if genapi is None:
+        return False, "GenICam runtime is not available on the server.", 500, None
+
+    if not node_name:
+        return False, "Node name is required.", 400, None
+
+    ia = _create_image_acquirer(identifier)
+    if not ia:
+        return False, "Unable to establish a connection to the GenICam camera.", 500, None
 
     try:
         node_map = ia.remote_device.node_map
         node = node_map.get_node(node_name)
         if node is None:
-            return False, f"Node '{node_name}' was not found on the camera.", 404
+            return False, f"Node '{node_name}' was not found on the camera.", 404, None
 
         try:
             access_mode = genapi.EAccessMode(node.get_access_mode())
@@ -313,11 +371,12 @@ def update_genicam_node(identifier, node_name, value):
             access_mode = None
 
         if not access_mode or access_mode not in WRITABLE_ACCESS_MODES:
-            return False, f"Node '{node_name}' is not writable.", 400
+            return False, f"Node '{node_name}' is not writable.", 400, None
 
         if value is None:
-            return False, "A value must be provided.", 400
+            return False, "A value must be provided.", 400, None
 
+        # Set the value
         try:
             if isinstance(node, genapi.IInteger):
                 node.set_value(int(value))
@@ -330,7 +389,7 @@ def update_genicam_node(identifier, node_name, value):
                 elif normalized in ('false', '0', 'no', 'off'):
                     node.set_value(False)
                 else:
-                    return False, f"'{value}' is not a valid boolean value.", 400
+                    return False, f"'{value}' is not a valid boolean value.", 400, None
             elif isinstance(node, genapi.IEnumeration):
                 try:
                     node.set_value(str(value))
@@ -341,14 +400,26 @@ def update_genicam_node(identifier, node_name, value):
             else:
                 node.from_string(str(value))
         except Exception as set_error:
-            return False, f"Failed to update node '{node_name}': {set_error}", 400
+            return False, f"Failed to update node '{node_name}': {set_error}", 400, None
 
-        return True, f"Node '{node_name}' updated successfully.", 200
+        # After updating, fetch the node's current state.
+        # We release the IA and get a new one inside get_genicam_node
+        # to ensure we're reading the committed value.
+        ia.destroy()
+        ia = None # Prevent double destroy in finally block
+
+        updated_node, error = get_genicam_node(identifier, node_name)
+        if error:
+            return False, f"Node updated, but failed to retrieve new state: {error}", 500, None
+
+        return True, f"Node '{node_name}' updated successfully.", 200, updated_node
+
     except Exception as error:
         print(f"Error updating node {node_name} for {identifier}: {error}")
-        return False, f"Unexpected error while updating node: {error}", 500
+        return False, f"Unexpected error while updating node: {error}", 500, None
     finally:
-        try:
-            ia.destroy()
-        except Exception as destroy_error:
-            print(f"Error releasing ImageAcquirer for {identifier} after update: {destroy_error}")
+        if ia:
+            try:
+                ia.destroy()
+            except Exception as destroy_error:
+                print(f"Error releasing ImageAcquirer for {identifier} after update: {destroy_error}")
