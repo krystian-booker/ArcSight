@@ -373,7 +373,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 let inputElement;
                 if (node.interface_type === 'boolean') {
                     inputElement = document.createElement('select');
-                    inputElement.className = 'node-value-input w-full bg-gray-700 border border-gray-600 rounded-md text-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+                    inputElement.className = 'node-value-input custom-select';
                     ['True', 'False'].forEach(optionValue => {
                         const option = document.createElement('option');
                         option.value = optionValue;
@@ -388,7 +388,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 } else if (node.interface_type === 'enumeration' && Array.isArray(node.choices) && node.choices.length > 0) {
                     inputElement = document.createElement('select');
-                    inputElement.className = 'node-value-input w-full bg-gray-700 border border-gray-600 rounded-md text-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+                    inputElement.className = 'node-value-input custom-select';
                     if (node.value && !node.choices.includes(node.value)) {
                         const currentOption = document.createElement('option');
                         currentOption.value = node.value;
@@ -410,7 +410,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (node.interface_type === 'float') {
                         inputElement.step = 'any';
                     }
-                    inputElement.className = 'node-value-input w-full bg-gray-700 border border-gray-600 rounded-md text-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+                    inputElement.className = 'node-value-input custom-select';
                     if (node.value !== null && node.value !== undefined) {
                         inputElement.value = node.value;
                     } else {
