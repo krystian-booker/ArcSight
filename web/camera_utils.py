@@ -48,6 +48,28 @@ def initialize_harvester():
         else:
             print("GenICam CTI file not found or not configured. Harvester not initialized.")
 
+def reinitialize_harvester():
+    """
+    Resets and re-initializes the global Harvester instance.
+    This should be called when the GenICam CTI file is changed.
+    """
+    with harvester_lock:
+        # Release all resources and clear the CTI file list
+        h.reset()
+        print("Harvester instance cleaned up.")
+
+        # Re-load the CTI file from the database
+        cti_path = db.get_setting('genicam_cti_path')
+        if cti_path and os.path.exists(cti_path):
+            try:
+                h.add_file(cti_path)
+                h.update()
+                print("Harvester re-initialized with new CTI file.")
+            except Exception as e:
+                print(f"Error re-initializing Harvester: {e}")
+        else:
+            print("GenICam CTI file not found or not configured. Harvester remains empty.")
+
 def list_usb_cameras():
     """
     Lists available USB cameras by trying to open them.

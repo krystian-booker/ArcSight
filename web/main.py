@@ -104,11 +104,16 @@ def update_genicam_settings():
         # If the path is empty, clear the setting
         db.clear_setting('genicam_cti_path')
     
+    # Re-initialize the harvester to apply the new settings
+    camera_utils.reinitialize_harvester()
+    
     return redirect(url_for('settings'))
 
 @app.route('/config/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     db.clear_setting('genicam_cti_path')
+    # Re-initialize the harvester to apply the new settings
+    camera_utils.reinitialize_harvester()
     return redirect(url_for('settings'))
 
 @app.route('/api/cameras/discover')
@@ -204,6 +209,7 @@ def import_db():
 @app.route('/control/factory-reset', methods=['POST'])
 def factory_reset():
     db.factory_reset()
+    camera_utils.reinitialize_harvester()
     return redirect(url_for('settings'))
 
 if __name__ == '__main__':
