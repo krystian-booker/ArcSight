@@ -116,6 +116,37 @@ def camera_status(camera_id):
         return jsonify({'connected': is_connected})
     return jsonify({'error': 'Camera not found'}), 404
 
+
+@app.route('/api/genicam/nodes/<int:camera_id>', methods=['GET'])
+def genicam_nodes(camera_id):
+    camera = db.get_camera(camera_id)
+    if not camera or camera['camera_type'] != 'GenICam':
+        return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
+
+    nodes, error = camera_utils.get_genicam_node_map(camera['identifier'])
+    if error:
+        return jsonify({'error': error}), 500
+
+    return jsonify({'nodes': nodes})
+
+
+@app.route('/api/genicam/nodes/<int:camera_id>', methods=['POST'])
+def update_genicam_node(camera_id):
+    camera = db.get_camera(camera_id)
+    if not camera or camera['camera_type'] != 'GenICam':
+        return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
+
+    payload = request.get_json(silent=True) or {}
+    node_name = payload.get('name')
+    value = payload.get('value')
+
+    success, message, status_code = camera_utils.update_genicam_node(camera['identifier'], node_name, value)
+    if success:
+        return jsonify({'success': True, 'message': message or 'Node updated successfully.'}), 200
+
+    status_code = status_code or 400
+    return jsonify({'error': message or 'Failed to update node.'}), status_code
+
 if __name__ == '__main__':
     # Initialize the database and harvester on startup
     db.init_db()
