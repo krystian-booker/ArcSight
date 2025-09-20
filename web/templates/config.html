@@ -36,12 +36,37 @@
                     </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    {% if camera.camera_type == 'GenICam' %}
+                    <button type="button" class="text-indigo-400 hover:text-indigo-200 mr-4" onclick="toggleNodeDetails({{ camera.id }})">Nodes</button>
+                    {% endif %}
                     <button class="text-indigo-500 hover:text-indigo-700 mr-4" onclick="openEditModal({{ camera.id }}, '{{ camera.name }}')">Edit</button>
                     <form action="{{ url_for('delete_camera', camera_id=camera.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this camera?');" class="inline">
                         <button type="submit" class="text-red-500 hover:text-red-700">Delete</button>
                     </form>
                 </td>
             </tr>
+            {% if camera.camera_type == 'GenICam' %}
+            <tr id="node-row-{{ camera.id }}" class="hidden bg-gray-900">
+                <td colspan="5" class="px-6 py-4">
+                    <div class="flex flex-col space-y-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div>
+                                <h3 class="text-lg font-semibold text-white">GenICam Node Map</h3>
+                                <p class="text-xs text-gray-400">Inspect and configure the camera's remote device parameters.</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="refreshNodeMap({{ camera.id }})" class="inline-flex justify-center py-1.5 px-3 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div id="node-content-{{ camera.id }}" class="overflow-x-auto border border-gray-700 rounded-md bg-gray-800">
+                            <div class="p-4 text-sm text-gray-400">Expand the row to load the node map for this camera.</div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
             {% else %}
             <tr>
                 <td colspan="5" class="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-400">No cameras configured.</td>
@@ -183,6 +208,333 @@ document.addEventListener('DOMContentLoaded', function() {
             stopStatusUpdates();
         }
     });
+
+    // --- GenICam Node Map Support ---
+    const nodeCache = new Map();
+
+    function renderNodeTable(cameraId, nodes) {
+        const container = document.getElementById(`node-content-${cameraId}`);
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = '';
+
+        if (!nodes || nodes.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'p-4 text-sm text-gray-400';
+            emptyState.textContent = 'No configurable nodes were reported by this camera.';
+            container.appendChild(emptyState);
+            return;
+        }
+
+        const table = document.createElement('table');
+        table.className = 'min-w-full divide-y divide-gray-700';
+
+        const thead = document.createElement('thead');
+        thead.className = 'bg-gray-700';
+        thead.innerHTML = `
+            <tr>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Display Name</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Value</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Type</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Access</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Update</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        tbody.className = 'bg-gray-800 divide-y divide-gray-700';
+
+        nodes.forEach(node => {
+            const row = document.createElement('tr');
+
+            const nameCell = document.createElement('td');
+            nameCell.className = 'px-4 py-3 align-top';
+            const title = document.createElement('div');
+            title.className = 'text-sm font-medium text-white';
+            title.textContent = node.display_name || node.name;
+            nameCell.appendChild(title);
+
+            const nameSubtitle = document.createElement('div');
+            nameSubtitle.className = 'text-xs text-gray-400 break-all';
+            nameSubtitle.textContent = node.name;
+            nameCell.appendChild(nameSubtitle);
+
+            if (node.description) {
+                const description = document.createElement('div');
+                description.className = 'text-xs text-gray-500 mt-1';
+                description.textContent = node.description;
+                nameCell.appendChild(description);
+            }
+
+            row.appendChild(nameCell);
+
+            const valueCell = document.createElement('td');
+            valueCell.className = 'px-4 py-3 text-sm text-gray-200 align-top';
+            if (node.is_readable && node.value !== null && node.value !== undefined && node.value !== '') {
+                valueCell.textContent = node.value;
+            } else if (node.is_readable) {
+                valueCell.textContent = 'Unavailable';
+                valueCell.classList.add('text-gray-400');
+            } else if (node.is_writable) {
+                valueCell.textContent = 'Write only';
+                valueCell.classList.add('text-gray-400');
+            } else {
+                valueCell.textContent = 'Not accessible';
+                valueCell.classList.add('text-gray-500');
+            }
+            row.appendChild(valueCell);
+
+            const typeCell = document.createElement('td');
+            typeCell.className = 'px-4 py-3 text-sm text-gray-300 align-top';
+            typeCell.textContent = node.interface_type;
+            row.appendChild(typeCell);
+
+            const accessCell = document.createElement('td');
+            accessCell.className = 'px-4 py-3 text-sm text-gray-300 align-top';
+            accessCell.textContent = node.access_mode;
+            row.appendChild(accessCell);
+
+            const actionCell = document.createElement('td');
+            actionCell.className = 'px-4 py-3 text-sm text-gray-200 align-top';
+
+            if (node.is_writable) {
+                const form = document.createElement('form');
+                form.className = 'node-update-form flex flex-col sm:flex-row sm:items-center sm:space-x-2 space-y-2 sm:space-y-0';
+                form.dataset.cameraId = String(cameraId);
+                form.dataset.nodeName = node.name;
+
+                const inputWrapper = document.createElement('div');
+                inputWrapper.className = 'flex-1';
+
+                let inputElement;
+                if (node.interface_type === 'boolean') {
+                    inputElement = document.createElement('select');
+                    inputElement.className = 'node-value-input w-full bg-gray-700 border border-gray-600 rounded-md text-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+                    ['True', 'False'].forEach(optionValue => {
+                        const option = document.createElement('option');
+                        option.value = optionValue;
+                        option.textContent = optionValue;
+                        inputElement.appendChild(option);
+                    });
+                    const normalizedValue = (node.value || '').toString().toLowerCase();
+                    if (['false', '0', 'no', 'off'].includes(normalizedValue)) {
+                        inputElement.value = 'False';
+                    } else {
+                        inputElement.value = 'True';
+                    }
+                } else if (node.interface_type === 'enumeration' && Array.isArray(node.choices) && node.choices.length > 0) {
+                    inputElement = document.createElement('select');
+                    inputElement.className = 'node-value-input w-full bg-gray-700 border border-gray-600 rounded-md text-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+                    if (node.value && !node.choices.includes(node.value)) {
+                        const currentOption = document.createElement('option');
+                        currentOption.value = node.value;
+                        currentOption.textContent = node.value;
+                        inputElement.appendChild(currentOption);
+                    }
+                    node.choices.forEach(choice => {
+                        const option = document.createElement('option');
+                        option.value = choice;
+                        option.textContent = choice;
+                        inputElement.appendChild(option);
+                    });
+                    if (node.value) {
+                        inputElement.value = node.value;
+                    }
+                } else {
+                    inputElement = document.createElement('input');
+                    inputElement.type = (node.interface_type === 'integer' || node.interface_type === 'float') ? 'number' : 'text';
+                    if (node.interface_type === 'float') {
+                        inputElement.step = 'any';
+                    }
+                    inputElement.className = 'node-value-input w-full bg-gray-700 border border-gray-600 rounded-md text-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+                    if (node.value !== null && node.value !== undefined) {
+                        inputElement.value = node.value;
+                    } else {
+                        inputElement.placeholder = 'Enter value';
+                    }
+                }
+
+                inputElement.name = 'node-value';
+                inputWrapper.appendChild(inputElement);
+                form.appendChild(inputWrapper);
+
+                const button = document.createElement('button');
+                button.type = 'submit';
+                button.className = 'inline-flex justify-center px-3 py-1.5 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500';
+                button.textContent = 'Update';
+                form.appendChild(button);
+
+                actionCell.appendChild(form);
+
+                const feedback = document.createElement('div');
+                feedback.className = 'text-xs mt-2 hidden';
+                feedback.dataset.nodeFeedback = 'true';
+                actionCell.appendChild(feedback);
+            } else {
+                actionCell.classList.add('text-gray-500');
+                actionCell.textContent = 'Read-only';
+            }
+
+            tbody.appendChild(row);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+
+    function loadNodesForCamera(cameraId, options = {}) {
+        const { force = false } = options;
+        const container = document.getElementById(`node-content-${cameraId}`);
+        if (!container) {
+            return;
+        }
+
+        if (force) {
+            nodeCache.delete(cameraId);
+        }
+
+        if (!force && nodeCache.has(cameraId)) {
+            renderNodeTable(cameraId, nodeCache.get(cameraId));
+            return;
+        }
+
+        container.innerHTML = '<div class="p-4 text-sm text-gray-400">Loading node map...</div>';
+
+        fetch(`/api/genicam/nodes/${cameraId}`)
+            .then(async response => {
+                let payload;
+                try {
+                    payload = await response.json();
+                } catch (error) {
+                    payload = { error: 'Invalid server response.' };
+                }
+
+                if (!response.ok) {
+                    const message = payload && payload.error ? payload.error : `Request failed (${response.status})`;
+                    throw new Error(message);
+                }
+
+                return payload;
+            })
+            .then(data => {
+                const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+                nodeCache.set(cameraId, nodes);
+                renderNodeTable(cameraId, nodes);
+            })
+            .catch(error => {
+                const errorContainer = document.createElement('div');
+                errorContainer.className = 'p-4 text-sm text-red-400';
+                errorContainer.textContent = error.message || 'Failed to load node map.';
+                container.innerHTML = '';
+                container.appendChild(errorContainer);
+            });
+    }
+
+    window.toggleNodeDetails = function(cameraId) {
+        const row = document.getElementById(`node-row-${cameraId}`);
+        if (!row) {
+            return;
+        }
+
+        const isHidden = row.classList.contains('hidden');
+        if (isHidden) {
+            row.classList.remove('hidden');
+            loadNodesForCamera(cameraId);
+        } else {
+            row.classList.add('hidden');
+        }
+    };
+
+    window.refreshNodeMap = function(cameraId) {
+        loadNodesForCamera(cameraId, { force: true });
+    };
+
+    document.addEventListener('submit', function(event) {
+        if (!event.target.classList.contains('node-update-form')) {
+            return;
+        }
+
+        event.preventDefault();
+
+        const form = event.target;
+        const cameraId = form.dataset.cameraId;
+        const nodeName = form.dataset.nodeName;
+        const input = form.querySelector('.node-value-input');
+        const value = input ? input.value : '';
+
+        updateNodeValue(cameraId, nodeName, value, form);
+    });
+
+    function updateNodeValue(cameraId, nodeName, value, form) {
+        if (!cameraId || !nodeName) {
+            return;
+        }
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        const feedback = form.parentElement.querySelector('[data-node-feedback="true"]');
+
+        if (feedback) {
+            feedback.textContent = '';
+            feedback.classList.add('hidden');
+            feedback.classList.remove('text-red-400', 'text-green-400');
+        }
+
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.dataset.originalText = submitButton.textContent;
+            submitButton.textContent = 'Saving...';
+        }
+
+        fetch(`/api/genicam/nodes/${cameraId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name: nodeName, value: value })
+        })
+            .then(async response => {
+                let payload;
+                try {
+                    payload = await response.json();
+                } catch (error) {
+                    payload = { error: 'Invalid server response.' };
+                }
+
+                if (!response.ok) {
+                    const message = payload && payload.error ? payload.error : `Request failed (${response.status})`;
+                    throw new Error(message);
+                }
+
+                return payload;
+            })
+            .then(data => {
+                if (feedback) {
+                    feedback.textContent = data.message || 'Node updated successfully.';
+                    feedback.classList.remove('hidden');
+                    feedback.classList.remove('text-red-400');
+                    feedback.classList.add('text-green-400');
+                }
+
+                loadNodesForCamera(cameraId, { force: true });
+            })
+            .catch(error => {
+                if (feedback) {
+                    feedback.textContent = error.message || 'Failed to update node.';
+                    feedback.classList.remove('hidden');
+                    feedback.classList.remove('text-green-400');
+                    feedback.classList.add('text-red-400');
+                }
+            })
+            .finally(() => {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.textContent = submitButton.dataset.originalText || 'Update';
+                }
+            });
+    }
 
     // --- Modal and Form Logic ---
     const modal = document.getElementById('camera-form-modal');
