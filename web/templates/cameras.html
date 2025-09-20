@@ -107,7 +107,9 @@
                             <select id="camera-type-modal" name="camera-type" required class="custom-select">
                                 <option value="">-- Select a Type --</option>
                                 <option value="USB">Generic USB Camera</option>
+                                {% if genicam_enabled %}
                                 <option value="GenICam">GenICam</option>
+                                {% endif %}
                             </select>
                         </div>
                 
@@ -650,14 +652,6 @@ document.addEventListener('DOMContentLoaded', function() {
         genicamSection.classList.add('hidden');
         usbSelect.disabled = true;
         genicamSelect.disabled = true;
-
-        // Show/hide GenICam option based on backend configuration
-        const genicamOption = cameraTypeSelect.querySelector('option[value="GenICam"]');
-        if (genicamOption) {
-            // Use Jinja2 to safely insert the boolean
-            const isGenicamEnabled = {{ genicam_enabled|tojson }};
-            genicamOption.style.display = isGenicamEnabled ? '' : 'none';
-        }
 
         // Auto-select if only one camera type is available
         const visibleOptions = Array.from(cameraTypeSelect.options).filter(opt => opt.style.display !== 'none' && opt.value !== '');
