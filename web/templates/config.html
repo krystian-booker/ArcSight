@@ -239,6 +239,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
+            if(!showAll && node.value === null){
+                return false;
+            }
+
+            if(!showAll && node.access_mode === "RO"){
+                return false;
+            }
+
             if (searchTerm) {
                 const searchIn = [
                     node.name,
