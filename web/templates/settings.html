@@ -60,14 +60,14 @@
     <div class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button onclick="postToAction('{{ url_for('restart_app') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Vision-Tools</button>
-            <button onclick="postToAction('{{ url_for('reboot_device') }}')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded w-full">Restart Device</button>
+            <button onclick="postToAction('{{ url_for('reboot_device') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Device</button>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <a href="{{ url_for('export_db') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center w-full">Export Configuration</a>
             <button onclick="document.getElementById('import-db-input').click()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded w-full">Import Configuration</button>
         </div>
         <div>
-            <button onclick="openFactoryResetModal()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded w-full">Factory Reset</button>
+            <button onclick="openFactoryResetModal()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded w-full">Factory Reset</button>
         </div>
     </div>
     <form id="import-db-form" action="{{ url_for('import_db') }}" method="POST" enctype="multipart/form-data" class="hidden">

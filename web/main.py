@@ -43,7 +43,8 @@ def video_feed(camera_id):
 @app.route('/cameras')
 def cameras():
     cameras = db.get_cameras()
-    return render_template('cameras.html', cameras=cameras)
+    genicam_cti_path = db.get_setting('genicam_cti_path')
+    return render_template('cameras.html', cameras=cameras, genicam_enabled=bool(genicam_cti_path))
 
 @app.route('/settings')
 def settings():
