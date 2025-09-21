@@ -2,27 +2,6 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<style>
-    .tab-item {
-        padding: 0.5rem 1rem;
-        border-radius: 0.375rem 0.375rem 0 0;
-        color: #9ca3af; /* text-gray-400 */
-        font-weight: 500;
-        text-decoration: none;
-        transition: background-color 0.2s ease;
-    }
-    .tab-item:hover {
-        background-color: #374151; /* bg-gray-700 */
-    }
-    .tab-item.active-tab {
-        background-color: #1f2937; /* bg-gray-800 */
-        color: #ffffff; /* text-white */
-        border-bottom: 2px solid #6366f1; /* border-indigo-500 */
-    }
-    .tab-content.hidden {
-        display: none;
-    }
-</style>
 
 <h1 class="text-3xl font-bold mb-4">Dashboard</h1>
 
@@ -57,8 +36,30 @@
         </div>
     </div>
 
+    <!-- Input Card -->
+    <div class="w-full md:w-1/3">
+        <div class="bg-gray-800 rounded-lg p-4">
+            <h2 class="text-xl font-bold mb-4">Input</h2>
+            <div id="pipeline-forms">
+                <div id="form-AprilTag" class="pipeline-form">
+                    <h3 class="text-lg font-bold mb-4">AprilTag Configuration</h3>
+                    <p>Example control for AprilTag.</p>
+                </div>
+                <div id="form-Coloured Shape" class="pipeline-form hidden">
+                    <h3 class="text-lg font-bold mb-4">Coloured Shape Configuration</h3>
+                    <p>Example control for Coloured Shape.</p>
+                </div>
+                <div id="form-Object Detection (ML)" class="pipeline-form hidden">
+                    <h3 class="text-lg font-bold mb-4">Object Detection (ML) Configuration</h3>
+                    <p>Example control for Object Detection (ML).</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
     <!-- Right side video feed -->
-    <div class="w-full md:w-2/3">
+    <div class="w-full md:w-1/3">
         <div class="bg-gray-800 rounded-lg p-4" style="height: 40vh;">
             <div class="camera-feed-container bg-black flex items-center justify-center rounded h-full">
                 {% if cameras %}
@@ -66,40 +67,6 @@
                 {% else %}
                     <p class="text-gray-500">No camera feed available.</p>
                 {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Tabs Section -->
-<div class="w-full mt-4">
-    <div class="bg-gray-800 rounded-lg p-4">
-        <div class="border-b border-gray-700">
-            <nav id="tabs" class="flex space-x-4" aria-label="Tabs">
-                <a href="#" class="tab-item active-tab" data-tab="video">Video</a>
-                <a href="#" class="tab-item" data-tab="pipeline">AprilTag</a>
-            </nav>
-        </div>
-        <div class="mt-4">
-            <div id="tab-content-video" class="tab-content">
-                <!-- Video content will be handled by moving the existing feed here if needed -->
-                <p>This is the video tab. The main video feed is already displayed above.</p>
-            </div>
-            <div id="tab-content-pipeline" class="tab-content hidden">
-                <div id="pipeline-forms">
-                    <div id="form-AprilTag" class="pipeline-form">
-                        <h3 class="text-lg font-bold mb-4">AprilTag Configuration</h3>
-                        <p>Example control for AprilTag.</p>
-                    </div>
-                    <div id="form-Coloured Shape" class="pipeline-form hidden">
-                        <h3 class="text-lg font-bold mb-4">Coloured Shape Configuration</h3>
-                        <p>Example control for Coloured Shape.</p>
-                    </div>
-                    <div id="form-Object Detection (ML)" class="pipeline-form hidden">
-                        <h3 class="text-lg font-bold mb-4">Object Detection (ML) Configuration</h3>
-                        <p>Example control for Object Detection (ML).</p>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -128,6 +95,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('pipeline-warning-modal');
     const cancelBtn = document.getElementById('cancel-pipeline-change');
     const confirmBtn = document.getElementById('confirm-pipeline-change');
+    const pipelineForms = document.querySelectorAll('.pipeline-form');
 
     let cameraFeed = document.getElementById('camera-feed');
     let selectedPipeline = '';
@@ -211,28 +179,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Tabs
-    const tabs = document.querySelectorAll('.tab-item');
-    const tabContents = document.querySelectorAll('.tab-content');
-    const pipelineTab = document.querySelector('[data-tab="pipeline"]');
-    const pipelineForms = document.querySelectorAll('.pipeline-form');
-
-    function switchTab(tab) {
-        tabs.forEach(t => t.classList.remove('active-tab'));
-        tab.classList.add('active-tab');
-
-        const tabName = tab.dataset.tab;
-        tabContents.forEach(content => {
-            if (content.id === `tab-content-${tabName}`) {
-                content.classList.remove('hidden');
-            } else {
-                content.classList.add('hidden');
-            }
-        });
-    }
-
-    function updatePipelineTab(pipelineName) {
-        pipelineTab.textContent = pipelineName;
+    function updatePipelineForm(pipelineName) {
         pipelineForms.forEach(form => {
             if (form.id === `form-${pipelineName}`) {
                 form.classList.remove('hidden');
@@ -247,7 +194,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateCameraFeed(initialCameraId);
     updatePipelineSelection(initialCameraId);
     if (initialCameraId) {
-        updatePipelineTab(pipelineSelect.value);
+        updatePipelineForm(pipelineSelect.value);
     }
 
 
@@ -255,21 +202,14 @@ document.addEventListener('DOMContentLoaded', function() {
     cameraSelect.addEventListener('change', function() {
         updateCameraFeed(this.value);
         updatePipelineSelection(this.value);
-        updatePipelineTab(pipelineSelect.value);
+        updatePipelineForm(pipelineSelect.value);
     });
 
     pipelineSelect.addEventListener('change', handlePipelineChange);
     cancelBtn.addEventListener('click', cancelPipelineChange);
     confirmBtn.addEventListener('click', function() {
         confirmPipelineChange();
-        updatePipelineTab(selectedPipeline);
-    });
-
-    tabs.forEach(tab => {
-        tab.addEventListener('click', function(e) {
-            e.preventDefault();
-            switchTab(this);
-        });
+        updatePipelineForm(selectedPipeline);
     });
 });
 </script>
