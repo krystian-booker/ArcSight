@@ -142,6 +142,15 @@ def get_camera_feed(camera):
                     print(f"Stopping feed for USB camera {camera['identifier']} as it appears to be disconnected.")
                     break
 
+                # Apply orientation
+                orientation = camera['orientation']
+                if orientation == 90:
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                elif orientation == 180:
+                    frame = cv2.rotate(frame, cv2.ROTATE_180)
+                elif orientation == 270:
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
                 # Calculate FPS
                 frame_count += 1
                 elapsed_time = time.time() - start_time
@@ -192,6 +201,15 @@ def get_camera_feed(camera):
                                 img = cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
                             elif len(img.shape) == 2:
                                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+                            # Apply orientation
+                            orientation = camera['orientation']
+                            if orientation == 90:
+                                img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+                            elif orientation == 180:
+                                img = cv2.rotate(img, cv2.ROTATE_180)
+                            elif orientation == 270:
+                                img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
                             # Calculate FPS
                             frame_count += 1

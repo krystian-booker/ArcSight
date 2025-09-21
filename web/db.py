@@ -41,6 +41,21 @@ def init_db():
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE cameras ADD COLUMN pipeline TEXT NOT NULL DEFAULT 'AprilTag'")
 
+    # Migration: Add camera control columns if they don't exist
+    columns_to_add = {
+        'orientation': 'INTEGER NOT NULL DEFAULT 0',
+        'exposure_mode': 'TEXT NOT NULL DEFAULT "auto"',
+        'exposure_value': 'INTEGER NOT NULL DEFAULT 500',
+        'gain_mode': 'TEXT NOT NULL DEFAULT "auto"',
+        'gain_value': 'INTEGER NOT NULL DEFAULT 50',
+    }
+
+    for column, definition in columns_to_add.items():
+        try:
+            cursor.execute(f"SELECT {column} FROM cameras LIMIT 1")
+        except sqlite3.OperationalError:
+            cursor.execute(f"ALTER TABLE cameras ADD COLUMN {column} {definition}")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -86,6 +101,22 @@ def update_camera(camera_id, name):
     conn.execute(
         "UPDATE cameras SET name = ? WHERE id = ?",
         (name, camera_id)
+    )
+    conn.commit()
+    conn.close()
+
+def update_camera_controls(camera_id, orientation, exposure_mode, exposure_value, gain_mode, gain_value):
+    """Updates a camera's control settings in the database."""
+    conn = get_db_connection()
+    conn.execute(
+        """UPDATE cameras SET
+            orientation = ?,
+            exposure_mode = ?,
+            exposure_value = ?,
+            gain_mode = ?,
+            gain_value = ?
+        WHERE id = ?""",
+        (orientation, exposure_mode, exposure_value, gain_mode, gain_value, camera_id)
     )
     conn.commit()
     conn.close()

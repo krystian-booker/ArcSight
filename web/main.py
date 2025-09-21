@@ -156,6 +156,49 @@ def camera_status(camera_id):
     return jsonify({'error': 'Camera not found'}), 404
 
 
+@app.route('/api/cameras/controls/<int:camera_id>', methods=['GET'])
+def get_camera_controls(camera_id):
+    camera = db.get_camera(camera_id)
+    if camera:
+        controls = {
+            'orientation': camera['orientation'],
+            'exposure_mode': camera['exposure_mode'],
+            'exposure_value': camera['exposure_value'],
+            'gain_mode': camera['gain_mode'],
+            'gain_value': camera['gain_value'],
+        }
+        return jsonify(controls)
+    return jsonify({'error': 'Camera not found'}), 404
+
+
+@app.route('/api/cameras/update_controls/<int:camera_id>', methods=['POST'])
+def update_camera_controls(camera_id):
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid JSON'}), 400
+
+    orientation = data.get('orientation')
+    exposure_mode = data.get('exposure_mode')
+    exposure_value = data.get('exposure_value')
+    gain_mode = data.get('gain_mode')
+    gain_value = data.get('gain_value')
+
+    # Basic validation
+    if None in [orientation, exposure_mode, exposure_value, gain_mode, gain_value]:
+        return jsonify({'error': 'Missing one or more required fields'}), 400
+
+    db.update_camera_controls(
+        camera_id,
+        orientation,
+        exposure_mode,
+        exposure_value,
+        gain_mode,
+        gain_value
+    )
+    
+    return jsonify({'success': True})
+
+
 @app.route('/api/genicam/nodes/<int:camera_id>', methods=['GET'])
 def genicam_nodes(camera_id):
     camera = db.get_camera(camera_id)

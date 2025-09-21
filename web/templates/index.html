@@ -41,7 +41,39 @@
         <div class="bg-gray-800 rounded-lg p-4">
             <h2 class="text-xl font-bold mb-4">Input</h2>
             <div id="pipeline-forms">
-<p>Camera controls will go here (Orientation, Exposure, Gain)</p>
+            <div class="mb-4">
+                <label for="orientation-select" class="block text-sm font-medium text-gray-300 mb-2">Orientation</label>
+                <select id="orientation-select" class="custom-select">
+                    <option value="0">Normal (0°)</option>
+                    <option value="90">Rotate 90°</option>
+                    <option value="180">Rotate 180°</option>
+                    <option value="270">Rotate 270°</option>
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label for="exposure-mode-select" class="block text-sm font-medium text-gray-300 mb-2">Exposure</label>
+                <select id="exposure-mode-select" class="custom-select mb-2">
+                    <option value="auto">Auto</option>
+                    <option value="manual">Manual</option>
+                </select>
+                <div class="flex items-center gap-4">
+                    <input type="range" id="exposure-slider" min="0" max="1000" value="500" class="w-full" disabled>
+                    <input type="number" id="exposure-value" min="0" max="1000" value="500" class="w-24 custom-select" disabled>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label for="gain-mode-select" class="block text-sm font-medium text-gray-300 mb-2">Gain</label>
+                <select id="gain-mode-select" class="custom-select mb-2">
+                    <option value="auto">Auto</option>
+                    <option value="manual">Manual</option>
+                </select>
+                <div class="flex items-center gap-4">
+                    <input type="range" id="gain-slider" min="0" max="100" value="50" class="w-full" disabled>
+                    <input type="number" id="gain-value" min="0" max="100" value="50" class="w-24 custom-select" disabled>
+                </div>
+            </div>
             </div>
         </div>
     </div>
@@ -433,12 +465,101 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function updateCameraControls(cameraId) {
+        if (!cameraId) {
+            // Disable all controls if no camera is selected
+            document.getElementById('orientation-select').disabled = true;
+            document.getElementById('exposure-mode-select').disabled = true;
+            document.getElementById('exposure-slider').disabled = true;
+            document.getElementById('exposure-value').disabled = true;
+            document.getElementById('gain-mode-select').disabled = true;
+            document.getElementById('gain-slider').disabled = true;
+            document.getElementById('gain-value').disabled = true;
+            return;
+        }
+
+        // Enable controls
+        document.getElementById('orientation-select').disabled = false;
+        document.getElementById('exposure-mode-select').disabled = false;
+        document.getElementById('gain-mode-select').disabled = false;
+
+        fetch(`/api/cameras/controls/${cameraId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error fetching camera controls:', data.error);
+                    return;
+                }
+
+                document.getElementById('orientation-select').value = data.orientation;
+                
+                const exposureModeSelect = document.getElementById('exposure-mode-select');
+                const exposureSlider = document.getElementById('exposure-slider');
+                const exposureValue = document.getElementById('exposure-value');
+                exposureModeSelect.value = data.exposure_mode;
+                exposureSlider.value = data.exposure_value;
+                exposureValue.value = data.exposure_value;
+                exposureSlider.disabled = data.exposure_mode === 'auto';
+                exposureValue.disabled = data.exposure_mode === 'auto';
+
+                const gainModeSelect = document.getElementById('gain-mode-select');
+                const gainSlider = document.getElementById('gain-slider');
+                const gainValue = document.getElementById('gain-value');
+                gainModeSelect.value = data.gain_mode;
+                gainSlider.value = data.gain_value;
+                gainValue.value = data.gain_value;
+                gainSlider.disabled = data.gain_mode === 'auto';
+                gainValue.disabled = data.gain_mode === 'auto';
+            })
+            .catch(error => {
+                console.error('Error fetching camera controls:', error);
+            });
+    }
+
+    function saveCameraControls() {
+        const cameraId = document.getElementById('camera-select').value;
+        if (!cameraId) {
+            return;
+        }
+
+        const controls = {
+            orientation: parseInt(document.getElementById('orientation-select').value, 10),
+            exposure_mode: document.getElementById('exposure-mode-select').value,
+            exposure_value: parseInt(document.getElementById('exposure-value').value, 10),
+            gain_mode: document.getElementById('gain-mode-select').value,
+            gain_value: parseInt(document.getElementById('gain-value').value, 10),
+        };
+
+        fetch(`/api/cameras/update_controls/${cameraId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(controls),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Maybe show a success message
+                console.log('Camera controls saved successfully');
+                // We need to refresh the camera feed to see the orientation change
+                updateCameraFeed(cameraId);
+            } else {
+                console.error('Error saving camera controls:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving camera controls:', error);
+        });
+    }
+
     // Initial setup
     const initialCameraId = cameraSelect.value;
     updateCameraFeed(initialCameraId);
     updatePipelineSelection(initialCameraId);
     if (initialCameraId) {
         updatePipelineForm(pipelineSelect.value);
+        updateCameraControls(initialCameraId);
     }
 
     // AprilTag form logic
@@ -564,12 +685,52 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Exposure and Gain controls
+    const exposureModeSelect = document.getElementById('exposure-mode-select');
+    const exposureSlider = document.getElementById('exposure-slider');
+    const exposureValue = document.getElementById('exposure-value');
+
+    const gainModeSelect = document.getElementById('gain-mode-select');
+    const gainSlider = document.getElementById('gain-slider');
+    const gainValue = document.getElementById('gain-value');
+
+    if (exposureModeSelect) {
+        exposureModeSelect.addEventListener('change', function() {
+            const isManual = this.value === 'manual';
+            exposureSlider.disabled = !isManual;
+            exposureValue.disabled = !isManual;
+            saveCameraControls(); // Save on mode change
+        });
+
+        exposureSlider.addEventListener('input', () => exposureValue.value = exposureSlider.value);
+        exposureValue.addEventListener('input', () => exposureSlider.value = exposureValue.value);
+        exposureSlider.addEventListener('change', saveCameraControls); // Save on slider change
+        exposureValue.addEventListener('change', saveCameraControls); // Save on number input change
+    }
+
+    if (gainModeSelect) {
+        gainModeSelect.addEventListener('change', function() {
+            const isManual = this.value === 'manual';
+            gainSlider.disabled = !isManual;
+            gainValue.disabled = !isManual;
+            saveCameraControls(); // Save on mode change
+        });
+
+        gainSlider.addEventListener('input', () => gainValue.value = gainSlider.value);
+        gainValue.addEventListener('input', () => gainSlider.value = gainValue.value);
+        gainSlider.addEventListener('change', saveCameraControls); // Save on slider change
+        gainValue.addEventListener('change', saveCameraControls); // Save on number input change
+    }
+
     // Event Listeners
     cameraSelect.addEventListener('change', function() {
         updateCameraFeed(this.value);
         updatePipelineSelection(this.value);
         updatePipelineForm(pipelineSelect.value);
+        updateCameraControls(this.value);
     });
+    
+    document.getElementById('orientation-select').addEventListener('change', saveCameraControls);
 
     pipelineSelect.addEventListener('change', handlePipelineChange);
     cancelBtn.addEventListener('click', cancelPipelineChange);
