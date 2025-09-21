@@ -41,18 +41,7 @@
         <div class="bg-gray-800 rounded-lg p-4">
             <h2 class="text-xl font-bold mb-4">Input</h2>
             <div id="pipeline-forms">
-                <div id="form-AprilTag" class="pipeline-form">
-                    <h3 class="text-lg font-bold mb-4">AprilTag Configuration</h3>
-                    <p>Example control for AprilTag.</p>
-                </div>
-                <div id="form-Coloured Shape" class="pipeline-form hidden">
-                    <h3 class="text-lg font-bold mb-4">Coloured Shape Configuration</h3>
-                    <p>Example control for Coloured Shape.</p>
-                </div>
-                <div id="form-Object Detection (ML)" class="pipeline-form hidden">
-                    <h3 class="text-lg font-bold mb-4">Object Detection (ML) Configuration</h3>
-                    <p>Example control for Object Detection (ML).</p>
-                </div>
+<p>Camera controls will go here (Orientation, Exposure, Gain)</p>
             </div>
         </div>
     </div>
@@ -67,6 +56,106 @@
                 {% else %}
                     <p class="text-gray-500">No camera feed available.</p>
                 {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Full-width pipeline form card -->
+<div class="w-full bg-gray-800 rounded-lg p-4 mt-4">
+    <div id="pipeline-forms">
+        <div id="form-AprilTag" class="pipeline-form">
+            <h3 class="text-lg font-bold mb-4">AprilTag Configuration</h3>
+            <div class="flex flex-wrap md:flex-nowrap gap-4">
+                <!-- Left side of form -->
+                <div class="w-full md:w-1/2">
+                    <form>
+                        <div class="mb-4">
+                            <label for="target-family" class="block text-sm font-medium text-gray-300 mb-2">Target Family</label>
+                            <select id="target-family" class="custom-select">
+                                <option>36h11 (6.5 inch)</option>
+                                <option>16h5 (6 inch)</option>
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label for="decimate" class="block text-sm font-medium text-gray-300 mb-2">Decimate (1-8)</label>
+                            <input type="range" id="decimate" min="1" max="8" value="1" class="w-full">
+                        </div>
+                        <div class="mb-4">
+                            <label for="blur" class="block text-sm font-medium text-gray-300 mb-2">Blur (0-5)</label>
+                            <input type="range" id="blur" min="0" max="5" value="0" class="w-full">
+                        </div>
+                        <div class="mb-4">
+                            <label for="decision-margin" class="block text-sm font-medium text-gray-300 mb-2">Decision Margin Cutoff (0-250)</label>
+                            <input type="range" id="decision-margin" min="0" max="250" value="35" class="w-full">
+                        </div>
+                        <div class="mb-4">
+                            <label for="pose-iterations" class="block text-sm font-medium text-gray-300 mb-2">Pose Estimation Iterations (0-500)</label>
+                            <input type="range" id="pose-iterations" min="0" max="500" value="40" class="w-full">
+                        </div>
+                        <div class="mb-4 flex items-center">
+                            <input type="checkbox" id="refine-edges" class="form-checkbox h-5 w-5 text-indigo-600">
+                            <label for="refine-edges" class="ml-2 block text-sm text-gray-300">Refine Edges</label>
+                        </div>
+                    </form>
+                </div>
+                <!-- Right side of form -->
+                <div class="w-full md:w-1/2">
+                    <h4 class="text-md font-bold mb-2">Targets</h4>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead class="bg-gray-700">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Fiducial ID</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">X metres</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Y metres</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Z Angle</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Ambiguity</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-gray-800 divide-y divide-gray-700">
+                                <!-- Target rows will be dynamically inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="form-Coloured Shape" class="pipeline-form hidden">
+            <h3 class="text-lg font-bold mb-4">Coloured Shape Configuration</h3>
+        </div>
+        <div id="form-Object Detection (ML)" class="pipeline-form hidden">
+            <h3 class="text-lg font-bold mb-4">Object Detection (ML) Configuration</h3>
+            <div class="flex flex-wrap md:flex-nowrap gap-4">
+                <!-- Left side of form -->
+                <div class="w-full md:w-1/2">
+                    <form>
+                        <div class="mb-4">
+                            <label for="ml-model-upload" class="block text-sm font-medium text-gray-300 mb-2">ML Model File</label>
+                            <input type="file" id="ml-model-upload" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        </div>
+                    </form>
+                </div>
+                <!-- Right side of form -->
+                <div class="w-full md:w-1/2">
+                    <h4 class="text-md font-bold mb-2">Targets</h4>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead class="bg-gray-700">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Detected Object</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">X metres</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Y metres</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Z Angle</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-gray-800 divide-y divide-gray-700">
+                                <!-- Target rows will be dynamically inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
