@@ -30,9 +30,17 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             camera_type TEXT NOT NULL,
-            identifier TEXT NOT NULL UNIQUE
+            identifier TEXT NOT NULL UNIQUE,
+            pipeline TEXT NOT NULL DEFAULT 'AprilTag'
         );
     """)
+    
+    # Migration: Add pipeline column if it doesn't exist
+    try:
+        cursor.execute("SELECT pipeline FROM cameras LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE cameras ADD COLUMN pipeline TEXT NOT NULL DEFAULT 'AprilTag'")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -47,8 +55,8 @@ def add_camera(name, camera_type, identifier):
     conn = get_db_connection()
     try:
         conn.execute(
-            "INSERT INTO cameras (name, camera_type, identifier) VALUES (?, ?, ?)",
-            (name, camera_type, identifier),
+            "INSERT INTO cameras (name, camera_type, identifier, pipeline) VALUES (?, ?, ?, ?)",
+            (name, camera_type, identifier, 'AprilTag'),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -78,6 +86,16 @@ def update_camera(camera_id, name):
     conn.execute(
         "UPDATE cameras SET name = ? WHERE id = ?",
         (name, camera_id)
+    )
+    conn.commit()
+    conn.close()
+
+def update_camera_pipeline(camera_id, pipeline):
+    """Updates a camera's pipeline in the database."""
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE cameras SET pipeline = ? WHERE id = ?",
+        (pipeline, camera_id)
     )
     conn.commit()
     conn.close()

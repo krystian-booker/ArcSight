@@ -3,74 +3,171 @@
 {% block content %}
 <h1 class="text-3xl font-bold mb-4">Dashboard</h1>
 
-<div class="mb-4">
-    <label for="camera-select" class="block text-sm font-medium text-gray-300 mb-2">Select Camera</label>
-    <select id="camera-select" class="custom-select">
-        {% if cameras %}
-            {% for camera in cameras %}
-                <option value="{{ camera.id }}">{{ camera.name }}</option>
-            {% endfor %}
-        {% else %}
-            <option value="">No cameras configured</option>
-        {% endif %}
-    </select>
-</div>
+<div class="flex flex-wrap md:flex-nowrap gap-4">
+    <!-- Left side form -->
+    <div class="w-full md:w-1/3">
+        <div class="bg-gray-800 rounded-lg p-4">
+            <h2 class="text-xl font-bold mb-4">Configuration</h2>
+            <form id="camera-config-form">
+                <div class="mb-4">
+                    <label for="camera-select" class="block text-sm font-medium text-gray-300 mb-2">Select Camera</label>
+                    <select id="camera-select" class="custom-select">
+                        {% if cameras %}
+                            {% for camera in cameras %}
+                                <option value="{{ camera.id }}" data-pipeline="{{ camera.pipeline }}">{{ camera.name }}</option>
+                            {% endfor %}
+                        {% else %}
+                            <option value="">No cameras configured</option>
+                        {% endif %}
+                    </select>
+                </div>
 
-<div class="bg-gray-800 rounded-lg p-4">
-    <div class="camera-feed-container bg-black h-96 flex items-center justify-center rounded">
-        {% if cameras %}
-            <img id="camera-feed" src="" alt="Camera Feed" class="max-h-full max-w-full">
-        {% else %}
-            <p class="text-gray-500">No camera feed available.</p>
-        {% endif %}
+                <div class="mb-4">
+                    <label for="pipeline-select" class="block text-sm font-medium text-gray-300 mb-2">Pipeline Type</label>
+                    <select id="pipeline-select" class="custom-select" {% if not cameras %}disabled{% endif %}>
+                        <option>AprilTag</option>
+                        <option>Coloured Shape</option>
+                        <option>Object Detection (ML)</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Right side video feed -->
+    <div class="w-full md:w-2/3">
+        <div class="bg-gray-800 rounded-lg p-4">
+            <div class="camera-feed-container bg-black flex items-center justify-center rounded">
+                {% if cameras %}
+                    <img id="camera-feed" src="" alt="Camera Feed" class="w-full h-auto rounded">
+                {% else %}
+                    <p class="text-gray-500">No camera feed available.</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
+<!-- Modal -->
+<div id="pipeline-warning-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
+    <div class="bg-gray-800 rounded-lg p-6 shadow-xl">
+        <h3 class="text-lg font-bold mb-4">Warning</h3>
+        <p class="text-gray-300 mb-6">Changing the pipeline will erase all current pipeline settings. Are you sure you want to continue?</p>
+        <div class="flex justify-end gap-4">
+            <button id="cancel-pipeline-change" class="btn btn-secondary">Cancel</button>
+            <button id="confirm-pipeline-change" class="btn btn-danger">Confirm</button>
+        </div>
+    </div>
+</div>
+
+
 {% if cameras %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const cameraSelect = document.getElementById('camera-select');
-        const feedContainer = document.querySelector('.camera-feed-container');
-        let cameraFeed = document.getElementById('camera-feed');
+document.addEventListener('DOMContentLoaded', function() {
+    const cameraSelect = document.getElementById('camera-select');
+    const pipelineSelect = document.getElementById('pipeline-select');
+    const feedContainer = document.querySelector('.camera-feed-container');
+    const modal = document.getElementById('pipeline-warning-modal');
+    const cancelBtn = document.getElementById('cancel-pipeline-change');
+    const confirmBtn = document.getElementById('confirm-pipeline-change');
 
-        function updateCameraFeed(cameraId) {
-            if (!cameraId) {
-                feedContainer.innerHTML = '<p class="text-gray-500">No camera selected.</p>';
-                return;
-            }
+    let cameraFeed = document.getElementById('camera-feed');
+    let selectedPipeline = '';
+    let previousPipeline = '';
 
-            // Check camera status first
-            fetch(`/api/cameras/status/${cameraId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.connected) {
-                        const newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
-                        const existingImg = document.getElementById('camera-feed');
-                        
-                        if (existingImg) {
-                            existingImg.src = newFeedUrl;
-                        } else {
-                            feedContainer.innerHTML = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="max-h-full max-w-full">`;
-                        }
-                    } else {
-                        feedContainer.innerHTML = '<p class="text-red-500">Camera is not connected.</p>';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error checking camera status:', error);
-                    feedContainer.innerHTML = '<p class="text-red-500">Error checking camera status.</p>';
-                });
+    function updateCameraFeed(cameraId) {
+        if (!cameraId) {
+            feedContainer.innerHTML = '<p class="text-gray-500">No camera selected.</p>';
+            return;
         }
 
-        // Set the initial camera feed
-        const initialCameraId = cameraSelect.value;
-        updateCameraFeed(initialCameraId);
+        fetch(`/api/cameras/status/${cameraId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.connected) {
+                    const newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
+                    const existingImg = document.getElementById('camera-feed');
+                    
+                    if (existingImg) {
+                        existingImg.src = newFeedUrl;
+                    } else {
+                        feedContainer.innerHTML = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="w-full h-auto rounded">`;
+                    }
+                } else {
+                    feedContainer.innerHTML = '<p class="text-red-500">Camera is not connected.</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error checking camera status:', error);
+                feedContainer.innerHTML = '<p class="text-red-500">Error checking camera status.</p>';
+            });
+    }
 
-        // Handle camera selection changes
-        cameraSelect.addEventListener('change', function() {
-            updateCameraFeed(this.value);
+    function updatePipelineSelection(cameraId) {
+        const selectedOption = cameraSelect.querySelector(`option[value="${cameraId}"]`);
+        if (selectedOption) {
+            const pipeline = selectedOption.dataset.pipeline;
+            pipelineSelect.value = pipeline;
+            previousPipeline = pipeline;
+        }
+    }
+
+    function handlePipelineChange(event) {
+        selectedPipeline = event.target.value;
+        modal.classList.remove('hidden');
+    }
+
+    function cancelPipelineChange() {
+        pipelineSelect.value = previousPipeline;
+        modal.classList.add('hidden');
+    }
+
+    function confirmPipelineChange() {
+        const cameraId = cameraSelect.value;
+        fetch(`/api/cameras/update_pipeline/${cameraId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ pipeline: selectedPipeline }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const selectedOption = cameraSelect.querySelector(`option[value="${cameraId}"]`);
+                selectedOption.dataset.pipeline = selectedPipeline;
+                previousPipeline = selectedPipeline;
+                // Optionally, you can add a success message here
+            } else {
+                // Handle error
+                console.error('Failed to update pipeline:', data.error);
+                pipelineSelect.value = previousPipeline; // Revert selection
+            }
+        })
+        .catch(error => {
+            console.error('Error updating pipeline:', error);
+            pipelineSelect.value = previousPipeline; // Revert selection
+        })
+        .finally(() => {
+            modal.classList.add('hidden');
         });
+    }
+
+    // Initial setup
+    const initialCameraId = cameraSelect.value;
+    updateCameraFeed(initialCameraId);
+    updatePipelineSelection(initialCameraId);
+
+    // Event Listeners
+    cameraSelect.addEventListener('change', function() {
+        updateCameraFeed(this.value);
+        updatePipelineSelection(this.value);
     });
+
+    pipelineSelect.addEventListener('change', handlePipelineChange);
+    cancelBtn.addEventListener('click', cancelPipelineChange);
+    confirmBtn.addEventListener('click', confirmPipelineChange);
+});
 </script>
 {% endif %}
 {% endblock %}
