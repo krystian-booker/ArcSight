@@ -80,8 +80,10 @@
 
 
     <!-- Right side video feed -->
-    <div class="w-full md:w-1/3">
-        <div class="bg-gray-800 rounded-lg p-4" style="height: 40vh;">
+    <div class="w-full md:w-1/3 flex flex-col">
+        <div id="camera-feed-sentinel" aria-hidden="true"></div>
+        <div id="camera-feed-placeholder" aria-hidden="true"></div>
+        <div id="camera-feed-card" class="bg-gray-800 rounded-xl p-4">
             <div class="camera-feed-container bg-black flex items-center justify-center rounded h-full">
                 {% if cameras %}
                     <img id="camera-feed" src="" alt="Camera Feed" class="w-full h-full object-contain rounded">
@@ -372,6 +374,98 @@ document.addEventListener('DOMContentLoaded', function() {
     const cancelBtn = document.getElementById('cancel-pipeline-change');
     const confirmBtn = document.getElementById('confirm-pipeline-change');
     const pipelineForms = document.querySelectorAll('.pipeline-form');
+    const mainContent = document.querySelector('main');
+    const cameraFeedCard = document.getElementById('camera-feed-card');
+    const cameraFeedPlaceholder = document.getElementById('camera-feed-placeholder');
+    const cameraFeedSentinel = document.getElementById('camera-feed-sentinel');
+
+    if (mainContent && cameraFeedCard && cameraFeedPlaceholder && cameraFeedSentinel) {
+        let restingHeight = cameraFeedCard.getBoundingClientRect().height;
+        let floatTrigger = Math.max(cameraFeedSentinel.getBoundingClientRect().top, 0);
+        let floatBuffer = 8;
+        let isFloating = false;
+        let scrollScheduled = false;
+        const requestFrame = window.requestAnimationFrame
+            ? window.requestAnimationFrame.bind(window)
+            : (callback) => setTimeout(callback, 16);
+
+        const parsePx = (value) => {
+            const parsed = parseFloat(value);
+            return Number.isNaN(parsed) ? 0 : parsed;
+        };
+
+        const syncPlaceholder = () => {
+            cameraFeedPlaceholder.style.height = isFloating ? `${restingHeight}px` : '0px';
+        };
+
+        const recalcMetrics = () => {
+            const mainStyles = window.getComputedStyle(mainContent);
+            floatBuffer = Math.max(8, parsePx(mainStyles.paddingTop) / 4);
+
+            if (!isFloating) {
+                restingHeight = cameraFeedCard.getBoundingClientRect().height;
+                floatTrigger = Math.max(cameraFeedSentinel.getBoundingClientRect().top, 0);
+            }
+
+            syncPlaceholder();
+        };
+
+        const setFloatingState = (shouldFloat) => {
+            if (shouldFloat === isFloating) {
+                return;
+            }
+
+            isFloating = shouldFloat;
+
+            if (isFloating) {
+                syncPlaceholder();
+                cameraFeedCard.classList.add('floating');
+            } else {
+                cameraFeedCard.classList.remove('floating');
+                syncPlaceholder();
+                requestFrame(() => {
+                    restingHeight = cameraFeedCard.getBoundingClientRect().height;
+                    floatTrigger = Math.max(cameraFeedSentinel.getBoundingClientRect().top, 0);
+                    syncPlaceholder();
+                    evaluateFloating();
+                });
+            }
+        };
+
+        const evaluateFloating = () => {
+            const sentinelTop = cameraFeedSentinel.getBoundingClientRect().top;
+            const shouldFloat = sentinelTop <= floatTrigger - floatBuffer;
+            setFloatingState(shouldFloat);
+        };
+
+        const scheduleEvaluation = () => {
+            if (scrollScheduled) {
+                return;
+            }
+
+            scrollScheduled = true;
+            requestFrame(() => {
+                scrollScheduled = false;
+                evaluateFloating();
+            });
+        };
+
+        recalcMetrics();
+        evaluateFloating();
+
+        mainContent.addEventListener('scroll', scheduleEvaluation, { passive: true });
+        window.addEventListener('scroll', scheduleEvaluation, { passive: true });
+        window.addEventListener('resize', () => {
+            recalcMetrics();
+            scheduleEvaluation();
+        });
+        window.addEventListener('load', () => {
+            recalcMetrics();
+            evaluateFloating();
+        });
+    } else if (cameraFeedCard) {
+        cameraFeedCard.classList.add('floating-fallback');
+    }
 
     let cameraFeed = document.getElementById('camera-feed');
     let selectedPipeline = '';
