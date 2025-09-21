@@ -80,8 +80,10 @@
 
 
     <!-- Right side video feed -->
-    <div class="w-full md:w-1/3">
-        <div class="bg-gray-800 rounded-lg p-4" style="height: 40vh;">
+    <div class="w-full md:w-1/3 flex flex-col">
+        <div id="camera-feed-sentinel" aria-hidden="true"></div>
+        <div id="camera-feed-placeholder" aria-hidden="true"></div>
+        <div id="camera-feed-card" class="bg-gray-800 rounded-xl p-4">
             <div class="camera-feed-container bg-black flex items-center justify-center rounded h-full">
                 {% if cameras %}
                     <img id="camera-feed" src="" alt="Camera Feed" class="w-full h-full object-contain rounded">
@@ -372,6 +374,108 @@ document.addEventListener('DOMContentLoaded', function() {
     const cancelBtn = document.getElementById('cancel-pipeline-change');
     const confirmBtn = document.getElementById('confirm-pipeline-change');
     const pipelineForms = document.querySelectorAll('.pipeline-form');
+    const mainContent = document.querySelector('main');
+    const cameraFeedCard = document.getElementById('camera-feed-card');
+    const cameraFeedPlaceholder = document.getElementById('camera-feed-placeholder');
+    const cameraFeedSentinel = document.getElementById('camera-feed-sentinel');
+    let attachCameraFeedListener = () => {};
+    let refreshCameraFeedLayout = () => {};
+
+    if (mainContent && cameraFeedCard && cameraFeedPlaceholder && cameraFeedSentinel) {
+        const isMainScrollable = mainContent.scrollHeight > mainContent.clientHeight + 1;
+        const scrollContainer = isMainScrollable ? mainContent : window;
+        let restingHeight = cameraFeedCard.getBoundingClientRect().height;
+        let triggerOffset = 0;
+        let isFloating = false;
+
+        const syncPlaceholder = () => {
+            cameraFeedPlaceholder.style.height = isFloating ? `${restingHeight}px` : '0px';
+        };
+
+        const computeTriggerOffset = () => {
+            if (scrollContainer === window) {
+                const sentinelRect = cameraFeedSentinel.getBoundingClientRect();
+                triggerOffset = sentinelRect.top + window.scrollY;
+            } else {
+                const containerRect = mainContent.getBoundingClientRect();
+                const sentinelRect = cameraFeedSentinel.getBoundingClientRect();
+                triggerOffset = sentinelRect.top - containerRect.top + mainContent.scrollTop;
+            }
+        };
+
+        const refreshDockedMetrics = () => {
+            if (!isFloating) {
+                restingHeight = cameraFeedCard.getBoundingClientRect().height;
+                computeTriggerOffset();
+            }
+            syncPlaceholder();
+        };
+
+        const setFloatingState = (shouldFloat) => {
+            if (shouldFloat === isFloating) {
+                return;
+            }
+
+            isFloating = shouldFloat;
+
+            if (isFloating) {
+                cameraFeedCard.classList.add('floating');
+                syncPlaceholder();
+            } else {
+                cameraFeedCard.classList.remove('floating');
+                requestAnimationFrame(() => {
+                    refreshDockedMetrics();
+                    evaluateFloating();
+                });
+            }
+        };
+
+        const evaluateFloating = () => {
+            const scrollPosition = scrollContainer === window ? window.scrollY : mainContent.scrollTop;
+            setFloatingState(scrollPosition >= triggerOffset);
+        };
+
+        const handleScroll = () => {
+            evaluateFloating();
+        };
+
+        const handleResize = () => {
+            refreshDockedMetrics();
+            evaluateFloating();
+        };
+
+        refreshDockedMetrics();
+        evaluateFloating();
+
+        if (scrollContainer === window) {
+            window.addEventListener('scroll', handleScroll, { passive: true });
+        } else {
+            scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+        }
+
+        window.addEventListener('resize', handleResize);
+
+        attachCameraFeedListener = () => {
+            const latestFeed = document.getElementById('camera-feed');
+            if (!latestFeed || latestFeed.dataset.loadListenerAttached === 'true') {
+                return;
+            }
+
+            const handleLoad = () => {
+                refreshDockedMetrics();
+            };
+
+            latestFeed.addEventListener('load', handleLoad);
+            latestFeed.dataset.loadListenerAttached = 'true';
+
+            if (latestFeed.complete) {
+                handleLoad();
+            }
+        };
+
+        attachCameraFeedListener();
+        refreshCameraFeedLayout = refreshDockedMetrics;
+    }
 
     let cameraFeed = document.getElementById('camera-feed');
     let selectedPipeline = '';
@@ -380,6 +484,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateCameraFeed(cameraId) {
         if (!cameraId) {
             feedContainer.innerHTML = '<p class="text-gray-500">No camera selected.</p>';
+            cameraFeed = null;
+            refreshCameraFeedLayout();
             return;
         }
 
@@ -389,19 +495,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.connected) {
                     const newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
                     const existingImg = document.getElementById('camera-feed');
-                    
+
                     if (existingImg) {
                         existingImg.src = newFeedUrl;
+                        cameraFeed = existingImg;
+                        attachCameraFeedListener();
                     } else {
                         feedContainer.innerHTML = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="w-full h-auto rounded">`;
+                        cameraFeed = document.getElementById('camera-feed');
+                        attachCameraFeedListener();
                     }
+                    refreshCameraFeedLayout();
                 } else {
                     feedContainer.innerHTML = '<p class="text-red-500">Camera is not connected.</p>';
+                    cameraFeed = null;
+                    refreshCameraFeedLayout();
                 }
             })
             .catch(error => {
                 console.error('Error checking camera status:', error);
                 feedContainer.innerHTML = '<p class="text-red-500">Error checking camera status.</p>';
+                cameraFeed = null;
+                refreshCameraFeedLayout();
             });
     }
 
