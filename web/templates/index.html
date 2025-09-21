@@ -146,6 +146,95 @@
         </div>
         <div id="form-Coloured Shape" class="pipeline-form hidden">
             <h3 class="text-lg font-bold mb-4">Coloured Shape Configuration</h3>
+            <form>
+                <div class="flex flex-wrap md:flex-nowrap gap-4">
+                    <!-- Left side of form -->
+                    <div class="w-full md:w-1/2">
+                        <h4 class="text-md font-bold mb-2">Core Configuration</h4>
+                        <div class="mb-4">
+                            <label for="hue-min" class="block text-sm font-medium text-gray-300 mb-2">Hue Min (0-179)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="hue-min" min="0" max="179" value="0" class="w-full">
+                                <input type="number" id="hue-min-value" min="0" max="179" value="0" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="hue-max" class="block text-sm font-medium text-gray-300 mb-2">Hue Max (0-179)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="hue-max" min="0" max="179" value="179" class="w-full">
+                                <input type="number" id="hue-max-value" min="0" max="179" value="179" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="saturation-min" class="block text-sm font-medium text-gray-300 mb-2">Saturation Min (0-255)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="saturation-min" min="0" max="255" value="0" class="w-full">
+                                <input type="number" id="saturation-min-value" min="0" max="255" value="0" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="saturation-max" class="block text-sm font-medium text-gray-300 mb-2">Saturation Max (0-255)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="saturation-max" min="0" max="255" value="255" class="w-full">
+                                <input type="number" id="saturation-max-value" min="0" max="255" value="255" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="value-min" class="block text-sm font-medium text-gray-300 mb-2">Value Min (0-255)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="value-min" min="0" max="255" value="0" class="w-full">
+                                <input type="number" id="value-min-value" min="0" max="255" value="0" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="value-max" class="block text-sm font-medium text-gray-300 mb-2">Value Max (0-255)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="value-max" min="0" max="255" value="255" class="w-full">
+                                <input type="number" id="value-max-value" min="0" max="255" value="255" class="w-24 custom-select">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Right side of form -->
+                    <div class="w-full md:w-1/2">
+                        <h4 class="text-md font-bold mb-2">Contour Filtering</h4>
+                        <div class="mb-4">
+                            <label for="min-area" class="block text-sm font-medium text-gray-300 mb-2">Min Area</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="min-area" min="0" max="10000" value="100" class="w-full">
+                                <input type="number" id="min-area-value" min="0" max="10000" value="100" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="max-area" class="block text-sm font-medium text-gray-300 mb-2">Max Area</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="max-area" min="0" max="100000" value="10000" class="w-full">
+                                <input type="number" id="max-area-value" min="0" max="100000" value="10000" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="min-aspect-ratio" class="block text-sm font-medium text-gray-300 mb-2">Min Aspect Ratio</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="min-aspect-ratio" min="0" max="20" value="0.5" step="0.1" class="w-full">
+                                <input type="number" id="min-aspect-ratio-value" min="0" max="20" value="0.5" step="0.1" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="max-aspect-ratio" class="block text-sm font-medium text-gray-300 mb-2">Max Aspect Ratio</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="max-aspect-ratio" min="0" max="20" value="2.0" step="0.1" class="w-full">
+                                <input type="number" id="max-aspect-ratio-value" min="0" max="20" value="2.0" step="0.1" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="min-fullness" class="block text-sm font-medium text-gray-300 mb-2">Min Fullness</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="min-fullness" min="0" max="1" value="0.4" step="0.01" class="w-full">
+                                <input type="number" id="min-fullness-value" min="0" max="1" value="0.4" step="0.01" class="w-24 custom-select">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
         </div>
         <div id="form-Object Detection (ML)" class="pipeline-form hidden">
             <h3 class="text-lg font-bold mb-4">Object Detection (ML) Configuration</h3>
@@ -156,6 +245,31 @@
                         <div class="mb-4">
                             <label for="ml-model-upload" class="block text-sm font-medium text-gray-300 mb-2">ML Model File</label>
                             <input type="file" id="ml-model-upload" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        </div>
+                        <div class="mb-4">
+                            <label for="labels-file-upload" class="block text-sm font-medium text-gray-300 mb-2">Labels File</label>
+                            <input type="file" id="labels-file-upload" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        </div>
+                        <div class="mb-4">
+                            <label for="confidence-threshold" class="block text-sm font-medium text-gray-300 mb-2">Confidence Threshold (0-1)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="confidence-threshold" min="0" max="1" value="0.5" step="0.01" class="w-full">
+                                <input type="number" id="confidence-threshold-value" min="0" max="1" value="0.5" step="0.01" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="target-class-filter" class="block text-sm font-medium text-gray-300 mb-2">Target Class Filter</label>
+                            <select id="target-class-filter" class="custom-select" multiple>
+                                <!-- Options will be populated dynamically -->
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label for="inference-device" class="block text-sm font-medium text-gray-300 mb-2">Inference Device</label>
+                            <select id="inference-device" class="custom-select">
+                                <option>CPU</option>
+                                <option>GPU</option>
+                                <option>EdgeTPU</option>
+                            </select>
                         </div>
                     </form>
                 </div>
@@ -346,6 +460,52 @@ document.addEventListener('DOMContentLoaded', function() {
             // Set initial value
             updateTagSize();
         }
+    }
+
+    // Coloured Shape form logic
+    const colouredShapeForm = document.getElementById('form-Coloured Shape');
+    if (colouredShapeForm) {
+        const sliders = [
+            { range: 'hue-min', value: 'hue-min-value' },
+            { range: 'hue-max', value: 'hue-max-value' },
+            { range: 'saturation-min', value: 'saturation-min-value' },
+            { range: 'saturation-max', value: 'saturation-max-value' },
+            { range: 'value-min', value: 'value-min-value' },
+            { range: 'value-max', value: 'value-max-value' },
+            { range: 'min-area', value: 'min-area-value' },
+            { range: 'max-area', value: 'max-area-value' },
+            { range: 'min-aspect-ratio', value: 'min-aspect-ratio-value' },
+            { range: 'max-aspect-ratio', value: 'max-aspect-ratio-value' },
+            { range: 'min-fullness', value: 'min-fullness-value' }
+        ];
+
+        sliders.forEach(pair => {
+            const rangeInput = document.getElementById(pair.range);
+            const numberInput = document.getElementById(pair.value);
+
+            if (rangeInput && numberInput) {
+                rangeInput.addEventListener('input', () => numberInput.value = rangeInput.value);
+                numberInput.addEventListener('input', () => rangeInput.value = numberInput.value);
+            }
+        });
+    }
+
+    // Object Detection (ML) form logic
+    const objectDetectionForm = document.getElementById('form-Object Detection (ML)');
+    if (objectDetectionForm) {
+        const sliders = [
+            { range: 'confidence-threshold', value: 'confidence-threshold-value' }
+        ];
+
+        sliders.forEach(pair => {
+            const rangeInput = document.getElementById(pair.range);
+            const numberInput = document.getElementById(pair.value);
+
+            if (rangeInput && numberInput) {
+                rangeInput.addEventListener('input', () => numberInput.value = rangeInput.value);
+                numberInput.addEventListener('input', () => rangeInput.value = numberInput.value);
+            }
+        });
     }
 
     // Event Listeners
