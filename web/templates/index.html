@@ -374,12 +374,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const cancelBtn = document.getElementById('cancel-pipeline-change');
     const confirmBtn = document.getElementById('confirm-pipeline-change');
     const pipelineForms = document.querySelectorAll('.pipeline-form');
-    const mainContent = document.querySelector('main');
     const cameraFeedCard = document.getElementById('camera-feed-card');
     const cameraFeedPlaceholder = document.getElementById('camera-feed-placeholder');
     const cameraFeedSentinel = document.getElementById('camera-feed-sentinel');
 
-    if (mainContent && cameraFeedCard && cameraFeedPlaceholder && cameraFeedSentinel) {
+    if (cameraFeedCard && cameraFeedPlaceholder && cameraFeedSentinel) {
         let restingHeight = cameraFeedCard.getBoundingClientRect().height;
         let isFloating = false;
 
@@ -408,14 +407,28 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         };
 
+        const determineShouldFloat = (entry) => {
+            if (entry.isIntersecting) {
+                return false;
+            }
+
+            if (entry.boundingClientRect) {
+                return entry.boundingClientRect.top < 0;
+            }
+
+            return true;
+        };
+
         if ('IntersectionObserver' in window) {
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach((entry) => {
-                    setFloatingState(!entry.isIntersecting);
+                    setFloatingState(determineShouldFloat(entry));
                 });
-            }, { root: mainContent, threshold: 0, rootMargin: '0px' });
+            }, { root: null, threshold: 0, rootMargin: '0px' });
 
             observer.observe(cameraFeedSentinel);
+
+            setFloatingState(cameraFeedSentinel.getBoundingClientRect().top < 0);
         } else {
             cameraFeedCard.classList.add('floating-fallback');
         }
