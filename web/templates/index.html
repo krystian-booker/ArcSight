@@ -71,31 +71,54 @@
                 <div class="w-full md:w-1/2">
                     <form>
                         <div class="mb-4">
-                            <label for="target-family" class="block text-sm font-medium text-gray-300 mb-2">Target Family</label>
+                            <label for="target-family" class="block text-sm font-medium text-gray-300 mb-2" title="The family of AprilTags to detect.">Target Family</label>
                             <select id="target-family" class="custom-select">
-                                <option>36h11 (6.5 inch)</option>
-                                <option>16h5 (6 inch)</option>
+                                <option value="36h11">36h11</option>
+                                <option value="16h5">16h5</option>
                             </select>
                         </div>
                         <div class="mb-4">
-                            <label for="decimate" class="block text-sm font-medium text-gray-300 mb-2">Decimate (1-8)</label>
-                            <input type="range" id="decimate" min="1" max="8" value="1" class="w-full">
+                            <label for="tag-size" class="block text-sm font-medium text-gray-300 mb-2" title="The size of the AprilTag in inches.">Tag Size (inches)</label>
+                            <input type="number" id="tag-size" step="0.1" class="custom-select w-full">
                         </div>
                         <div class="mb-4">
-                            <label for="blur" class="block text-sm font-medium text-gray-300 mb-2">Blur (0-5)</label>
-                            <input type="range" id="blur" min="0" max="5" value="0" class="w-full">
+                            <label for="threads" class="block text-sm font-medium text-gray-300 mb-2" title="The number of threads to use for processing.">Threads (1-8)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="threads" min="1" max="8" value="1" step="1" class="w-full">
+                                <input type="number" id="threads-value" min="1" max="8" value="1" class="w-24 custom-select">
+                            </div>
                         </div>
                         <div class="mb-4">
-                            <label for="decision-margin" class="block text-sm font-medium text-gray-300 mb-2">Decision Margin Cutoff (0-250)</label>
-                            <input type="range" id="decision-margin" min="0" max="250" value="35" class="w-full">
+                            <label for="decimate" class="block text-sm font-medium text-gray-300 mb-2" title="Decimation of the image. Higher values increase performance but decrease accuracy.">Decimate (1-8)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="decimate" min="1" max="8" value="1" step="1" class="w-full">
+                                <input type="number" id="decimate-value" min="1" max="8" value="1" class="w-24 custom-select">
+                            </div>
                         </div>
                         <div class="mb-4">
-                            <label for="pose-iterations" class="block text-sm font-medium text-gray-300 mb-2">Pose Estimation Iterations (0-500)</label>
-                            <input type="range" id="pose-iterations" min="0" max="500" value="40" class="w-full">
+                            <label for="blur" class="block text-sm font-medium text-gray-300 mb-2" title="Amount of Gaussian blur to apply to the image. Helps with noisy images.">Blur (0-5)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="blur" min="0" max="5" value="0" step="0.1" class="w-full">
+                                <input type="number" id="blur-value" min="0" max="5" value="0" step="0.1" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="decision-margin" class="block text-sm font-medium text-gray-300 mb-2" title="How confident the detector must be to accept a detection.">Decision Margin Cutoff (0-250)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="decision-margin" min="0" max="250" value="35" class="w-full">
+                                <input type="number" id="decision-margin-value" min="0" max="250" value="35" class="w-24 custom-select">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="pose-iterations" class="block text-sm font-medium text-gray-300 mb-2" title="Number of iterations to refine the pose estimation.">Pose Estimation Iterations (0-500)</label>
+                            <div class="flex items-center gap-4">
+                                <input type="range" id="pose-iterations" min="0" max="500" value="40" class="w-full">
+                                <input type="number" id="pose-iterations-value" min="0" max="500" value="40" class="w-24 custom-select">
+                            </div>
                         </div>
                         <div class="mb-4 flex items-center">
                             <input type="checkbox" id="refine-edges" class="form-checkbox h-5 w-5 text-indigo-600">
-                            <label for="refine-edges" class="ml-2 block text-sm text-gray-300">Refine Edges</label>
+                            <label for="refine-edges" class="ml-2 block text-sm text-gray-300" title="Refine the edges of the detected tag for better pose estimation.">Refine Edges</label>
                         </div>
                     </form>
                 </div>
@@ -286,6 +309,44 @@ document.addEventListener('DOMContentLoaded', function() {
         updatePipelineForm(pipelineSelect.value);
     }
 
+    // AprilTag form logic
+    const aprilTagForm = document.getElementById('form-AprilTag');
+    if (aprilTagForm) {
+        const sliders = [
+            { range: 'threads', value: 'threads-value' },
+            { range: 'decimate', value: 'decimate-value' },
+            { range: 'blur', value: 'blur-value' },
+            { range: 'decision-margin', value: 'decision-margin-value' },
+            { range: 'pose-iterations', value: 'pose-iterations-value' }
+        ];
+
+        sliders.forEach(pair => {
+            const rangeInput = document.getElementById(pair.range);
+            const numberInput = document.getElementById(pair.value);
+
+            if (rangeInput && numberInput) {
+                rangeInput.addEventListener('input', () => numberInput.value = rangeInput.value);
+                numberInput.addEventListener('input', () => rangeInput.value = numberInput.value);
+            }
+        });
+
+        const targetFamilySelect = document.getElementById('target-family');
+        const tagSizeInput = document.getElementById('tag-size');
+
+        if (targetFamilySelect && tagSizeInput) {
+            const updateTagSize = () => {
+                if (targetFamilySelect.value === '36h11') {
+                    tagSizeInput.value = 6.5;
+                } else if (targetFamilySelect.value === '16h5') {
+                    tagSizeInput.value = 6.0;
+                }
+            };
+
+            targetFamilySelect.addEventListener('change', updateTagSize);
+            // Set initial value
+            updateTagSize();
+        }
+    }
 
     // Event Listeners
     cameraSelect.addEventListener('change', function() {
