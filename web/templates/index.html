@@ -413,7 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 entries.forEach((entry) => {
                     setFloatingState(!entry.isIntersecting);
                 });
-            }, { root: mainContent, threshold: 0, rootMargin: '-120px 0px 0px 0px' });
+            }, { root: mainContent, threshold: 0, rootMargin: '0px' });
 
             observer.observe(cameraFeedSentinel);
         } else {
