@@ -1,7 +1,7 @@
 import cv2
 from harvesters.core import Harvester
 import os
-import db
+from . import db
 import threading
 import time
 
