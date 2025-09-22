@@ -6,7 +6,7 @@
 <!-- Global Settings -->
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
     <h2 class="text-2xl font-bold mb-4">Global Settings</h2>
-    <form action="{{ url_for('update_global_settings') }}" method="POST">
+    <form action="{{ url_for('main.update_global_settings') }}" method="POST">
         <div class="space-y-4">
             <div>
                 <label for="team-number" class="block text-sm font-medium text-gray-300">Team Number</label>
@@ -41,7 +41,7 @@
 <!-- GenICam Settings -->
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
     <h2 class="text-2xl font-bold mb-4">GenICam Settings</h2>
-    <form action="{{ url_for('update_genicam_settings') }}" method="POST">
+    <form action="{{ url_for('main.update_genicam_settings') }}" method="POST">
         <div class="mb-4">
             <label for="genicam-cti-path" class="block text-sm font-medium text-gray-300">GenTL Producer Path (.cti file):</label>
             <span class="text-sm text-gray-400">Current: {{ settings.genicam_cti_path or 'Not set' }}</span>
@@ -59,18 +59,18 @@
     <h2 class="text-2xl font-bold mb-4">Device Control</h2>
     <div class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button onclick="postToAction('{{ url_for('restart_app') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Vision-Tools</button>
-            <button onclick="postToAction('{{ url_for('reboot_device') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Device</button>
+            <button onclick="postToAction('{{ url_for('main.restart_app') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Vision-Tools</button>
+            <button onclick="postToAction('{{ url_for('main.reboot_device') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Device</button>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <a href="{{ url_for('export_db') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center w-full">Export Configuration</a>
+            <a href="{{ url_for('main.export_db') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center w-full">Export Configuration</a>
             <button onclick="document.getElementById('import-db-input').click()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded w-full">Import Configuration</button>
         </div>
         <div>
             <button onclick="openFactoryResetModal()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded w-full">Factory Reset</button>
         </div>
     </div>
-    <form id="import-db-form" action="{{ url_for('import_db') }}" method="POST" enctype="multipart/form-data" class="hidden">
+    <form id="import-db-form" action="{{ url_for('main.import_db') }}" method="POST" enctype="multipart/form-data" class="hidden">
         <input type="file" name="database" id="import-db-input" onchange="document.getElementById('import-db-form').submit()">
     </form>
 </div>
@@ -110,7 +110,7 @@ function closeFactoryResetModal() {
 }
 
 function confirmFactoryReset() {
-    postToAction('{{ url_for('factory_reset') }}');
+    postToAction('{{ url_for('main.factory_reset') }}');
     closeFactoryResetModal();
 }
 </script>
