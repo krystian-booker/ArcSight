@@ -16,7 +16,7 @@
                     <select id="camera-select" class="custom-select">
                         {% if cameras %}
                             {% for camera in cameras %}
-                                <option value="{{ camera.id }}" data-pipeline="{{ camera.pipeline }}">{{ camera.name }}</option>
+                                <option value="{{ camera.id }}">{{ camera.name }}</option>
                             {% endfor %}
                         {% else %}
                             <option value="">No cameras configured</option>
@@ -25,8 +25,31 @@
                 </div>
 
                 <div class="mb-4">
-                    <label for="pipeline-select" class="block text-sm font-medium text-gray-300 mb-2">Pipeline Type</label>
-                    <select id="pipeline-select" class="custom-select" {% if not cameras %}disabled{% endif %}>
+                    <label for="pipeline-select" class="block text-sm font-medium text-gray-300 mb-2">Pipeline</label>
+                    <div class="flex items-center">
+                        <select id="pipeline-select" class="custom-select w-full">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                        <button id="add-pipeline-btn" class="ml-2 btn btn-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        <button id="edit-pipeline-btn" class="ml-2 btn btn-secondary">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                            </svg>
+                        </button>
+                        <button id="delete-pipeline-btn" class="ml-2 btn btn-danger">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="pipeline-type-select" class="block text-sm font-medium text-gray-300 mb-2">Pipeline Type</label>
+                    <select id="pipeline-type-select" class="custom-select" {% if not cameras %}disabled{% endif %}>
                         <option>AprilTag</option>
                         <option>Coloured Shape</option>
                         <option>Object Detection (ML)</option>
@@ -369,15 +392,14 @@
 document.addEventListener('DOMContentLoaded', function() {
     const cameraSelect = document.getElementById('camera-select');
     const pipelineSelect = document.getElementById('pipeline-select');
+    const pipelineTypeSelect = document.getElementById('pipeline-type-select');
+    const addPipelineBtn = document.getElementById('add-pipeline-btn');
+    const editPipelineBtn = document.getElementById('edit-pipeline-btn');
+    const deletePipelineBtn = document.getElementById('delete-pipeline-btn');
     const feedContainer = document.querySelector('.camera-feed-container');
-    const modal = document.getElementById('pipeline-warning-modal');
-    const cancelBtn = document.getElementById('cancel-pipeline-change');
-    const confirmBtn = document.getElementById('confirm-pipeline-change');
     const pipelineForms = document.querySelectorAll('.pipeline-form');
 
     let cameraFeed = document.getElementById('camera-feed');
-    let selectedPipeline = '';
-    let previousPipeline = '';
 
     function updateCameraFeed(cameraId) {
         if (!cameraId) {
@@ -407,54 +429,105 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
-    function updatePipelineSelection(cameraId) {
-        const selectedOption = cameraSelect.querySelector(`option[value="${cameraId}"]`);
-        if (selectedOption) {
-            const pipeline = selectedOption.dataset.pipeline;
-            pipelineSelect.value = pipeline;
-            previousPipeline = pipeline;
+    function updatePipelineList(cameraId) {
+        if (!cameraId) {
+            pipelineSelect.innerHTML = '<option value="">No camera selected</option>';
+            pipelineTypeSelect.disabled = true;
+            return;
+        }
+
+        pipelineTypeSelect.disabled = false;
+
+        fetch(`/api/cameras/${cameraId}/pipelines`)
+            .then(response => response.json())
+            .then(pipelines => {
+                pipelineSelect.innerHTML = '';
+                if (pipelines.length > 0) {
+                    pipelines.forEach(pipeline => {
+                        const option = document.createElement('option');
+                        option.value = pipeline.id;
+                        option.textContent = pipeline.name;
+                        option.dataset.type = pipeline.pipeline_type;
+                        pipelineSelect.appendChild(option);
+                    });
+                    updatePipelineDetails();
+                } else {
+                    pipelineSelect.innerHTML = '<option value="">No pipelines configured</option>';
+                }
+            });
+    }
+
+    function updatePipelineDetails() {
+        const selectedOption = pipelineSelect.options[pipelineSelect.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+            pipelineTypeSelect.value = selectedOption.dataset.type;
+            updatePipelineForm(selectedOption.dataset.type);
         }
     }
 
-    function handlePipelineChange(event) {
-        selectedPipeline = event.target.value;
-        modal.classList.remove('hidden');
-    }
-
-    function cancelPipelineChange() {
-        pipelineSelect.value = previousPipeline;
-        modal.classList.add('hidden');
-    }
-
-    function confirmPipelineChange() {
+    function addPipeline() {
         const cameraId = cameraSelect.value;
-        fetch(`/api/cameras/update_pipeline/${cameraId}`, {
+        if (!cameraId) return;
+
+        const pipelineName = prompt("Enter pipeline name", "default");
+        if (!pipelineName) return;
+
+        fetch(`/api/cameras/${cameraId}/pipelines`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ pipeline: selectedPipeline }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: pipelineName, pipeline_type: 'AprilTag' })
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const selectedOption = cameraSelect.querySelector(`option[value="${cameraId}"]`);
-                selectedOption.dataset.pipeline = selectedPipeline;
-                previousPipeline = selectedPipeline;
-                // Optionally, you can add a success message here
-            } else {
-                // Handle error
-                console.error('Failed to update pipeline:', data.error);
-                pipelineSelect.value = previousPipeline; // Revert selection
-            }
+        .then(() => updatePipelineList(cameraId));
+    }
+
+    function updatePipeline() {
+        const pipelineId = pipelineSelect.value;
+        const selectedOption = pipelineSelect.options[pipelineSelect.selectedIndex];
+        if (!pipelineId || !selectedOption) return;
+        
+        const newName = prompt("Enter new name", selectedOption.textContent);
+        if (!newName) return;
+
+        const pipelineType = selectedOption.dataset.type;
+
+        fetch(`/api/pipelines/${pipelineId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName, pipeline_type: pipelineType })
         })
-        .catch(error => {
-            console.error('Error updating pipeline:', error);
-            pipelineSelect.value = previousPipeline; // Revert selection
-        })
-        .finally(() => {
-            modal.classList.add('hidden');
+        .then(() => {
+            selectedOption.textContent = newName;
         });
+    }
+    
+    function updatePipelineType() {
+        const pipelineId = pipelineSelect.value;
+        const selectedOption = pipelineSelect.options[pipelineSelect.selectedIndex];
+        if (!pipelineId || !selectedOption) return;
+
+        const newType = pipelineTypeSelect.value;
+
+        fetch(`/api/pipelines/${pipelineId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: selectedOption.textContent, pipeline_type: newType })
+        })
+        .then(() => {
+            selectedOption.dataset.type = newType;
+            updatePipelineForm(newType);
+        });
+    }
+
+    function deletePipeline() {
+        const pipelineId = pipelineSelect.value;
+        if (!pipelineId) return;
+
+        if (confirm('Are you sure you want to delete this pipeline?')) {
+            fetch(`/api/pipelines/${pipelineId}`, {
+                method: 'DELETE'
+            })
+            .then(() => updatePipelineList(cameraSelect.value));
+        }
     }
 
     function updatePipelineForm(pipelineName) {
@@ -557,11 +630,39 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initial setup
     const initialCameraId = cameraSelect.value;
-    updateCameraFeed(initialCameraId);
-    updatePipelineSelection(initialCameraId);
     if (initialCameraId) {
-        updatePipelineForm(pipelineSelect.value);
+        updateCameraFeed(initialCameraId);
+        updatePipelineList(initialCameraId);
         updateCameraControls(initialCameraId);
+    }
+
+    // Event Listeners
+    cameraSelect.addEventListener('change', function() {
+        updateCameraFeed(this.value);
+        updatePipelineList(this.value);
+        updateCameraControls(this.value);
+    });
+
+    pipelineSelect.addEventListener('change', updatePipelineDetails);
+    addPipelineBtn.addEventListener('click', addPipeline);
+    editPipelineBtn.addEventListener('click', updatePipeline);
+    deletePipelineBtn.addEventListener('click', deletePipeline);
+    pipelineTypeSelect.addEventListener('change', updatePipelineType);
+    
+    document.getElementById('orientation-select').addEventListener('change', saveCameraControls);
+
+    // Floating video feed logic
+    const videoFeedWrapper = document.getElementById('video-feed-wrapper');
+    if (videoFeedWrapper) {
+        const videoFeedOffsetTop = videoFeedWrapper.offsetTop;
+
+        window.addEventListener('scroll', () => {
+            if (window.scrollY >= videoFeedOffsetTop) {
+                videoFeedWrapper.classList.add('floating');
+            } else {
+                videoFeedWrapper.classList.remove('floating');
+            }
+        });
     }
 
     // AprilTag form logic
@@ -683,74 +784,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (rangeInput && numberInput) {
                 rangeInput.addEventListener('input', () => numberInput.value = rangeInput.value);
                 numberInput.addEventListener('input', () => rangeInput.value = numberInput.value);
-            }
-        });
-    }
-
-    // Exposure and Gain controls
-    const exposureModeSelect = document.getElementById('exposure-mode-select');
-    const exposureSlider = document.getElementById('exposure-slider');
-    const exposureValue = document.getElementById('exposure-value');
-
-    const gainModeSelect = document.getElementById('gain-mode-select');
-    const gainSlider = document.getElementById('gain-slider');
-    const gainValue = document.getElementById('gain-value');
-
-    if (exposureModeSelect) {
-        exposureModeSelect.addEventListener('change', function() {
-            const isManual = this.value === 'manual';
-            exposureSlider.disabled = !isManual;
-            exposureValue.disabled = !isManual;
-            saveCameraControls(); // Save on mode change
-        });
-
-        exposureSlider.addEventListener('input', () => exposureValue.value = exposureSlider.value);
-        exposureValue.addEventListener('input', () => exposureSlider.value = exposureValue.value);
-        exposureSlider.addEventListener('change', saveCameraControls); // Save on slider change
-        exposureValue.addEventListener('change', saveCameraControls); // Save on number input change
-    }
-
-    if (gainModeSelect) {
-        gainModeSelect.addEventListener('change', function() {
-            const isManual = this.value === 'manual';
-            gainSlider.disabled = !isManual;
-            gainValue.disabled = !isManual;
-            saveCameraControls(); // Save on mode change
-        });
-
-        gainSlider.addEventListener('input', () => gainValue.value = gainSlider.value);
-        gainValue.addEventListener('input', () => gainSlider.value = gainValue.value);
-        gainSlider.addEventListener('change', saveCameraControls); // Save on slider change
-        gainValue.addEventListener('change', saveCameraControls); // Save on number input change
-    }
-
-    // Event Listeners
-    cameraSelect.addEventListener('change', function() {
-        updateCameraFeed(this.value);
-        updatePipelineSelection(this.value);
-        updatePipelineForm(pipelineSelect.value);
-        updateCameraControls(this.value);
-    });
-    
-    document.getElementById('orientation-select').addEventListener('change', saveCameraControls);
-
-    pipelineSelect.addEventListener('change', handlePipelineChange);
-    cancelBtn.addEventListener('click', cancelPipelineChange);
-    confirmBtn.addEventListener('click', function() {
-        confirmPipelineChange();
-        updatePipelineForm(selectedPipeline);
-    });
-
-    // Floating video feed logic
-    const videoFeedWrapper = document.getElementById('video-feed-wrapper');
-    if (videoFeedWrapper) {
-        const videoFeedOffsetTop = videoFeedWrapper.offsetTop;
-
-        window.addEventListener('scroll', () => {
-            if (window.scrollY >= videoFeedOffsetTop) {
-                videoFeedWrapper.classList.add('floating');
-            } else {
-                videoFeedWrapper.classList.remove('floating');
             }
         });
     }

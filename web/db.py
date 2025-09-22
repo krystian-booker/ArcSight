@@ -25,21 +25,35 @@ def init_db():
     """Initializes the database and creates tables if they don't exist."""
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Enable foreign key support
+    cursor.execute("PRAGMA foreign_keys = ON")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS cameras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             camera_type TEXT NOT NULL,
-            identifier TEXT NOT NULL UNIQUE,
-            pipeline TEXT NOT NULL DEFAULT 'AprilTag'
+            identifier TEXT NOT NULL UNIQUE
+        );
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pipelines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            pipeline_type TEXT NOT NULL DEFAULT 'AprilTag',
+            camera_id INTEGER NOT NULL,
+            FOREIGN KEY (camera_id) REFERENCES cameras (id) ON DELETE CASCADE
         );
     """)
     
-    # Migration: Add pipeline column if it doesn't exist
+    # Migration: Drop the old 'pipeline' column from the 'cameras' table
     try:
-        cursor.execute("SELECT pipeline FROM cameras LIMIT 1")
+        # This will fail if the column doesn't exist, which is fine.
+        cursor.execute("ALTER TABLE cameras DROP COLUMN pipeline")
     except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE cameras ADD COLUMN pipeline TEXT NOT NULL DEFAULT 'AprilTag'")
+        pass
 
     # Migration: Add camera control columns if they don't exist
     columns_to_add = {
@@ -66,18 +80,19 @@ def init_db():
     conn.close()
 
 def add_camera(name, camera_type, identifier):
-    """Adds a new camera to the database."""
+    """Adds a new camera to the database and a default pipeline."""
     conn = get_db_connection()
     try:
-        conn.execute(
-            "INSERT INTO cameras (name, camera_type, identifier, pipeline) VALUES (?, ?, ?, ?)",
-            (name, camera_type, identifier, 'AprilTag'),
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO cameras (name, camera_type, identifier) VALUES (?, ?, ?)",
+            (name, camera_type, identifier),
         )
+        camera_id = cursor.lastrowid
+        add_pipeline(camera_id, 'default', 'AprilTag')
         conn.commit()
     except sqlite3.IntegrityError:
         print(f"Camera with identifier '{identifier}' already exists.")
-        # In a real app, you might want to raise this exception
-        # for the caller to handle, but for now we'll just ignore it.
     finally:
         conn.close()
 
@@ -121,16 +136,6 @@ def update_camera_controls(camera_id, orientation, exposure_mode, exposure_value
     conn.commit()
     conn.close()
 
-def update_camera_pipeline(camera_id, pipeline):
-    """Updates a camera's pipeline in the database."""
-    conn = get_db_connection()
-    conn.execute(
-        "UPDATE cameras SET pipeline = ? WHERE id = ?",
-        (pipeline, camera_id)
-    )
-    conn.commit()
-    conn.close()
-
 def clear_setting(key):
     """Deletes a setting from the database by its key."""
     conn = get_db_connection()
@@ -142,6 +147,47 @@ def delete_camera(camera_id):
     """Deletes a camera from the database by its ID."""
     conn = get_db_connection()
     conn.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
+    conn.commit()
+    conn.close()
+
+def add_pipeline(camera_id, name, pipeline_type):
+    """Adds a new pipeline to the database for a specific camera."""
+    conn = get_db_connection()
+    conn.execute(
+        "INSERT INTO pipelines (camera_id, name, pipeline_type) VALUES (?, ?, ?)",
+        (camera_id, name, pipeline_type),
+    )
+    conn.commit()
+    conn.close()
+
+def get_pipelines(camera_id):
+    """Retrieves all pipelines for a specific camera."""
+    conn = get_db_connection()
+    pipelines = conn.execute("SELECT * FROM pipelines WHERE camera_id = ?", (camera_id,)).fetchall()
+    conn.close()
+    return pipelines
+
+def get_pipeline(pipeline_id):
+    """Retrieves a single pipeline by its ID."""
+    conn = get_db_connection()
+    pipeline = conn.execute("SELECT * FROM pipelines WHERE id = ?", (pipeline_id,)).fetchone()
+    conn.close()
+    return pipeline
+
+def update_pipeline(pipeline_id, name, pipeline_type):
+    """Updates a pipeline's name and type in the database."""
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE pipelines SET name = ?, pipeline_type = ? WHERE id = ?",
+        (name, pipeline_type, pipeline_id)
+    )
+    conn.commit()
+    conn.close()
+
+def delete_pipeline(pipeline_id):
+    """Deletes a pipeline from the database by its ID."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM pipelines WHERE id = ?", (pipeline_id,))
     conn.commit()
     conn.close()
 
@@ -167,6 +213,7 @@ def factory_reset():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM cameras")
+    cursor.execute("DELETE FROM pipelines")
     cursor.execute("DELETE FROM settings")
     conn.commit()
     conn.close()

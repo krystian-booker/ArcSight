@@ -88,25 +88,44 @@ def update_camera(camera_id):
         db.update_camera(camera_id, name)
     return redirect(url_for('cameras'))
 
-@app.route('/api/cameras/update_pipeline/<int:camera_id>', methods=['POST'])
-def update_camera_pipeline(camera_id):
-    data = request.get_json()
-    pipeline = data.get('pipeline')
-
-    if not pipeline:
-        return jsonify({'error': 'Pipeline is required'}), 400
-
-    camera = db.get_camera(camera_id)
-    if not camera:
-        return jsonify({'error': 'Camera not found'}), 404
-
-    db.update_camera_pipeline(camera_id, pipeline)
-    return jsonify({'success': True})
-
 @app.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
     db.delete_camera(camera_id)
     return redirect(url_for('cameras'))
+
+@app.route('/api/cameras/<int:camera_id>/pipelines', methods=['GET'])
+def get_pipelines(camera_id):
+    pipelines = db.get_pipelines(camera_id)
+    return jsonify([dict(row) for row in pipelines])
+
+@app.route('/api/cameras/<int:camera_id>/pipelines', methods=['POST'])
+def add_pipeline(camera_id):
+    data = request.get_json()
+    name = data.get('name')
+    pipeline_type = data.get('pipeline_type')
+
+    if not name or not pipeline_type:
+        return jsonify({'error': 'Name and pipeline_type are required'}), 400
+
+    db.add_pipeline(camera_id, name, pipeline_type)
+    return jsonify({'success': True})
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
+def update_pipeline(pipeline_id):
+    data = request.get_json()
+    name = data.get('name')
+    pipeline_type = data.get('pipeline_type')
+
+    if not name or not pipeline_type:
+        return jsonify({'error': 'Name and pipeline_type are required'}), 400
+
+    db.update_pipeline(pipeline_id, name, pipeline_type)
+    return jsonify({'success': True})
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
+def delete_pipeline(pipeline_id):
+    db.delete_pipeline(pipeline_id)
+    return jsonify({'success': True})
 
 @app.route('/config/genicam/update', methods=['POST'])
 def update_genicam_settings():
