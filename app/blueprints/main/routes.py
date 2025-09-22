@@ -1,29 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, Response, send_file, g
-import db
-import camera_utils
+from flask import render_template, request, redirect, url_for, jsonify, Response, send_file
+from app import db, camera_utils
 import cv2
 import numpy as np
 import os
 import shutil
-
-app = Flask(__name__, template_folder='templates', static_folder='static')
-
-@app.before_request
-def before_request():
-    """Create a database connection before each request."""
-    g.db = db.get_db()
-
-@app.teardown_appcontext
-def teardown_db(exception):
-    """Close the database connection after each request."""
-    db_conn = g.pop('db', None)
-    if db_conn is not None:
-        db_conn.close()
-
-@app.route('/')
-def dashboard():
-    cameras = db.get_cameras()
-    return render_template('index.html', cameras=cameras)
+from . import main
 
 def create_error_image(message, width=640, height=480):
     """Creates a black image with white text."""
@@ -40,7 +21,12 @@ def create_error_image(message, width=640, height=480):
     ret, jpeg = cv2.imencode('.jpg', img)
     return jpeg.tobytes()
 
-@app.route('/video_feed/<int:camera_id>')
+@main.route('/')
+def dashboard():
+    cameras = db.get_cameras()
+    return render_template('index.html', cameras=cameras)
+
+@main.route('/video_feed/<int:camera_id>')
 def video_feed(camera_id):
     camera = db.get_camera(camera_id)
     if not camera:
@@ -53,13 +39,13 @@ def video_feed(camera_id):
     return Response(camera_utils.get_camera_feed(camera),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/cameras')
+@main.route('/cameras')
 def cameras():
     cameras = db.get_cameras()
     genicam_cti_path = db.get_setting('genicam_cti_path')
     return render_template('cameras.html', cameras=cameras, genicam_enabled=bool(genicam_cti_path))
 
-@app.route('/settings')
+@main.route('/settings')
 def settings():
     all_settings = {
         'genicam_cti_path': db.get_setting('genicam_cti_path'),
@@ -69,14 +55,14 @@ def settings():
     }
     return render_template('settings.html', settings=all_settings)
 
-@app.route('/settings/global/update', methods=['POST'])
+@main.route('/settings/global/update', methods=['POST'])
 def update_global_settings():
     db.update_setting('team_number', request.form.get('team_number'))
     db.update_setting('ip_mode', request.form.get('ip_mode'))
     db.update_setting('hostname', request.form.get('hostname'))
-    return redirect(url_for('settings'))
+    return redirect(url_for('main.settings'))
 
-@app.route('/cameras/add', methods=['POST'])
+@main.route('/cameras/add', methods=['POST'])
 def add_camera():
     name = request.form.get('camera-name')
     camera_type = request.form.get('camera-type')
@@ -87,31 +73,31 @@ def add_camera():
         identifier = request.form.get('genicam-camera-select')
     else:
         # Handle error: invalid camera type
-        return redirect(url_for('cameras'))
+        return redirect(url_for('main.cameras'))
 
     if name and camera_type and identifier:
         db.add_camera(name, camera_type, identifier)
 
-    return redirect(url_for('cameras'))
+    return redirect(url_for('main.cameras'))
 
-@app.route('/cameras/update/<int:camera_id>', methods=['POST'])
+@main.route('/cameras/update/<int:camera_id>', methods=['POST'])
 def update_camera(camera_id):
     name = request.form.get('camera-name')
     if name:
         db.update_camera(camera_id, name)
-    return redirect(url_for('cameras'))
+    return redirect(url_for('main.cameras'))
 
-@app.route('/cameras/delete/<int:camera_id>', methods=['POST'])
+@main.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
     db.delete_camera(camera_id)
-    return redirect(url_for('cameras'))
+    return redirect(url_for('main.cameras'))
 
-@app.route('/api/cameras/<int:camera_id>/pipelines', methods=['GET'])
+@main.route('/api/cameras/<int:camera_id>/pipelines', methods=['GET'])
 def get_pipelines(camera_id):
     pipelines = db.get_pipelines(camera_id)
     return jsonify([dict(row) for row in pipelines])
 
-@app.route('/api/cameras/<int:camera_id>/pipelines', methods=['POST'])
+@main.route('/api/cameras/<int:camera_id>/pipelines', methods=['POST'])
 def add_pipeline(camera_id):
     data = request.get_json()
     name = data.get('name')
@@ -123,7 +109,7 @@ def add_pipeline(camera_id):
     db.add_pipeline(camera_id, name, pipeline_type)
     return jsonify({'success': True})
 
-@app.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
+@main.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
 def update_pipeline(pipeline_id):
     data = request.get_json()
     name = data.get('name')
@@ -135,12 +121,12 @@ def update_pipeline(pipeline_id):
     db.update_pipeline(pipeline_id, name, pipeline_type)
     return jsonify({'success': True})
 
-@app.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
+@main.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
 def delete_pipeline(pipeline_id):
     db.delete_pipeline(pipeline_id)
     return jsonify({'success': True})
 
-@app.route('/config/genicam/update', methods=['POST'])
+@main.route('/config/genicam/update', methods=['POST'])
 def update_genicam_settings():
     path = request.form.get('genicam-cti-path', '').strip()
 
@@ -154,16 +140,16 @@ def update_genicam_settings():
     # Re-initialize the harvester to apply the new settings
     camera_utils.reinitialize_harvester()
     
-    return redirect(url_for('settings'))
+    return redirect(url_for('main.settings'))
 
-@app.route('/config/genicam/clear', methods=['POST'])
+@main.route('/config/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     db.clear_setting('genicam_cti_path')
     # Re-initialize the harvester to apply the new settings
     camera_utils.reinitialize_harvester()
-    return redirect(url_for('settings'))
+    return redirect(url_for('main.settings'))
 
-@app.route('/api/cameras/discover')
+@main.route('/api/cameras/discover')
 def discover_cameras():
     existing_identifiers = request.args.get('existing', '').split(',')
     
@@ -179,7 +165,7 @@ def discover_cameras():
         'genicam': filtered_genicam
     })
 
-@app.route('/api/cameras/status/<int:camera_id>')
+@main.route('/api/cameras/status/<int:camera_id>')
 def camera_status(camera_id):
     camera = db.get_camera(camera_id)
     if camera:
@@ -187,7 +173,7 @@ def camera_status(camera_id):
         return jsonify({'connected': is_connected})
     return jsonify({'error': 'Camera not found'}), 404
 
-@app.route('/api/cameras/controls/<int:camera_id>', methods=['GET'])
+@main.route('/api/cameras/controls/<int:camera_id>', methods=['GET'])
 def get_camera_controls(camera_id):
     camera = db.get_camera(camera_id)
     if camera:
@@ -201,7 +187,7 @@ def get_camera_controls(camera_id):
         return jsonify(controls)
     return jsonify({'error': 'Camera not found'}), 404
 
-@app.route('/api/cameras/update_controls/<int:camera_id>', methods=['POST'])
+@main.route('/api/cameras/update_controls/<int:camera_id>', methods=['POST'])
 def update_camera_controls(camera_id):
     data = request.get_json()
     if not data:
@@ -228,7 +214,7 @@ def update_camera_controls(camera_id):
     
     return jsonify({'success': True})
 
-@app.route('/api/genicam/nodes/<int:camera_id>', methods=['GET'])
+@main.route('/api/genicam/nodes/<int:camera_id>', methods=['GET'])
 def genicam_nodes(camera_id):
     camera = db.get_camera(camera_id)
     if not camera or camera['camera_type'] != 'GenICam':
@@ -240,7 +226,7 @@ def genicam_nodes(camera_id):
 
     return jsonify({'nodes': nodes})
 
-@app.route('/api/genicam/nodes/<int:camera_id>', methods=['POST'])
+@main.route('/api/genicam/nodes/<int:camera_id>', methods=['POST'])
 def update_genicam_node(camera_id):
     camera = db.get_camera(camera_id)
     if not camera or camera['camera_type'] != 'GenICam':
@@ -261,7 +247,7 @@ def update_genicam_node(camera_id):
     status_code = status_code or 400
     return jsonify({'error': message or 'Failed to update node.'}), status_code
 
-@app.route('/control/restart-app', methods=['POST'])
+@main.route('/control/restart-app', methods=['POST'])
 def restart_app():
     # This is a placeholder. A real implementation would need a more robust way
     # to restart the application, e.g., using a process manager.
@@ -269,7 +255,7 @@ def restart_app():
     os._exit(0)  # This will stop the current process.
     return "Restarting...", 200
 
-@app.route('/control/reboot', methods=['POST'])
+@main.route('/control/reboot', methods=['POST'])
 def reboot_device():
     # This is a placeholder. The actual command might vary by OS.
     # Use with extreme caution.
@@ -277,30 +263,23 @@ def reboot_device():
     os.system("sudo reboot")
     return "Rebooting...", 200
 
-@app.route('/control/export-db')
+@main.route('/control/export-db')
 def export_db():
     return send_file(db.DB_PATH, as_attachment=True)
 
-@app.route('/control/import-db', methods=['POST'])
+@main.route('/control/import-db', methods=['POST'])
 def import_db():
     if 'database' not in request.files:
-        return redirect(url_for('settings'))
+        return redirect(url_for('main.settings'))
     file = request.files['database']
     if file.filename == '':
-        return redirect(url_for('settings'))
+        return redirect(url_for('main.settings'))
     if file:
         file.save(db.DB_PATH)
-    return redirect(url_for('settings'))
+    return redirect(url_for('main.settings'))
 
-@app.route('/control/factory-reset', methods=['POST'])
+@main.route('/control/factory-reset', methods=['POST'])
 def factory_reset():
     db.factory_reset()
     camera_utils.reinitialize_harvester()
-    return redirect(url_for('settings'))
-
-if __name__ == '__main__':
-    with app.app_context():
-        # Initialize the database and harvester on startup within the app context
-        db.init_db()
-        camera_utils.initialize_harvester()
-    app.run(host='0.0.0.0', port=8080, debug=True, use_reloader=False)
+    return redirect(url_for('main.settings'))
