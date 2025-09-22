@@ -1,11 +1,24 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, Response, send_file
+from flask import Flask, render_template, request, redirect, url_for, jsonify, Response, send_file, g
 import db
 import camera_utils
 import cv2
 import numpy as np
 import os
 import shutil
+
 app = Flask(__name__, template_folder='templates', static_folder='static')
+
+@app.before_request
+def before_request():
+    """Create a database connection before each request."""
+    g.db = db.get_db()
+
+@app.teardown_appcontext
+def teardown_db(exception):
+    """Close the database connection after each request."""
+    db_conn = g.pop('db', None)
+    if db_conn is not None:
+        db_conn.close()
 
 @app.route('/')
 def dashboard():
@@ -174,7 +187,6 @@ def camera_status(camera_id):
         return jsonify({'connected': is_connected})
     return jsonify({'error': 'Camera not found'}), 404
 
-
 @app.route('/api/cameras/controls/<int:camera_id>', methods=['GET'])
 def get_camera_controls(camera_id):
     camera = db.get_camera(camera_id)
@@ -188,7 +200,6 @@ def get_camera_controls(camera_id):
         }
         return jsonify(controls)
     return jsonify({'error': 'Camera not found'}), 404
-
 
 @app.route('/api/cameras/update_controls/<int:camera_id>', methods=['POST'])
 def update_camera_controls(camera_id):
@@ -217,7 +228,6 @@ def update_camera_controls(camera_id):
     
     return jsonify({'success': True})
 
-
 @app.route('/api/genicam/nodes/<int:camera_id>', methods=['GET'])
 def genicam_nodes(camera_id):
     camera = db.get_camera(camera_id)
@@ -229,7 +239,6 @@ def genicam_nodes(camera_id):
         return jsonify({'error': error}), 500
 
     return jsonify({'nodes': nodes})
-
 
 @app.route('/api/genicam/nodes/<int:camera_id>', methods=['POST'])
 def update_genicam_node(camera_id):
@@ -290,7 +299,8 @@ def factory_reset():
     return redirect(url_for('settings'))
 
 if __name__ == '__main__':
-    # Initialize the database and harvester on startup
-    db.init_db()
-    camera_utils.initialize_harvester()
+    with app.app_context():
+        # Initialize the database and harvester on startup within the app context
+        db.init_db()
+        camera_utils.initialize_harvester()
     app.run(host='0.0.0.0', port=8080, debug=True, use_reloader=False)

@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from appdirs import user_data_dir
+from flask import g
 
 # Define the application name and author for appdirs
 APP_NAME = "VisionTools"
@@ -15,15 +16,23 @@ os.makedirs(data_dir, exist_ok=True)
 # Define the database path
 DB_PATH = os.path.join(data_dir, "config.db")
 
-def get_db_connection():
-    """Establishes a connection to the database."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_db():
+    """Gets the current database connection, or creates a new one if none exists."""
+    if 'db' not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
+
+def close_db(e=None):
+    """Closes the database connection if it exists."""
+    db_conn = g.pop('db', None)
+    if db_conn is not None:
+        db_conn.close()
 
 def init_db():
     """Initializes the database and creates tables if they don't exist."""
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Enable foreign key support
@@ -81,49 +90,44 @@ def init_db():
 
 def add_camera(name, camera_type, identifier):
     """Adds a new camera to the database and a default pipeline."""
-    conn = get_db_connection()
+    db = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = db.cursor()
         cursor.execute(
             "INSERT INTO cameras (name, camera_type, identifier) VALUES (?, ?, ?)",
             (name, camera_type, identifier),
         )
         camera_id = cursor.lastrowid
         add_pipeline(camera_id, 'default', 'AprilTag')
-        conn.commit()
+        db.commit()
     except sqlite3.IntegrityError:
         print(f"Camera with identifier '{identifier}' already exists.")
-    finally:
-        conn.close()
 
 def get_cameras():
     """Retrieves all cameras from the database."""
-    conn = get_db_connection()
-    cameras = conn.execute("SELECT * FROM cameras").fetchall()
-    conn.close()
+    db = get_db()
+    cameras = db.execute("SELECT * FROM cameras").fetchall()
     return cameras
 
 def get_camera(camera_id):
     """Retrieves a single camera by its ID."""
-    conn = get_db_connection()
-    camera = conn.execute("SELECT * FROM cameras WHERE id = ?", (camera_id,)).fetchone()
-    conn.close()
+    db = get_db()
+    camera = db.execute("SELECT * FROM cameras WHERE id = ?", (camera_id,)).fetchone()
     return camera
 
 def update_camera(camera_id, name):
     """Updates a camera's name in the database."""
-    conn = get_db_connection()
-    conn.execute(
+    db = get_db()
+    db.execute(
         "UPDATE cameras SET name = ? WHERE id = ?",
         (name, camera_id)
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 def update_camera_controls(camera_id, orientation, exposure_mode, exposure_value, gain_mode, gain_value):
     """Updates a camera's control settings in the database."""
-    conn = get_db_connection()
-    conn.execute(
+    db = get_db()
+    db.execute(
         """UPDATE cameras SET
             orientation = ?,
             exposure_mode = ?,
@@ -133,90 +137,76 @@ def update_camera_controls(camera_id, orientation, exposure_mode, exposure_value
         WHERE id = ?""",
         (orientation, exposure_mode, exposure_value, gain_mode, gain_value, camera_id)
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 def clear_setting(key):
     """Deletes a setting from the database by its key."""
-    conn = get_db_connection()
-    conn.execute("DELETE FROM settings WHERE key = ?", (key,))
-    conn.commit()
-    conn.close()
+    db = get_db()
+    db.execute("DELETE FROM settings WHERE key = ?", (key,))
+    db.commit()
     
 def delete_camera(camera_id):
     """Deletes a camera from the database by its ID."""
-    conn = get_db_connection()
-    conn.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
-    conn.commit()
-    conn.close()
+    db = get_db()
+    db.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
+    db.commit()
 
 def add_pipeline(camera_id, name, pipeline_type):
     """Adds a new pipeline to the database for a specific camera."""
-    conn = get_db_connection()
-    conn.execute(
+    db = get_db()
+    db.execute(
         "INSERT INTO pipelines (camera_id, name, pipeline_type) VALUES (?, ?, ?)",
         (camera_id, name, pipeline_type),
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 def get_pipelines(camera_id):
     """Retrieves all pipelines for a specific camera."""
-    conn = get_db_connection()
-    pipelines = conn.execute("SELECT * FROM pipelines WHERE camera_id = ?", (camera_id,)).fetchall()
-    conn.close()
+    db = get_db()
+    pipelines = db.execute("SELECT * FROM pipelines WHERE camera_id = ?", (camera_id,)).fetchall()
     return pipelines
 
 def get_pipeline(pipeline_id):
     """Retrieves a single pipeline by its ID."""
-    conn = get_db_connection()
-    pipeline = conn.execute("SELECT * FROM pipelines WHERE id = ?", (pipeline_id,)).fetchone()
-    conn.close()
+    db = get_db()
+    pipeline = db.execute("SELECT * FROM pipelines WHERE id = ?", (pipeline_id,)).fetchone()
     return pipeline
 
 def update_pipeline(pipeline_id, name, pipeline_type):
     """Updates a pipeline's name and type in the database."""
-    conn = get_db_connection()
-    conn.execute(
+    db = get_db()
+    db.execute(
         "UPDATE pipelines SET name = ?, pipeline_type = ? WHERE id = ?",
         (name, pipeline_type, pipeline_id)
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 def delete_pipeline(pipeline_id):
     """Deletes a pipeline from the database by its ID."""
-    conn = get_db_connection()
-    conn.execute("DELETE FROM pipelines WHERE id = ?", (pipeline_id,))
-    conn.commit()
-    conn.close()
+    db = get_db()
+    db.execute("DELETE FROM pipelines WHERE id = ?", (pipeline_id,))
+    db.commit()
 
 def get_setting(key):
     """Retrieves a setting value by its key."""
-    conn = get_db_connection()
-    setting = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-    conn.close()
+    db = get_db()
+    setting = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     return setting['value'] if setting else ""
 
 def update_setting(key, value):
     """Updates or inserts a setting."""
-    conn = get_db_connection()
-    conn.execute(
+    db = get_db()
+    db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
         (key, value)
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 def factory_reset():
     """Deletes all data from all tables."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    db = get_db()
+    cursor = db.cursor()
     cursor.execute("DELETE FROM cameras")
     cursor.execute("DELETE FROM pipelines")
     cursor.execute("DELETE FROM settings")
-    conn.commit()
-    conn.close()
-
-# Initialize the database when this module is first imported.
-init_db()
+    db.commit()
