@@ -1,5 +1,5 @@
 from flask import render_template, request, redirect, url_for, jsonify, Response, send_file
-from app import db, camera_utils
+from app import db, camera_utils, network_utils
 import cv2
 import numpy as np
 import os
@@ -53,7 +53,14 @@ def settings():
         'ip_mode': db.get_setting('ip_mode'),
         'hostname': db.get_setting('hostname'),
     }
-    return render_template('settings.html', settings=all_settings)
+    # Get current network settings from the OS
+    current_network_settings = network_utils.get_network_settings()
+    current_hostname = network_utils.get_hostname()
+
+    return render_template('settings.html', 
+                           settings=all_settings, 
+                           current_network_settings=current_network_settings, 
+                           current_hostname=current_hostname)
 
 @main.route('/settings/global/update', methods=['POST'])
 def update_global_settings():

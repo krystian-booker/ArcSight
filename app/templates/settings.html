@@ -16,18 +16,18 @@
                 <label class="block text-sm font-medium text-gray-300">IP Assignment Mode</label>
                 <div class="mt-2 space-x-4">
                     <label class="inline-flex items-center">
-                        <input type="radio" name="ip_mode" value="DHCP" class="text-indigo-600 bg-gray-700 border-gray-600 focus:ring-indigo-500" {% if settings.ip_mode == 'DHCP' %}checked{% endif %}>
+                        <input type="radio" name="ip_mode" value="DHCP" class="text-indigo-600 bg-gray-700 border-gray-600 focus:ring-indigo-500" {% if current_network_settings.ip_mode == 'DHCP' %}checked{% endif %}>
                         <span class="ml-2 text-sm text-gray-300">DHCP</span>
                     </label>
                     <label class="inline-flex items-center">
-                        <input type="radio" name="ip_mode" value="Static" class="text-indigo-600 bg-gray-700 border-gray-600 focus:ring-indigo-500" {% if settings.ip_mode == 'Static' %}checked{% endif %}>
+                        <input type="radio" name="ip_mode" value="Static" class="text-indigo-600 bg-gray-700 border-gray-600 focus:ring-indigo-500" {% if current_network_settings.ip_mode == 'Static' %}checked{% endif %}>
                         <span class="ml-2 text-sm text-gray-300">Static</span>
                     </label>
                 </div>
             </div>
             <div>
                 <label for="hostname" class="block text-sm font-medium text-gray-300">Hostname</label>
-                <input type="text" name="hostname" id="hostname" value="{{ settings.hostname or 'vision-tools' }}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                <input type="text" name="hostname" id="hostname" value="{{ current_hostname }}" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
         </div>
         <div class="mt-6">
