@@ -642,25 +642,24 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!modal || !cameraNameInput || !saveButton) return;
 
         const isAddMode = !addCameraFields.classList.contains('hidden');
-        const cameraName = cameraNameInput.value.trim();
-        let isCameraSelected = false;
+        const isNameValid = cameraNameInput.value.trim() !== '';
 
-        if (isAddMode) {
-            const cameraType = cameraTypeSelect.value;
-            if (cameraType === 'USB') {
-                isCameraSelected = !usbSelect.disabled && usbSelect.value;
-            } else if (cameraType === 'GenICam') {
-                isCameraSelected = !genicamSelect.disabled && genicamSelect.value;
-            }
-        }
-
-        const isNameValid = cameraName !== '';
-        
-        if (isAddMode) {
-            saveButton.disabled = !(isNameValid && isCameraSelected);
-        } else {
+        if (!isAddMode) {
             saveButton.disabled = !isNameValid;
+            return;
         }
+
+        const cameraType = cameraTypeSelect.value;
+        const isTypeSelected = !!cameraType;
+
+        let isCameraSelected = false;
+        if (cameraType === 'USB') {
+            isCameraSelected = !!usbSelect.value;
+        } else if (cameraType === 'GenICam') {
+            isCameraSelected = !!genicamSelect.value;
+        }
+
+        saveButton.disabled = !(isNameValid && isTypeSelected && isCameraSelected);
     }
 
     // Attach event listeners to all relevant inputs
@@ -717,39 +716,51 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Dynamic Camera Discovery for Add Modal ---
     cameraTypeSelect.addEventListener('change', function() {
         const selectedType = this.value;
-        
+
         usbSection.classList.add('hidden');
         genicamSection.classList.add('hidden');
         usbSelect.disabled = true;
         genicamSelect.disabled = true;
-        validateModalForm(); // Update state immediately
 
-        if (selectedType === 'USB' || selectedType === 'GenICam') {
-            const existingIdentifiers = new Set();
-            document.querySelectorAll('tr[data-camera-id]').forEach(row => {
-                const identifier = row.cells[2].textContent.trim();
-                existingIdentifiers.add(identifier);
-            });
-            const url = `/api/cameras/discover?existing=${Array.from(existingIdentifiers).join(',')}`;
-            
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    if (selectedType === 'USB') {
-                        populateSelect(usbSelect, data.usb);
-                        usbSection.classList.remove('hidden');
-                        usbSelect.disabled = false;
-                    } else if (selectedType === 'GenICam') {
-                        populateSelect(genicamSelect, data.genicam);
-                        genicamSection.classList.remove('hidden');
-                        genicamSelect.disabled = false;
-                    }
-                })
-                .catch(error => {
-                    console.error('Error discovering cameras:', error);
-                    validateModalForm();
-                });
+        if (!selectedType) {
+            validateModalForm();
+            return;
         }
+        
+        const existingIdentifiers = new Set();
+        document.querySelectorAll('tr[data-camera-id]').forEach(row => {
+            const identifier = row.cells[2].textContent.trim();
+            existingIdentifiers.add(identifier);
+        });
+        const url = `/api/cameras/discover?existing=${Array.from(existingIdentifiers).join(',')}`;
+        
+        // Show a loading state in the relevant select
+        const targetSelect = selectedType === 'USB' ? usbSelect : genicamSelect;
+        const targetSection = selectedType === 'USB' ? usbSection : genicamSection;
+
+        targetSection.classList.remove('hidden');
+        targetSelect.disabled = true;
+        targetSelect.innerHTML = '<option>Loading...</option>';
+        validateModalForm();
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (selectedType === 'USB') {
+                    populateSelect(usbSelect, data.usb);
+                    usbSelect.disabled = false;
+                } else if (selectedType === 'GenICam') {
+                    populateSelect(genicamSelect, data.genicam);
+                    genicamSelect.disabled = false;
+                }
+                // Re-validate after populating and enabling the select
+                validateModalForm();
+            })
+            .catch(error => {
+                console.error('Error discovering cameras:', error);
+                targetSelect.innerHTML = '<option>Error loading cameras</option>';
+                validateModalForm();
+            });
     });
 
     function populateSelect(selectElement, items) {
@@ -761,15 +772,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 option.textContent = item.name;
                 selectElement.appendChild(option);
             });
+            // Auto-select the first camera if it's the only one
+            if (items.length === 1) {
+                selectElement.value = items[0].identifier;
+            }
         } else {
             const option = document.createElement('option');
-            option.value = ''; // Ensure value is empty when no cameras are found
+            option.value = '';
             option.textContent = 'No available cameras found';
             option.disabled = true;
             selectElement.appendChild(option);
         }
-        validateModalForm(); // Update button state after populating
-        selectElement.addEventListener('change', validateModalForm);
     }
 });
 </script>
