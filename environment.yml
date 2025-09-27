@@ -93,6 +93,7 @@ dependencies:
   - pillow=11.3.0=py311h6dd570d_0
   - pip=25.2=pyhc872135_0
   - pixman=0.46.4=h09dc60e_0
+  - psutil=7.0.0=py311h254cc4a_0
   - pyparsing=3.2.0=py311hca03da5_0
   - python=3.11.13=h19e8193_0
   - python-dateutil=2.9.0post0=py311hca03da5_2
