@@ -186,72 +186,75 @@ def get_camera_feed(camera):
                 return
 
             with ia:
-                ia.start_acquisition()
-                start_time = time.time()
-                frame_count = 0
-                fps = 0
-                while True:
-                    try:
-                        with ia.fetch_buffer() as buffer:
-                            component = buffer.payload.components[0]
-                            img = component.data.reshape(component.height, component.width)
-                            
-                            # Convert to BGR for color text overlay
-                            if 'Bayer' in component.data_format:
-                                img = cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
-                            elif len(img.shape) == 2:
-                                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                ia.start()
+                try:
+                    start_time = time.time()
+                    frame_count = 0
+                    fps = 0
+                    while True:
+                        try:
+                            with ia.fetch() as buffer:
+                                component = buffer.payload.components[0]
+                                img = component.data.reshape(component.height, component.width)
+                                
+                                # Convert to BGR for color text overlay
+                                if 'Bayer' in component.data_format:
+                                    img = cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
+                                elif len(img.shape) == 2:
+                                    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-                            # Apply orientation
-                            orientation = camera['orientation']
-                            if orientation == 90:
-                                img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
-                            elif orientation == 180:
-                                img = cv2.rotate(img, cv2.ROTATE_180)
-                            elif orientation == 270:
-                                img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                                # Apply orientation
+                                orientation = camera['orientation']
+                                if orientation == 90:
+                                    img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+                                elif orientation == 180:
+                                    img = cv2.rotate(img, cv2.ROTATE_180)
+                                elif orientation == 270:
+                                    img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-                            # Calculate FPS
-                            frame_count += 1
-                            elapsed_time = time.time() - start_time
-                            if elapsed_time >= 1.0:
-                                fps = frame_count / elapsed_time
-                                frame_count = 0
-                                start_time = time.time()
-                            
-                            # Draw FPS on the frame in the top-right corner
-                            text = f"FPS: {fps:.2f}"
-                            font_scale = 0.7
-                            font_thickness = 2
-                            text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-                            text_x = img.shape[1] - text_size[0] - 10
-                            text_y = text_size[1] + 10
-                            cv2.putText(img, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
+                                # Calculate FPS
+                                frame_count += 1
+                                elapsed_time = time.time() - start_time
+                                if elapsed_time >= 1.0:
+                                    fps = frame_count / elapsed_time
+                                    frame_count = 0
+                                    start_time = time.time()
+                                
+                                # Draw FPS on the frame in the top-right corner
+                                text = f"FPS: {fps:.2f}"
+                                font_scale = 0.7
+                                font_thickness = 2
+                                text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                                text_x = img.shape[1] - text_size[0] - 10
+                                text_y = text_size[1] + 10
+                                cv2.putText(img, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
 
-                            # Display DeviceTemperature if available
-                            try:
-                                temp_node = ia.remote_device.node_map.get_node('DeviceTemperature')
-                                if temp_node and genapi.EAccessMode(temp_node.get_access_mode()) in READABLE_ACCESS_MODES:
-                                    temp_value = temp_node.value
-                                    temp_text = f"DeviceTemperature: {temp_value:.2f} C"
-                                    temp_text_size, _ = cv2.getTextSize(temp_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-                                    temp_text_x = img.shape[1] - temp_text_size[0] - 10
-                                    
-                                    # Position temperature text below the FPS text
-                                    temp_text_y = text_y + text_size[1] + 10
-                                    
-                                    cv2.putText(img, temp_text, (temp_text_x, temp_text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), font_thickness)
-                            except Exception as e:
-                                print(f"Could not read DeviceTemperature: {e}")
+                                # Display DeviceTemperature if available
+                                try:
+                                    temp_node = ia.remote_device.node_map.get_node('DeviceTemperature')
+                                    if temp_node and genapi.EAccessMode(temp_node.get_access_mode()) in READABLE_ACCESS_MODES:
+                                        temp_value = temp_node.value
+                                        temp_text = f"DeviceTemperature: {temp_value:.2f} C"
+                                        temp_text_size, _ = cv2.getTextSize(temp_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                                        temp_text_x = img.shape[1] - temp_text_size[0] - 10
+                                        
+                                        # Position temperature text below the FPS text
+                                        temp_text_y = text_y + text_size[1] + 10
+                                        
+                                        cv2.putText(img, temp_text, (temp_text_x, temp_text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), font_thickness)
+                                except Exception as e:
+                                    print(f"Could not read DeviceTemperature: {e}")
 
 
-                            ret, jpeg = cv2.imencode('.jpg', img)
-                            if ret:
-                                yield (b'--frame\r\n'
-                                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-                    except Exception as fetch_e:
-                        print(f"Error fetching buffer for GenICam {camera['identifier']}: {fetch_e}")
-                        break
+                                ret, jpeg = cv2.imencode('.jpg', img)
+                                if ret:
+                                    yield (b'--frame\r\n'
+                                           b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                        except Exception as fetch_e:
+                            print(f"Error fetching buffer for GenICam {camera['identifier']}: {fetch_e}")
+                            break
+                finally:
+                    ia.stop()
         except Exception as e:
             print(f"Error with GenICam feed for {camera['identifier']}: {e}")
 
