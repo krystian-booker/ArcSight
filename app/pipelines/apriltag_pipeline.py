@@ -45,7 +45,7 @@ class AprilTagPipeline:
 
         print(f"AprilTag detector initialized with family: {family}")
 
-def process_frame(self, frame, camera_params):
+    def process_frame(self, frame, camera_params):
         """
         Processes a single frame to find AprilTags and estimate their pose.
 
