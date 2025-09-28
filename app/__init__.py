@@ -1,4 +1,5 @@
 from flask import Flask, g
+import atexit
 from . import db
 from . import camera_utils
 
@@ -21,9 +22,13 @@ def create_app():
     from .blueprints.main import main as main_blueprint
     app.register_blueprint(main_blueprint)
 
-    # Initialize db and harvester
+    # Initialize db, harvester, and start camera threads
     with app.app_context():
         db.init_db()
         camera_utils.initialize_harvester()
+        camera_utils.start_all_camera_threads()
+
+    # Register a function to stop all threads when the application exits
+    atexit.register(camera_utils.stop_all_camera_threads)
 
     return app

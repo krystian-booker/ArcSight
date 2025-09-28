@@ -89,7 +89,7 @@ def init_db():
     conn.close()
 
 def add_camera(name, camera_type, identifier):
-    """Adds a new camera to the database and a default pipeline."""
+    """Adds a new camera to the database, a default pipeline, and returns the new camera's ID."""
     db = get_db()
     try:
         cursor = db.cursor()
@@ -98,10 +98,14 @@ def add_camera(name, camera_type, identifier):
             (name, camera_type, identifier),
         )
         camera_id = cursor.lastrowid
-        add_pipeline(camera_id, 'default', 'AprilTag')
-        db.commit()
+        if camera_id:
+            add_pipeline(camera_id, 'default', 'AprilTag')
+            db.commit()
+            return camera_id
     except sqlite3.IntegrityError:
         print(f"Camera with identifier '{identifier}' already exists.")
+        return None
+
 
 def get_cameras():
     """Retrieves all cameras from the database."""

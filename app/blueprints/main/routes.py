@@ -73,17 +73,20 @@ def update_global_settings():
 def add_camera():
     name = request.form.get('camera-name')
     camera_type = request.form.get('camera-type')
+    identifier = None
     
     if camera_type == 'USB':
         identifier = request.form.get('usb-camera-select')
     elif camera_type == 'GenICam':
         identifier = request.form.get('genicam-camera-select')
     else:
-        # Handle error: invalid camera type
         return redirect(url_for('main.cameras'))
 
     if name and camera_type and identifier:
-        db.add_camera(name, camera_type, identifier)
+        camera_id = db.add_camera(name, camera_type, identifier)
+        if camera_id:
+            new_camera = db.get_camera(camera_id)
+            camera_utils.start_camera_thread(new_camera)
 
     return redirect(url_for('main.cameras'))
 
@@ -96,7 +99,10 @@ def update_camera(camera_id):
 
 @main.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
-    db.delete_camera(camera_id)
+    camera = db.get_camera(camera_id)
+    if camera:
+        camera_utils.stop_camera_thread(camera['identifier'])
+        db.delete_camera(camera_id)
     return redirect(url_for('main.cameras'))
 
 @main.route('/api/cameras/<int:camera_id>/pipelines', methods=['GET'])
@@ -138,17 +144,15 @@ def update_genicam_settings():
     path = request.form.get('genicam-cti-path', '').strip()
 
     if path and path.lower().endswith('.cti'):
-        # Basic validation: check if it's a non-empty string and ends with .cti
         db.update_setting('genicam_cti_path', path)
     elif not path:
-        # If the path is empty, clear the setting
         db.clear_setting('genicam_cti_path')
     
-    # Re-initialize the harvester to apply the new settings
     camera_utils.reinitialize_harvester()
     
     return redirect(url_for('main.settings'))
 
+# ... (The rest of your routes remain the same) ...
 @main.route('/config/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     db.clear_setting('genicam_cti_path')
@@ -206,7 +210,6 @@ def update_camera_controls(camera_id):
     gain_mode = data.get('gain_mode')
     gain_value = data.get('gain_value')
 
-    # Basic validation
     if None in [orientation, exposure_mode, exposure_value, gain_mode, gain_value]:
         return jsonify({'error': 'Missing one or more required fields'}), 400
 
@@ -256,16 +259,12 @@ def update_genicam_node(camera_id):
 
 @main.route('/control/restart-app', methods=['POST'])
 def restart_app():
-    # This is a placeholder. A real implementation would need a more robust way
-    # to restart the application, e.g., using a process manager.
     print("Restarting application...")
-    os._exit(0)  # This will stop the current process.
+    os._exit(0)
     return "Restarting...", 200
 
 @main.route('/control/reboot', methods=['POST'])
 def reboot_device():
-    # This is a placeholder. The actual command might vary by OS.
-    # Use with extreme caution.
     print("Rebooting device...")
     os.system("sudo reboot")
     return "Rebooting...", 200
