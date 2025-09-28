@@ -323,7 +323,7 @@ class CameraAcquisitionThread(threading.Thread):
                     if 'Bayer' in component.data_format:
                         return cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
                     elif len(img.shape) == 2:
-                        return img
+                        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
                     else:
                         return img
             except genapi.TimeoutException:
