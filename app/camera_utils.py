@@ -5,6 +5,7 @@ from . import db
 import threading
 import time
 import queue
+import uuid
 
 try:
     from genicam import genapi
@@ -17,7 +18,7 @@ except ImportError:
 h = Harvester()
 harvester_lock = threading.Lock()
 
-# Store active camera threads {identifier: {'acquisition': acq_thread, 'processing': proc_thread}}
+# Store active camera threads {identifier: {'acquisition': acq_thread, 'processing_threads': {pipeline_id: proc_thread}}}
 active_camera_threads = {}
 active_camera_threads_lock = threading.Lock()
 
@@ -25,44 +26,62 @@ active_camera_threads_lock = threading.Lock()
 # --- VISION PROCESSING THREAD (CONSUMER) ---
 class VisionProcessingThread(threading.Thread):
     """
-    A dedicated thread for running vision pipelines on raw frames from a queue.
-    This is the 'Consumer' in the producer-consumer pattern.
+    A dedicated thread for running a specific vision pipeline on raw frames from a queue.
+    This is a 'Consumer' in the producer-consumer pattern.
     """
-    def __init__(self, acquisition_thread):
+    def __init__(self, identifier, pipeline_info, frame_queue):
         super().__init__()
         self.daemon = True
-        self.acquisition_thread = acquisition_thread
-        self.identifier = acquisition_thread.identifier
+        self.identifier = identifier
+        self.pipeline_id = pipeline_info['id']
+        self.pipeline_type = pipeline_info['pipeline_type']
+        self.frame_queue = frame_queue
         self.stop_event = threading.Event()
 
         # Thread-safe storage for vision processing results
         self.results_lock = threading.Lock()
-        self.latest_results = None
+        self.latest_results = {"status": "Starting..."}
 
     def run(self):
         """The main loop for the vision processing thread."""
-        print(f"Starting vision processing thread for {self.identifier}")
+        print(f"Starting vision processing thread for pipeline {self.pipeline_id} ({self.pipeline_type}) on camera {self.identifier}")
         while not self.stop_event.is_set():
             try:
                 # Block and wait for a raw frame from the acquisition thread's queue.
                 # A timeout allows the thread to periodically check the stop_event.
-                raw_frame = self.acquisition_thread.raw_frame_queue.get(timeout=1)
+                raw_frame = self.frame_queue.get(timeout=1)
             except queue.Empty:
-                # This is expected if the acquisition thread is paused or slow.
                 continue
 
-            # --- <<< PLACEHOLDER FOR VISION PROCESSING >>> ---
-            # This is where you would call your AprilTag, ML, or other CV functions.
-            # The processing should be done on the 'raw_frame'.
-            # Example:
-            # results = self.vision_pipeline.process(raw_frame)
-            # with self.results_lock:
-            #     self.latest_results = results
-            
-            # For demonstration, we'll just simulate work.
-            time.sleep(0.05) # Simulate a 50ms processing time
+            # --- <<< VISION PROCESSING LOGIC GOES HERE >>> ---
+            # This is where you would call your specific CV functions based on self.pipeline_type
+            start_time = time.time()
+            # Example placeholder logic
+            if self.pipeline_type == 'AprilTag':
+                # apriltag_results = apriltag_detector.process(raw_frame)
+                time.sleep(0.05) # Simulate 50ms processing
+                current_results = {"tags_found": 1, "id": 5}
+            elif self.pipeline_type == 'Object Detection (ML)':
+                # ml_results = ml_model.predict(raw_frame)
+                time.sleep(0.1) # Simulate 100ms processing
+                current_results = {"objects": [{"label": "note", "confidence": 0.92}]}
+            else:
+                # default_results = some_other_process(raw_frame)
+                time.sleep(0.02) # Simulate 20ms processing
+                current_results = {"status": "Processed"}
 
-        print(f"Stopping vision processing thread for {self.identifier}")
+            processing_time = (time.time() - start_time) * 1000 # in ms
+            current_results['processing_time_ms'] = f"{processing_time:.2f}"
+            
+            with self.results_lock:
+                self.latest_results = current_results
+
+        print(f"Stopping vision processing thread for pipeline {self.pipeline_id} on camera {self.identifier}")
+
+    def get_latest_results(self):
+        """Safely retrieve the latest results from this pipeline."""
+        with self.results_lock:
+            return self.latest_results
 
     def stop(self):
         """Signals the thread to stop."""
@@ -74,8 +93,8 @@ class VisionProcessingThread(threading.Thread):
 class CameraAcquisitionThread(threading.Thread):
     """
     A dedicated thread for continuous camera acquisition.
-    It produces raw frames and puts them into a queue for the processing thread.
-    This is the 'Producer' in the producer-consumer pattern.
+    It produces raw frames and distributes them to multiple processing queues.
+    This is the 'Producer' in a one-to-many producer-consumer pattern.
     """
     def __init__(self, camera_db_data, app):
         super().__init__()
@@ -87,13 +106,23 @@ class CameraAcquisitionThread(threading.Thread):
         self.frame_lock = threading.Lock()
         self.latest_frame_for_display = None
 
-        # This queue passes raw frames to the VisionProcessingThread.
-        # maxsize=2 is a good practice: it holds the most recent frame and allows one
-        # to be in-flight. If processing is slow, older frames are dropped automatically.
-        self.raw_frame_queue = queue.Queue(maxsize=2)
+        # A dictionary to hold the queues for fanning-out frames to consumers
+        # { pipeline_id: queue }
+        self.processing_queues = {}
+        self.queues_lock = threading.Lock()
 
         self.stop_event = threading.Event()
         self.fps = 0.0
+
+    def add_pipeline_queue(self, pipeline_id, frame_queue):
+        """Register a new queue for a vision pipeline."""
+        with self.queues_lock:
+            self.processing_queues[pipeline_id] = frame_queue
+
+    def remove_pipeline_queue(self, pipeline_id):
+        """Remove a queue for a vision pipeline."""
+        with self.queues_lock:
+            self.processing_queues.pop(pipeline_id, None)
 
     def _is_physically_connected(self):
         """Helper to check the physical connection."""
@@ -151,9 +180,10 @@ class CameraAcquisitionThread(threading.Thread):
 
                 while not self.stop_event.is_set():
                     raw_frame = None
+                    # --- Frame Acquisition Logic ---
                     if self.camera_type == 'GenICam':
                         try:
-                            with ia.fetch_buffer(timeout=1.0) as buffer:
+                            with ia.fetch(timeout=1.0) as buffer:
                                 component = buffer.payload.components[0]
                                 img = component.data.reshape(component.height, component.width)
                                 if 'Bayer' in component.data_format:
@@ -175,15 +205,15 @@ class CameraAcquisitionThread(threading.Thread):
                         raw_frame = frame
 
                     if raw_frame is not None:
-                        # Put raw frame in the queue for the vision thread (Producer)
-                        try:
-                            self.raw_frame_queue.put_nowait(raw_frame.copy())
-                        except queue.Full:
-                            # This is expected and desirable. It means vision processing is
-                            # lagging, so we drop an old frame to prioritize recent data.
-                            pass
+                        # --- Fan-out to all registered processing queues (Producer) ---
+                        with self.queues_lock:
+                            for q in self.processing_queues.values():
+                                try:
+                                    q.put_nowait(raw_frame.copy())
+                                except queue.Full:
+                                    pass # Expected, drop frame for slow consumers
 
-                        # Prepare the frame for web display (can be done in parallel to vision)
+                        # Prepare the frame for web display
                         display_frame = self._prepare_display_frame(raw_frame, orientation)
 
                         # Encode and store the final JPEG for streaming
@@ -239,38 +269,65 @@ class CameraAcquisitionThread(threading.Thread):
 # --- CENTRALIZED THREAD MANAGEMENT ---
 
 def start_camera_thread(camera, app):
-    """Starts acquisition and processing threads for a single camera."""
+    """Starts acquisition and all associated processing threads for a single camera."""
     with active_camera_threads_lock:
         identifier = camera['identifier']
         if identifier not in active_camera_threads:
             print(f"Starting threads for camera {identifier}")
+            
+            # 1. Create the single acquisition thread
             acq_thread = CameraAcquisitionThread(camera, app)
-            proc_thread = VisionProcessingThread(acq_thread)
+            
+            # 2. Find all pipelines for this camera and create a processing thread for each
+            with app.app_context():
+                pipelines = db.get_pipelines(camera['id'])
+            
+            processing_threads = {}
+            for pipeline in pipelines:
+                # Create a queue for this specific pipeline
+                frame_queue = queue.Queue(maxsize=2)
+                proc_thread = VisionProcessingThread(identifier, dict(pipeline), frame_queue)
+                
+                # Register the queue with the acquisition thread
+                acq_thread.add_pipeline_queue(pipeline['id'], frame_queue)
+                processing_threads[pipeline['id']] = proc_thread
             
             active_camera_threads[identifier] = {
                 'acquisition': acq_thread,
-                'processing': proc_thread
+                'processing_threads': processing_threads
             }
+            
+            # 3. Start all threads
             acq_thread.start()
-            proc_thread.start()
+            for proc_thread in processing_threads.values():
+                proc_thread.start()
 
 def stop_camera_thread(identifier):
-    """Stops the threads for a single camera."""
+    """Stops all threads for a single camera."""
     with active_camera_threads_lock:
         if identifier in active_camera_threads:
             print(f"Stopping threads for camera {identifier}")
-            thread_pair = active_camera_threads.pop(identifier)
-            thread_pair['processing'].stop()
-            thread_pair['acquisition'].stop()
-            thread_pair['acquisition'].join(timeout=2)
-            thread_pair['processing'].join(timeout=2)
+            thread_group = active_camera_threads.pop(identifier)
+            
+            # Stop all processing threads first
+            for proc_thread in thread_group['processing_threads'].values():
+                proc_thread.stop()
+
+            # Stop the acquisition thread
+            thread_group['acquisition'].stop()
+
+            # Wait for them to terminate
+            thread_group['acquisition'].join(timeout=2)
+            for proc_thread in thread_group['processing_threads'].values():
+                proc_thread.join(timeout=2)
 
 def start_all_camera_threads(app):
     """To be called once at application startup to initialize all configured cameras."""
     print("Starting acquisition and processing threads for all configured cameras...")
-    cameras = db.get_cameras()
+    with app.app_context():
+        cameras = db.get_cameras()
     for camera in cameras:
-        start_camera_thread(camera, app)
+        start_camera_thread(dict(camera), app)
 
 def stop_all_camera_threads():
     """To be called once at application shutdown to gracefully stop all threads."""
@@ -283,12 +340,18 @@ def stop_all_camera_threads():
     
     print("All camera threads stopped.")
 
-def is_camera_thread_connected(identifier):
-    """Checks if an acquisition thread is active and alive for a given identifier."""
+def get_camera_pipeline_results(identifier):
+    """Gets the latest results from all pipelines for a given camera."""
     with active_camera_threads_lock:
-        thread_pair = active_camera_threads.get(identifier)
-        return thread_pair and thread_pair['acquisition'].is_alive()
-
+        thread_group = active_camera_threads.get(identifier)
+        if not thread_group:
+            return None
+        
+        results = {}
+        for pipeline_id, proc_thread in thread_group['processing_threads'].items():
+            results[pipeline_id] = proc_thread.get_latest_results()
+        
+        return results
 
 # --- WEB STREAMING & CAMERA UTILITIES ---
 
@@ -296,15 +359,14 @@ def get_camera_feed(camera):
     """Generator that yields JPEG frames from a camera's running acquisition thread."""
     identifier = camera['identifier']
     
-    if not is_camera_thread_connected(identifier):
+    with active_camera_threads_lock:
+        thread_group = active_camera_threads.get(identifier)
+    
+    if not thread_group or not thread_group['acquisition'].is_alive():
         print(f"Warning: Attempted to get feed for {identifier}, but its thread is not running.")
         return
 
-    with active_camera_threads_lock:
-        thread_pair = active_camera_threads.get(identifier)
-    
-    if not thread_pair: return
-    acq_thread = thread_pair['acquisition']
+    acq_thread = thread_group['acquisition']
 
     try:
         while True:
@@ -326,10 +388,6 @@ def get_camera_feed(camera):
         print(f"Client disconnected from camera feed {identifier}.")
     except Exception as e:
         print(f"Error during streaming for feed {identifier}: {e}")
-
-# The rest of your utility functions (list_usb_cameras, list_genicam_cameras, etc.)
-# are well-structured and do not need changes for this refactor.
-# They can be appended below this comment.
 
 if genapi:
     SUPPORTED_INTERFACE_TYPES = {
@@ -403,7 +461,10 @@ def check_camera_connection(camera):
     The primary check is the liveness of its dedicated acquisition thread.
     """
     identifier = camera['identifier']
-    if is_camera_thread_connected(identifier):
+    with active_camera_threads_lock:
+        thread_group = active_camera_threads.get(identifier)
+    
+    if thread_group and thread_group['acquisition'].is_alive():
         return True
     
     # Fallback to a physical check if no thread is running

@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app
+from flask import render_template, request, redirect, url_for, jsonify, Response, send_file
 from app import db, camera_utils, network_utils
 import cv2
 import numpy as np
@@ -32,11 +32,11 @@ def video_feed(camera_id):
     if not camera:
         return "Camera not found", 404
 
-    if not camera_utils.check_camera_connection(camera):
+    if not camera_utils.check_camera_connection(dict(camera)):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
-    return Response(camera_utils.get_camera_feed(camera),
+    return Response(camera_utils.get_camera_feed(dict(camera)),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @main.route('/cameras')
@@ -73,7 +73,6 @@ def update_global_settings():
 def add_camera():
     name = request.form.get('camera-name')
     camera_type = request.form.get('camera-type')
-    identifier = None
     
     if camera_type == 'USB':
         identifier = request.form.get('usb-camera-select')
@@ -83,10 +82,10 @@ def add_camera():
         return redirect(url_for('main.cameras'))
 
     if name and camera_type and identifier:
-        camera_id = db.add_camera(name, camera_type, identifier)
-        if camera_id:
-            new_camera = db.get_camera(camera_id)
-            camera_utils.start_camera_thread(new_camera, current_app._get_current_object())
+        db.add_camera(name, camera_type, identifier)
+        # TODO: Dynamically start the thread for the new camera
+        # camera = db.get_camera_by_identifier(identifier)
+        # camera_utils.start_camera_thread(camera, ???) -> Need app context
 
     return redirect(url_for('main.cameras'))
 
@@ -102,13 +101,25 @@ def delete_camera(camera_id):
     camera = db.get_camera(camera_id)
     if camera:
         camera_utils.stop_camera_thread(camera['identifier'])
-        db.delete_camera(camera_id)
+    db.delete_camera(camera_id)
     return redirect(url_for('main.cameras'))
 
 @main.route('/api/cameras/<int:camera_id>/pipelines', methods=['GET'])
 def get_pipelines(camera_id):
     pipelines = db.get_pipelines(camera_id)
     return jsonify([dict(row) for row in pipelines])
+
+@main.route('/api/cameras/<int:camera_id>/results', methods=['GET'])
+def get_pipeline_results(camera_id):
+    camera = db.get_camera(camera_id)
+    if not camera:
+        return jsonify({'error': 'Camera not found'}), 404
+    
+    results = camera_utils.get_camera_pipeline_results(camera['identifier'])
+    if results is None:
+        return jsonify({'error': 'No active processing threads found for this camera.'}), 404
+        
+    return jsonify(results)
 
 @main.route('/api/cameras/<int:camera_id>/pipelines', methods=['POST'])
 def add_pipeline(camera_id):
@@ -120,6 +131,7 @@ def add_pipeline(camera_id):
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
     db.add_pipeline(camera_id, name, pipeline_type)
+    # TODO: Restart threads for this camera to pick up the new pipeline
     return jsonify({'success': True})
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
@@ -132,10 +144,12 @@ def update_pipeline(pipeline_id):
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
     db.update_pipeline(pipeline_id, name, pipeline_type)
+    # TODO: Restart threads for the associated camera to apply changes
     return jsonify({'success': True})
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
 def delete_pipeline(pipeline_id):
+    # TODO: Before deleting from DB, find the camera and stop the specific pipeline thread
     db.delete_pipeline(pipeline_id)
     return jsonify({'success': True})
 
@@ -149,7 +163,6 @@ def update_genicam_settings():
         db.clear_setting('genicam_cti_path')
     
     camera_utils.reinitialize_harvester()
-    
     return redirect(url_for('main.settings'))
 
 @main.route('/config/genicam/clear', methods=['POST'])
@@ -179,7 +192,7 @@ def discover_cameras():
 def camera_status(camera_id):
     camera = db.get_camera(camera_id)
     if camera:
-        is_connected = camera_utils.check_camera_connection(camera)
+        is_connected = camera_utils.check_camera_connection(dict(camera))
         return jsonify({'connected': is_connected})
     return jsonify({'error': 'Camera not found'}), 404
 
@@ -258,12 +271,16 @@ def update_genicam_node(camera_id):
 
 @main.route('/control/restart-app', methods=['POST'])
 def restart_app():
+    # This is a placeholder. A real implementation would need a more robust way
+    # to restart the application, e.g., using a process manager.
     print("Restarting application...")
-    os._exit(0)
+    os._exit(0)  # This will stop the current process.
     return "Restarting...", 200
 
 @main.route('/control/reboot', methods=['POST'])
 def reboot_device():
+    # This is a placeholder. The actual command might vary by OS.
+    # Use with extreme caution.
     print("Rebooting device...")
     os.system("sudo reboot")
     return "Rebooting...", 200
