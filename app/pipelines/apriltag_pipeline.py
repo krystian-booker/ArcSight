@@ -98,20 +98,8 @@ class AprilTagPipeline:
             # --- Data for Drawing ---
             # Get the raw translation and rotation vectors used by OpenCV
             tvec = np.array([pose.X(), pose.Y(), pose.Z()])
+            rvec, _ = cv2.Rodrigues(rotation.toMatrix())
 
-            # Get the quaternion from the pose's rotation
-            q = pose.rotation().getQuaternion()
-            w, x, y, z = q.W(), q.X(), q.Y(), q.Z()
-
-            # Manually calculate the rotation matrix from the quaternion
-            rotation_matrix = np.array([
-                [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
-                [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
-                [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y]
-            ])
-
-            # Convert the rotation matrix to a rotation vector using Rodrigues' formula
-            rvec, _ = cv2.Rodrigues(rotation_matrix)
 
             # Get the corners for drawing the bounding box
             corners = np.array([
@@ -124,15 +112,16 @@ class AprilTagPipeline:
             # --- Data for UI Table (with coordinate system transformation) ---
             # Transform coordinates for a more intuitive representation if needed
             # For example, Z forward, Y left, X down
-            x_ui = pose.X()
-            y_ui = -pose.Y()
-            z_ui = -pose.Z()
+            x_ui = pose.Z()
+            y_ui = -pose.X()
+            z_ui = -pose.Y()
+
 
             # For WPILib's Rotation3d: X()=Roll, Y()=Pitch, Z()=Yaw in radians
             rotation = pose.rotation()
-            roll_rad = rotation.X()
-            pitch_rad = rotation.Y()
-            yaw_rad = rotation.Z()
+            roll_rad = rotation.Z()
+            pitch_rad = -rotation.X()
+            yaw_rad = -rotation.Y()
             
             # Convert radians to degrees for the UI
             roll_deg = math.degrees(roll_rad)
@@ -140,24 +129,26 @@ class AprilTagPipeline:
             yaw_deg = math.degrees(yaw_rad)
 
             results.append({
-                # --- Core Detection Info ---
-                "id": tag.getId(),
-                "decision_margin": tag.getDecisionMargin(),
-                "pose_error": pose_error,
-                # --- Raw Pose Data for Drawing ---
-                "rvec": rvec.tolist(),
-                "tvec": tvec.tolist(),
-                "corners": corners.tolist(),
-                # --- Formatted Data for UI Table ---
-                "x_m": x_ui,
-                "y_m": y_ui,
-                "z_m": z_ui,
-                "yaw_rad": yaw_rad,
-                "pitch_rad": pitch_rad,
-                "roll_rad": roll_rad,
-                "yaw_deg": yaw_deg,
-                "pitch_deg": pitch_deg,
-                "roll_deg": roll_deg,
+                "ui_data": {
+                    "id": tag.getId(),
+                    "decision_margin": tag.getDecisionMargin(),
+                    "pose_error": pose_error,
+                    "x_m": x_ui,
+                    "y_m": y_ui,
+                    "z_m": z_ui,
+                    "yaw_rad": yaw_rad,
+                    "pitch_rad": pitch_rad,
+                    "roll_rad": roll_rad,
+                    "yaw_deg": yaw_deg,
+                    "pitch_deg": pitch_deg,
+                    "roll_deg": roll_deg,
+                },
+                "drawing_data": {
+                    "rvec": rvec,
+                    "tvec": tvec,
+                    "corners": corners,
+                    "id": tag.getId()
+                }
             })
             
         return results

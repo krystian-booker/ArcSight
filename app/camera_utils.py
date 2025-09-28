@@ -155,10 +155,14 @@ class VisionProcessingThread(threading.Thread):
 
                 processing_time = (time.time() - start_time) * 1000
 
+                # Separate UI data from drawing data
+                ui_detections = [d['ui_data'] for d in detections]
+                drawing_detections = [d['drawing_data'] for d in detections]
+
                 # Format results for the frontend/API
                 current_results = {
-                    "tags_found": len(detections) > 0,
-                    "detections": detections,
+                    "tags_found": len(ui_detections) > 0,
+                    "detections": ui_detections,
                     "processing_time_ms": f"{processing_time:.2f}"
                 }
 
@@ -170,9 +174,9 @@ class VisionProcessingThread(threading.Thread):
                 annotated_frame = raw_frame.copy()
 
                 # If it's an AprilTag pipeline and we have detections, draw the 3D boxes
-                if self.pipeline_type == 'AprilTag' and detections:
+                if self.pipeline_type == 'AprilTag' and drawing_detections:
                     tag_size = self.pipeline.pose_estimator_config.tagSize
-                    self._draw_3d_box_on_frame(annotated_frame, detections, camera_params, tag_size)
+                    self._draw_3d_box_on_frame(annotated_frame, drawing_detections, camera_params, tag_size)
                 
                 # Encode the potentially annotated frame to JPEG for the processed feed
                 ret, buffer = cv2.imencode('.jpg', annotated_frame)
@@ -214,11 +218,7 @@ class VisionProcessingThread(threading.Thread):
         ])
 
         for det in detections:
-            if 'rvec' not in det or 'tvec' not in det:
-                continue
-
-            # Convert lists back to NumPy arrays for OpenCV
-            rvec, tvec = np.array(det['rvec']), np.array(det['tvec'])
+            rvec, tvec = det['rvec'], det['tvec']
             
             # Project the 3D points to the 2D image plane
             img_pts, _ = cv2.projectPoints(obj_pts, rvec, tvec, cam_matrix, dist_coeffs)
@@ -233,9 +233,8 @@ class VisionProcessingThread(threading.Thread):
             cv2.drawContours(frame, [img_pts[4:]], -1, (0, 255, 0), 2)
 
             # Draw the tag ID
-            if 'corners' in det:
-                corner = tuple(np.int32(det['corners'][0]))
-                cv2.putText(frame, str(det['id']), corner, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            corner = tuple(np.int32(det['corners'][0]))
+            cv2.putText(frame, str(det['id']), corner, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
 
     def stop(self):
@@ -562,8 +561,6 @@ def get_camera_feed(camera):
 
     try:
         while True:
-            time.sleep(0.02)
-
             frame_to_send = None
             with acq_thread.frame_lock:
                 if acq_thread.latest_frame_for_display:
@@ -576,6 +573,7 @@ def get_camera_feed(camera):
             if not acq_thread.is_alive():
                 print(f"Stopping feed for {identifier} as acquisition thread has died.")
                 break
+            time.sleep(0.01) # A small sleep to prevent busy-waiting
     except GeneratorExit:
         print(f"Client disconnected from camera feed {identifier}.")
     except Exception as e:
@@ -597,8 +595,6 @@ def get_processed_camera_feed(pipeline_id):
 
     try:
         while True:
-            time.sleep(0.02)
-
             frame_to_send = None
             with proc_thread.processed_frame_lock:
                 if proc_thread.latest_processed_frame:
@@ -611,6 +607,7 @@ def get_processed_camera_feed(pipeline_id):
             if not proc_thread.is_alive():
                 print(f"Stopping processed feed for {pipeline_id} as its thread has died.")
                 break
+            time.sleep(0.01) # A small sleep to prevent busy-waiting
     except GeneratorExit:
         print(f"Client disconnected from processed feed {pipeline_id}.")
     except Exception as e:
