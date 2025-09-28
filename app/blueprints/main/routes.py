@@ -119,8 +119,15 @@ def add_pipeline(camera_id):
     if not name or not pipeline_type:
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
-    new_pipeline_id = db.add_pipeline(camera_id, name, pipeline_type)
-    new_pipeline = db.get_pipeline(new_pipeline_id)
+    db.add_pipeline(camera_id, name, pipeline_type)
+    # Retrieve the newly added pipeline (assuming name is unique per camera)
+    new_pipeline = None
+    pipelines = db.get_pipelines(camera_id)
+    for pipeline in pipelines:
+        if pipeline['name'] == name and pipeline['pipeline_type'] == pipeline_type:
+            new_pipeline = pipeline
+            break
+    new_pipeline_id = new_pipeline['id'] if new_pipeline else None
     if new_pipeline:
         camera_utils.add_pipeline_to_camera(camera_id, dict(new_pipeline), current_app._get_current_object())
 
