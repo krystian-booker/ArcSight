@@ -21,6 +21,18 @@ harvester_lock = threading.Lock()
 active_camera_threads = {}
 active_camera_threads_lock = threading.Lock()
 
+# << --- App instance for threads --- >>
+# This will hold the single Flask app instance.
+_app = None
+
+def set_app_for_threads(app):
+    """
+    Provides the camera threads with a reference to the main Flask app object.
+    This is called once from create_app() in __init__.py.
+    """
+    global _app
+    _app = app
+
 
 # --- VISION PROCESSING THREAD (CONSUMER) ---
 
@@ -74,7 +86,7 @@ class VisionProcessingThread(threading.Thread):
 
 class CameraAcquisitionThread(threading.Thread):
     """
-    A dedicated, resilient thread for continuous camera acquisition.
+    A dedicated thread for continuous camera acquisition.
     It produces raw frames and puts them into a queue for the processing thread.
     This is the 'Producer' in the producer-consumer pattern.
     """
@@ -97,7 +109,7 @@ class CameraAcquisitionThread(threading.Thread):
         self.fps = 0.0
 
     def _is_physically_connected(self):
-        """Helper to check the physical connection without relying on thread status."""
+        """Helper to check the physical connection."""
         if self.camera_type == 'USB':
             try:
                 cap = cv2.VideoCapture(int(self.identifier))
@@ -118,11 +130,26 @@ class CameraAcquisitionThread(threading.Thread):
             ia = None
             cap = None
             try:
-                # --- Resilient Connection Loop ---
                 if not self._is_physically_connected():
                     print(f"Camera {self.identifier} is not connected. Retrying in 5 seconds...")
-                    self.stop_event.wait(5.0)  # Wait for 5s, but still be interruptible by stop()
+                    self.stop_event.wait(5.0)
                     continue
+
+                # << --- Use the shared app instance for context --- >>
+                orientation = 0
+                if not _app:
+                    print("Error: Flask app not set for threads. Cannot query database.")
+                    self.stop_event.wait(5.0)
+                    continue
+                
+                with _app.app_context():
+                    camera_data = db.get_camera(self.camera_db_data['id'])
+                
+                if camera_data:
+                    orientation = int(camera_data['orientation'])
+                else:
+                    print(f"Camera {self.identifier} no longer in database. Stopping thread.")
+                    break
 
                 # --- Initialize Camera Resource ---
                 print(f"Initializing camera {self.identifier}...")
@@ -139,26 +166,10 @@ class CameraAcquisitionThread(threading.Thread):
                 
                 print(f"Camera {self.identifier} initialized successfully.")
 
-                # --- Main Acquisition Loop ---
                 start_time = time.time()
                 frame_count = 0
-                last_config_check_time = time.time()
-                orientation = int(self.camera_db_data['orientation'])
 
                 while not self.stop_event.is_set():
-                    # --- Dynamic Configuration Update ---
-                    if (time.time() - last_config_check_time) > 5.0:
-                        # Since this runs in a separate thread, we need a fresh app context
-                        # and db connection to query the latest settings.
-                        from . import create_app
-                        app = create_app()
-                        with app.app_context():
-                             camera_data = db.get_camera(self.camera_db_data['id'])
-                        if camera_data:
-                            orientation = int(camera_data['orientation'])
-                        last_config_check_time = time.time()
-
-                    # --- Frame Acquisition ---
                     raw_frame = None
                     if self.camera_type == 'GenICam':
                         try:
@@ -172,19 +183,19 @@ class CameraAcquisitionThread(threading.Thread):
                                 else:
                                     raw_frame = img
                         except genapi.TimeoutException:
-                            continue  # This is a normal timeout, just try again
+                            continue
                         except Exception as fetch_e:
                             print(f"Error fetching GenICam buffer for {self.identifier}: {fetch_e}. Reconnecting...")
-                            break  # Break inner loop to trigger cleanup and reconnect attempt
+                            break
                     elif self.camera_type == 'USB':
                         ret, frame = cap.read()
                         if not ret or frame is None:
                             print(f"Failed to read from USB camera {self.identifier}. Reconnecting...")
-                            break  # Break inner loop to trigger cleanup and reconnect attempt
+                            break
                         raw_frame = frame
 
                     if raw_frame is not None:
-                        # 1. Put raw frame in the queue for the vision thread (Producer)
+                        # Put raw frame in the queue for the vision thread (Producer)
                         try:
                             self.raw_frame_queue.put_nowait(raw_frame.copy())
                         except queue.Full:
@@ -192,10 +203,10 @@ class CameraAcquisitionThread(threading.Thread):
                             # lagging, so we drop an old frame to prioritize recent data.
                             pass
 
-                        # 2. Prepare the frame for web display (can be done in parallel to vision)
+                        # Prepare the frame for web display (can be done in parallel to vision)
                         display_frame = self._prepare_display_frame(raw_frame, orientation)
 
-                        # 3. Encode and store the final JPEG for streaming
+                        # Encode and store the final JPEG for streaming
                         ret, buffer = cv2.imencode('.jpg', display_frame)
                         if ret:
                             with self.frame_lock:
@@ -213,7 +224,6 @@ class CameraAcquisitionThread(threading.Thread):
                 print(f"Major error in acquisition loop for {self.identifier}: {e}. Retrying...")
                 self.stop_event.wait(5.0)
             finally:
-                # --- Cleanup Resources before next connection attempt ---
                 print(f"Cleaning up resources for {self.identifier}.")
                 if ia:
                     try: ia.destroy()
@@ -221,10 +231,6 @@ class CameraAcquisitionThread(threading.Thread):
                 if cap:
                     cap.release()
         
-        # --- Final Cleanup on Stop ---
-        with active_camera_threads_lock:
-            if self.identifier in active_camera_threads:
-                del active_camera_threads[self.identifier]
         print(f"Acquisition thread for {self.identifier} has stopped.")
 
     def _prepare_display_frame(self, frame, orientation):
@@ -252,41 +258,48 @@ class CameraAcquisitionThread(threading.Thread):
 
 # --- CENTRALIZED THREAD MANAGEMENT ---
 
+def start_camera_thread(camera):
+    """Starts acquisition and processing threads for a single camera."""
+    with active_camera_threads_lock:
+        identifier = camera['identifier']
+        if identifier not in active_camera_threads:
+            print(f"Starting threads for camera {identifier}")
+            acq_thread = CameraAcquisitionThread(camera)
+            proc_thread = VisionProcessingThread(acq_thread)
+            
+            active_camera_threads[identifier] = {
+                'acquisition': acq_thread,
+                'processing': proc_thread
+            }
+            acq_thread.start()
+            proc_thread.start()
+
+def stop_camera_thread(identifier):
+    """Stops the threads for a single camera."""
+    with active_camera_threads_lock:
+        if identifier in active_camera_threads:
+            print(f"Stopping threads for camera {identifier}")
+            thread_pair = active_camera_threads.pop(identifier)
+            thread_pair['processing'].stop()
+            thread_pair['acquisition'].stop()
+            thread_pair['acquisition'].join(timeout=2)
+            thread_pair['processing'].join(timeout=2)
+
 def start_all_camera_threads():
     """To be called once at application startup to initialize all configured cameras."""
     print("Starting acquisition and processing threads for all configured cameras...")
-    from . import create_app  # Local import to get app context
-    app = create_app()
-    with app.app_context():
-        cameras = db.get_cameras()
-        with active_camera_threads_lock:
-            for camera in cameras:
-                identifier = camera['identifier']
-                if identifier not in active_camera_threads:
-                    acq_thread = CameraAcquisitionThread(camera)
-                    proc_thread = VisionProcessingThread(acq_thread)
-                    
-                    active_camera_threads[identifier] = {
-                        'acquisition': acq_thread,
-                        'processing': proc_thread
-                    }
-                    acq_thread.start()
-                    proc_thread.start()
+    cameras = db.get_cameras()
+    for camera in cameras:
+        start_camera_thread(camera)
 
 def stop_all_camera_threads():
     """To be called once at application shutdown to gracefully stop all threads."""
     print("Stopping all camera acquisition and processing threads...")
     with active_camera_threads_lock:
-        threads_to_stop = list(active_camera_threads.values())
+        identifiers_to_stop = list(active_camera_threads.keys())
     
-    for thread_pair in threads_to_stop:
-        thread_pair['processing'].stop()
-        thread_pair['acquisition'].stop()
-    
-    print("Waiting for threads to join...")
-    for thread_pair in threads_to_stop:
-        thread_pair['acquisition'].join(timeout=2)
-        thread_pair['processing'].join(timeout=2)
+    for identifier in identifiers_to_stop:
+        stop_camera_thread(identifier)
     
     print("All camera threads stopped.")
 
