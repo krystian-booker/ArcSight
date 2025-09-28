@@ -77,7 +77,7 @@ class CameraAcquisitionThread(threading.Thread):
     It produces raw frames and puts them into a queue for the processing thread.
     This is the 'Producer' in the producer-consumer pattern.
     """
-    def __init__(self, camera_db_data):
+    def __init__(self, camera_db_data, app):
         super().__init__()
         self.daemon = True
         self.camera_db_data = camera_db_data
@@ -238,7 +238,7 @@ class CameraAcquisitionThread(threading.Thread):
 
 # --- CENTRALIZED THREAD MANAGEMENT ---
 
-def start_camera_thread(camera):
+def start_camera_thread(camera, app):
     """Starts acquisition and processing threads for a single camera."""
     with active_camera_threads_lock:
         identifier = camera['identifier']

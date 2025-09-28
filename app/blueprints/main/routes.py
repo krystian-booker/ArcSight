@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, jsonify, Response, send_file
+from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app
 from app import db, camera_utils, network_utils
 import cv2
 import numpy as np
@@ -86,7 +86,7 @@ def add_camera():
         camera_id = db.add_camera(name, camera_type, identifier)
         if camera_id:
             new_camera = db.get_camera(camera_id)
-            camera_utils.start_camera_thread(new_camera)
+            camera_utils.start_camera_thread(new_camera, current_app._get_current_object())
 
     return redirect(url_for('main.cameras'))
 
@@ -152,7 +152,6 @@ def update_genicam_settings():
     
     return redirect(url_for('main.settings'))
 
-# ... (The rest of your routes remain the same) ...
 @main.route('/config/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     db.clear_setting('genicam_cti_path')
