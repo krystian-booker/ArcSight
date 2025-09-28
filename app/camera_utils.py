@@ -108,6 +108,11 @@ class VisionProcessingThread(threading.Thread):
         # Store camera data and initialize the pipeline object
         self.camera_db_data = camera_db_data
         self.pipeline = None
+        
+        # Pre-calculation variables for drawing
+        self.cam_matrix = None
+        self.dist_coeffs = np.zeros((4, 1)) 
+        self.obj_pts = None
 
         # This is where you would load pipeline-specific settings from the DB
         pipeline_config = {
@@ -121,6 +126,15 @@ class VisionProcessingThread(threading.Thread):
 
         if self.pipeline_type == 'AprilTag':
             self.pipeline = AprilTagPipeline(pipeline_config)
+            # Pre-calculate the 3D coordinates of the tag corners
+            tag_size_m = pipeline_config.get('tag_size_m', 0.165)
+            half_tag_size = tag_size_m / 2
+            self.obj_pts = np.array([
+                [-half_tag_size, -half_tag_size, 0], [half_tag_size, -half_tag_size, 0],
+                [half_tag_size, half_tag_size, 0], [-half_tag_size, half_tag_size, 0],
+                [-half_tag_size, -half_tag_size, -tag_size_m], [half_tag_size, -half_tag_size, -tag_size_m],
+                [half_tag_size, half_tag_size, -tag_size_m], [-half_tag_size, half_tag_size, -tag_size_m]
+            ])
         # elif self.pipeline_type == 'Coloured Shape':
         #     self.pipeline = ColouredShapePipeline(pipeline_config)
         else:
@@ -134,13 +148,16 @@ class VisionProcessingThread(threading.Thread):
 
         print(f"Starting vision processing thread for pipeline {self.pipeline_id} ({self.pipeline_type}) on camera {self.identifier}")
 
-        # Define placeholder camera parameters
         # IMPORTANT: These MUST be replaced with real values from camera calibration!
-        # You should store these in your database per camera.
         camera_params = {
             'fx': 600.0, 'fy': 600.0, # Focal length in pixels
             'cx': 320.0, 'cy': 240.0   # Principal point (image center)
         }
+        
+        # Create the camera matrix once
+        self.cam_matrix = np.array([[camera_params['fx'], 0, camera_params['cx']],
+                               [0, camera_params['fy'], camera_params['cy']],
+                               [0, 0, 1]], dtype=np.float32)
 
         while not self.stop_event.is_set():
             ref_counted_frame = None
@@ -170,15 +187,11 @@ class VisionProcessingThread(threading.Thread):
                     self.latest_results = current_results
 
                 # --- Generate Processed Frame ---
-                # Create a writable copy for drawing on
                 annotated_frame = raw_frame.copy()
 
-                # If it's an AprilTag pipeline and we have detections, draw the 3D boxes
                 if self.pipeline_type == 'AprilTag' and drawing_detections:
-                    tag_size = self.pipeline.pose_estimator_config.tagSize
-                    self._draw_3d_box_on_frame(annotated_frame, drawing_detections, camera_params, tag_size)
+                    self._draw_3d_box_on_frame(annotated_frame, drawing_detections)
                 
-                # Encode the potentially annotated frame to JPEG for the processed feed
                 ret, buffer = cv2.imencode('.jpg', annotated_frame)
                 if ret:
                     with self.processed_frame_lock:
@@ -197,31 +210,13 @@ class VisionProcessingThread(threading.Thread):
         with self.results_lock:
             return self.latest_results
 
-    def _draw_3d_box_on_frame(self, frame, detections, camera_params, tag_size_m):
+    def _draw_3d_box_on_frame(self, frame, detections):
         """Draws a 3D bounding box around each detected AprilTag."""
-        if not detections:
-            return
-        
-        # Camera matrix and distortion coefficients
-        cam_matrix = np.array([[camera_params['fx'], 0, camera_params['cx']],
-                               [0, camera_params['fy'], camera_params['cy']],
-                               [0, 0, 1]], dtype=np.float32)
-        dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
-
-        # Define the 3D coordinates of the corners of the tag in its own coordinate system
-        half_tag_size = tag_size_m / 2
-        obj_pts = np.array([
-            [-half_tag_size, -half_tag_size, 0], [half_tag_size, -half_tag_size, 0],
-            [half_tag_size, half_tag_size, 0], [-half_tag_size, half_tag_size, 0],
-            [-half_tag_size, -half_tag_size, -tag_size_m], [half_tag_size, -half_tag_size, -tag_size_m],
-            [half_tag_size, half_tag_size, -tag_size_m], [-half_tag_size, half_tag_size, -tag_size_m]
-        ])
-
         for det in detections:
             rvec, tvec = det['rvec'], det['tvec']
             
             # Project the 3D points to the 2D image plane
-            img_pts, _ = cv2.projectPoints(obj_pts, rvec, tvec, cam_matrix, dist_coeffs)
+            img_pts, _ = cv2.projectPoints(self.obj_pts, rvec, tvec, self.cam_matrix, self.dist_coeffs)
             img_pts = np.int32(img_pts).reshape(-1, 2)
 
             # Draw the base
