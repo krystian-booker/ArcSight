@@ -6,6 +6,7 @@ import threading
 import time
 import queue
 import uuid
+import numpy as np
 
 try:
     from genicam import genapi
@@ -23,12 +24,88 @@ active_camera_threads = {}
 active_camera_threads_lock = threading.Lock()
 
 
+# --- FRAME BUFFER AND REFERENCE COUNTING ---
+
+class RefCountedFrame:
+    """
+    A thread-safe wrapper for a numpy frame buffer that manages reference counts.
+    When the reference count drops to zero, it returns the buffer to a pool via a callback.
+    """
+    def __init__(self, frame_buffer, release_callback):
+        self.frame_buffer = frame_buffer
+        self._release_callback = release_callback
+        self._ref_count = 0
+        self._lock = threading.Lock()
+
+    def acquire(self):
+        """Increments the reference count."""
+        with self._lock:
+            self._ref_count += 1
+
+    def release(self):
+        """Decrements the reference count. Calls the release callback if count is zero."""
+        with self._lock:
+            if self._ref_count > 0:
+                self._ref_count -= 1
+                if self._ref_count == 0:
+                    if self._release_callback:
+                        self._release_callback(self.frame_buffer)
+            # else:
+                # This can be useful for debugging mismatched acquire/release calls
+                # print("Warning: Release called on a frame with zero references.")
+
+    @property
+    def data(self):
+        """Returns the read-only numpy array. Consumers should use this by default."""
+        return self.frame_buffer
+
+    def get_writable_copy(self):
+        """
+        Implements the 'Copy-on-Write' feature.
+        Returns a deep copy of the frame for pipelines that need to modify it (e.g., for drawing debug info).
+        The caller is responsible for this new memory. The original buffer remains untouched.
+        """
+        return self.frame_buffer.copy()
+
+class FrameBufferPool:
+    """Manages a pool of pre-allocated numpy arrays to avoid repeated memory allocation."""
+    def __init__(self, name="DefaultPool"):
+        self._pool = queue.Queue()
+        self._buffer_shape = None
+        self._buffer_dtype = None
+        self._allocated = 0
+        self._name = name
+
+    def initialize(self, frame, num_buffers=5):
+        """Initializes the pool with buffers matching the shape and type of a sample frame."""
+        if self._buffer_shape is not None:
+            return # Already initialized
+        self._buffer_shape = frame.shape
+        self._buffer_dtype = frame.dtype
+        for _ in range(num_buffers):
+            self._pool.put(np.empty(self._buffer_shape, dtype=self._buffer_dtype))
+        self._allocated = num_buffers
+        print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers of shape {self._buffer_shape}")
+
+    def get_buffer(self):
+        """Retrieves a buffer from the pool. Falls back to allocating a new one if the pool is empty."""
+        try:
+            return self._pool.get_nowait()
+        except queue.Empty:
+            if self._buffer_shape is not None:
+                print(f"[{self._name}] Pool empty, allocating new buffer. Total allocated: {self._allocated + 1}")
+                self._allocated += 1
+                return np.empty(self._buffer_shape, dtype=self._buffer_dtype)
+            return None # Not initialized
+
+    def release_buffer(self, buffer):
+        """Returns a buffer to the pool for reuse."""
+        self._pool.put(buffer)
+
+
 # --- VISION PROCESSING THREAD (CONSUMER) ---
 class VisionProcessingThread(threading.Thread):
-    """
-    A dedicated thread for running a specific vision pipeline on raw frames from a queue.
-    This is a 'Consumer' in the producer-consumer pattern.
-    """
+    """A 'Consumer' thread that runs a vision pipeline on frames from a queue."""
     def __init__(self, identifier, pipeline_info, frame_queue):
         super().__init__()
         self.daemon = True
@@ -37,8 +114,6 @@ class VisionProcessingThread(threading.Thread):
         self.pipeline_type = pipeline_info['pipeline_type']
         self.frame_queue = frame_queue
         self.stop_event = threading.Event()
-
-        # Thread-safe storage for vision processing results
         self.results_lock = threading.Lock()
         self.latest_results = {"status": "Starting..."}
 
@@ -46,35 +121,43 @@ class VisionProcessingThread(threading.Thread):
         """The main loop for the vision processing thread."""
         print(f"Starting vision processing thread for pipeline {self.pipeline_id} ({self.pipeline_type}) on camera {self.identifier}")
         while not self.stop_event.is_set():
+            ref_counted_frame = None
             try:
-                # Block and wait for a raw frame from the acquisition thread's queue.
-                # A timeout allows the thread to periodically check the stop_event.
-                raw_frame = self.frame_queue.get(timeout=1)
+                ref_counted_frame = self.frame_queue.get(timeout=1)
+
+                # --- <<< VISION PROCESSING LOGIC GOES HERE >>> ---
+                # Default to read-only access for maximum performance.
+                raw_frame = ref_counted_frame.data
+
+                # Example of copy-on-write for a debug pipeline:
+                # if self.needs_to_draw:
+                #     debug_frame = ref_counted_frame.get_writable_copy()
+                #     cv2.putText(debug_frame, "Debug", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                #     # ... do something with debug_frame ...
+
+                start_time = time.time()
+                if self.pipeline_type == 'AprilTag':
+                    time.sleep(0.05)
+                    current_results = {"tags_found": 1, "id": 5, "x": 0.3, "y": -0.2, "z_angle": 12.5, "ambiguity": 0.01}
+                elif self.pipeline_type == 'Object Detection (ML)':
+                    time.sleep(0.1)
+                    current_results = {"objects": [{"label": "note", "confidence": 0.92}]}
+                else:
+                    time.sleep(0.02)
+                    current_results = {"status": "Processed"}
+
+                processing_time = (time.time() - start_time) * 1000
+                current_results['processing_time_ms'] = f"{processing_time:.2f}"
+
+                with self.results_lock:
+                    self.latest_results = current_results
+
             except queue.Empty:
                 continue
-
-            # --- <<< VISION PROCESSING LOGIC GOES HERE >>> ---
-            # This is where you would call your specific CV functions based on self.pipeline_type
-            start_time = time.time()
-            # Example placeholder logic
-            if self.pipeline_type == 'AprilTag':
-                # apriltag_results = apriltag_detector.process(raw_frame)
-                time.sleep(0.05) # Simulate 50ms processing
-                current_results = {"tags_found": 1, "id": 5, "x": 0.3, "y": -0.2, "z_angle": 12.5, "ambiguity": 0.01}
-            elif self.pipeline_type == 'Object Detection (ML)':
-                # ml_results = ml_model.predict(raw_frame)
-                time.sleep(0.1) # Simulate 100ms processing
-                current_results = {"objects": [{"label": "note", "confidence": 0.92}]}
-            else:
-                # default_results = some_other_process(raw_frame)
-                time.sleep(0.02) # Simulate 20ms processing
-                current_results = {"status": "Processed"}
-
-            processing_time = (time.time() - start_time) * 1000 # in ms
-            current_results['processing_time_ms'] = f"{processing_time:.2f}"
-            
-            with self.results_lock:
-                self.latest_results = current_results
+            finally:
+                # CRITICAL: Always release the frame so its buffer can be returned to the pool.
+                if ref_counted_frame:
+                    ref_counted_frame.release()
 
         print(f"Stopping vision processing thread for pipeline {self.pipeline_id} on camera {self.identifier}")
 
@@ -89,12 +172,10 @@ class VisionProcessingThread(threading.Thread):
 
 
 # --- UNIFIED CAMERA ACQUISITION THREAD (PRODUCER) ---
-
 class CameraAcquisitionThread(threading.Thread):
     """
-    A dedicated thread for continuous camera acquisition.
-    It produces raw frames and distributes them to multiple processing queues.
-    This is the 'Producer' in a one-to-many producer-consumer pattern.
+    A 'Producer' thread that acquires frames and distributes them efficiently
+    to multiple consumer queues using a reference-counted buffer pool.
     """
     def __init__(self, camera_db_data, app):
         super().__init__()
@@ -105,62 +186,42 @@ class CameraAcquisitionThread(threading.Thread):
         self.app = app
         self.frame_lock = threading.Lock()
         self.latest_frame_for_display = None
-
-        # A dictionary to hold the queues for fanning-out frames to consumers
-        # { pipeline_id: queue }
         self.processing_queues = {}
         self.queues_lock = threading.Lock()
-
         self.stop_event = threading.Event()
         self.fps = 0.0
+        self.buffer_pool = FrameBufferPool(name=self.identifier)
 
     def add_pipeline_queue(self, pipeline_id, frame_queue):
-        """Register a new queue for a vision pipeline."""
         with self.queues_lock:
             self.processing_queues[pipeline_id] = frame_queue
 
     def remove_pipeline_queue(self, pipeline_id):
-        """Remove a queue for a vision pipeline."""
         with self.queues_lock:
             self.processing_queues.pop(pipeline_id, None)
 
     def _is_physically_connected(self):
-        """Helper to check the physical connection."""
         if self.camera_type == 'USB':
             try:
                 cap = cv2.VideoCapture(int(self.identifier))
                 is_open = cap.isOpened()
                 cap.release()
                 return is_open
-            except Exception:
-                return False
+            except Exception: return False
         elif self.camera_type == 'GenICam':
             return any(cam['identifier'] == self.identifier for cam in list_genicam_cameras())
         return False
 
     def run(self):
-        """The main resilient loop for the acquisition thread."""
         print(f"Starting {self.camera_type} acquisition thread for {self.identifier}")
-
         while not self.stop_event.is_set():
-            ia = None
-            cap = None
+            ia, cap = None, None
             try:
                 if not self._is_physically_connected():
                     print(f"Camera {self.identifier} is not connected. Retrying in 5 seconds...")
                     self.stop_event.wait(5.0)
                     continue
 
-                with self.app.app_context():
-                    camera_data = db.get_camera(self.camera_db_data['id'])
-                
-                if camera_data:
-                    orientation = int(camera_data['orientation'])
-                else:
-                    print(f"Camera {self.identifier} no longer in database. Stopping thread.")
-                    break
-
-                # --- Initialize Camera Resource ---
                 print(f"Initializing camera {self.identifier}...")
                 if self.camera_type == 'GenICam':
                     with harvester_lock:
@@ -168,69 +229,55 @@ class CameraAcquisitionThread(threading.Thread):
                     ia.start()
                 elif self.camera_type == 'USB':
                     cap = cv2.VideoCapture(int(self.identifier))
-                    if not cap.isOpened():
-                        print(f"Failed to open USB camera {self.identifier}. Will retry.")
-                        self.stop_event.wait(5.0)
-                        continue
+                    if not cap.isOpened(): raise ConnectionError("Failed to open USB camera.")
+
+                # Initialize buffer pool with the first frame
+                if self.buffer_pool._buffer_shape is None:
+                    first_frame = self._get_one_frame(ia, cap)
+                    if first_frame is not None:
+                        self.buffer_pool.initialize(first_frame)
+                    else:
+                        raise ConnectionError("Failed to get initial frame to size buffer pool.")
                 
                 print(f"Camera {self.identifier} initialized successfully.")
-
-                start_time = time.time()
-                frame_count = 0
-                last_config_check = time.time()
+                start_time, frame_count, last_config_check = time.time(), 0, time.time()
+                orientation = self.camera_db_data['orientation']
 
                 while not self.stop_event.is_set():
-                    # --- Refresh configuration periodically ---
                     if time.time() - last_config_check > 2.0:
                         with self.app.app_context():
                             refreshed_data = db.get_camera(self.camera_db_data['id'])
-                        if refreshed_data:
-                            orientation = int(refreshed_data['orientation'])
+                        if refreshed_data: orientation = int(refreshed_data['orientation'])
                         last_config_check = time.time()
 
-                    raw_frame = None
-                    # --- Frame Acquisition Logic ---
-                    if self.camera_type == 'GenICam':
-                        try:
-                            with ia.fetch(timeout=1.0) as buffer:
-                                component = buffer.payload.components[0]
-                                img = component.data.reshape(component.height, component.width)
-                                if 'Bayer' in component.data_format:
-                                    raw_frame = cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
-                                elif len(img.shape) == 2:
-                                    raw_frame = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-                                else:
-                                    raw_frame = img
-                        except genapi.TimeoutException:
-                            continue
-                        except Exception as fetch_e:
-                            print(f"Error fetching GenICam buffer for {self.identifier}: {fetch_e}. Reconnecting...")
-                            break
-                    elif self.camera_type == 'USB':
-                        ret, frame = cap.read()
-                        if not ret or frame is None:
-                            print(f"Failed to read from USB camera {self.identifier}. Reconnecting...")
-                            break
-                        raw_frame = frame
+                    raw_frame_from_cam = self._get_one_frame(ia, cap)
+                    if raw_frame_from_cam is None: break
 
-                    if raw_frame is not None:
-                        # --- Fan-out to all registered processing queues (Producer) ---
-                        with self.queues_lock:
-                            for q in self.processing_queues.values():
-                                try:
-                                    q.put_nowait(raw_frame.copy())
-                                except queue.Full:
-                                    pass # Expected, drop frame for slow consumers
+                    pooled_buffer = self.buffer_pool.get_buffer()
+                    if pooled_buffer is None: continue
 
-                        # Prepare the frame for web display
-                        display_frame = self._prepare_display_frame(raw_frame, orientation)
+                    np.copyto(pooled_buffer, raw_frame_from_cam)
+                    ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
+                    
+                    with self.queues_lock:
+                        for q in self.processing_queues.values():
+                            ref_counted_frame.acquire()
+                            try:
+                                q.put_nowait(ref_counted_frame)
+                            except queue.Full:
+                                ref_counted_frame.release()
 
+                    ref_counted_frame.acquire()
+                    try:
+                        display_frame = self._prepare_display_frame(ref_counted_frame.data, orientation)
                         # Encode and store the final JPEG for streaming
                         ret, buffer = cv2.imencode('.jpg', display_frame)
                         if ret:
                             with self.frame_lock:
                                 self.latest_frame_for_display = buffer.tobytes()
-                        
+                    finally:
+                        ref_counted_frame.release()
+                    
                         # --- FPS Calculation ---
                         frame_count += 1
                         elapsed_time = time.time() - start_time
@@ -246,11 +293,29 @@ class CameraAcquisitionThread(threading.Thread):
                 print(f"Cleaning up resources for {self.identifier}.")
                 if ia:
                     try: ia.destroy()
-                    except Exception as e: print(f"Error destroying IA for {self.identifier}: {e}")
+                    except Exception as e: print(f"Error destroying IA: {e}")
                 if cap:
                     cap.release()
         
         print(f"Acquisition thread for {self.identifier} has stopped.")
+
+    def _get_one_frame(self, ia, cap):
+        """Helper to abstract frame grabbing from either source."""
+        if self.camera_type == 'GenICam' and ia:
+            try:
+                with ia.fetch(timeout=1.0) as buffer:
+                    component = buffer.payload.components[0]
+                    img = component.data.reshape(component.height, component.width)
+                    if 'Bayer' in component.data_format: return cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
+                    elif len(img.shape) == 2: return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                    else: return img
+            except genapi.TimeoutException: return None
+            except Exception as e:
+                print(f"Error fetching GenICam frame for {self.identifier}: {e}"); return None
+        elif self.camera_type == 'USB' and cap:
+            ret, frame = cap.read()
+            return frame if ret and frame is not None else None
+        return None
 
     def _prepare_display_frame(self, frame, orientation):
         """Applies orientation and FPS overlay to a frame."""
@@ -341,15 +406,13 @@ def add_pipeline_to_camera(camera_id, pipeline_info, app):
     with active_camera_threads_lock:
         if identifier in active_camera_threads:
             thread_group = active_camera_threads[identifier]
-            acq_thread = thread_group['acquisition']
             pipeline_id = pipeline_info['id']
 
             if pipeline_id not in thread_group['processing_threads']:
                 print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
                 frame_queue = queue.Queue(maxsize=2)
                 proc_thread = VisionProcessingThread(identifier, pipeline_info, frame_queue)
-                
-                acq_thread.add_pipeline_queue(pipeline_id, frame_queue)
+                thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
                 thread_group['processing_threads'][pipeline_id] = proc_thread
                 proc_thread.start()
 
