@@ -89,7 +89,13 @@ def init_db():
     conn.close()
 
 def add_camera(name, camera_type, identifier):
-    """Adds a new camera to the database, a default pipeline, and returns the new camera's ID."""
+    """
+    Adds a new camera to the database, a default pipeline, and returns the new camera's ID.
+
+    Returns:
+        int: The new camera's ID if the camera was added successfully.
+        None: If the camera could not be added (e.g., due to a duplicate identifier).
+    """
     db = get_db()
     try:
         cursor = db.cursor()
