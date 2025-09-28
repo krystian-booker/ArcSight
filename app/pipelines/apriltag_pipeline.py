@@ -95,15 +95,33 @@ class AprilTagPipeline:
             # Extract rotation from the pose
             rotation = pose.rotation()
 
-            # Get translation and rotation using the correct capitalized methods from the reference
-            x = -pose.Y()
-            y = -pose.Z()
-            z = pose.X()
+            # --- Data for Drawing ---
+            # Get the raw translation and rotation vectors used by OpenCV
+            tvec = np.array([pose.X(), pose.Y(), pose.Z()])
+            rvec, _ = cv2.Rodrigues(rotation.toMatrix())
+
+
+            # Get the corners for drawing the bounding box
+            corners = np.array([
+                [tag.getCorner(0).x, tag.getCorner(0).y],
+                [tag.getCorner(1).x, tag.getCorner(1).y],
+                [tag.getCorner(2).x, tag.getCorner(2).y],
+                [tag.getCorner(3).x, tag.getCorner(3).y]
+            ])
+
+            # --- Data for UI Table (with coordinate system transformation) ---
+            # Transform coordinates for a more intuitive representation if needed
+            # For example, Z forward, Y left, X down
+            x_ui = pose.Z()
+            y_ui = -pose.X()
+            z_ui = -pose.Y()
+
 
             # For WPILib's Rotation3d: X()=Roll, Y()=Pitch, Z()=Yaw in radians
-            roll_rad = rotation.X()
-            pitch_rad = rotation.Y()
-            yaw_rad = rotation.Z()
+            rotation = pose.rotation()
+            roll_rad = rotation.Z()
+            pitch_rad = -rotation.X()
+            yaw_rad = -rotation.Y()
             
             # Convert radians to degrees for the UI
             roll_deg = math.degrees(roll_rad)
@@ -111,18 +129,26 @@ class AprilTagPipeline:
             yaw_deg = math.degrees(yaw_rad)
 
             results.append({
-                "id": tag.getId(),
-                "decision_margin": tag.getDecisionMargin(),
-                "pose_error": pose_error,
-                "x_m": x,
-                "y_m": y,
-                "z_m": z,
-                "yaw_rad": yaw_rad,
-                "pitch_rad": pitch_rad,
-                "roll_rad": roll_rad,
-                "yaw_deg": yaw_deg,
-                "pitch_deg": pitch_deg,
-                "roll_deg": roll_deg
+                "ui_data": {
+                    "id": tag.getId(),
+                    "decision_margin": tag.getDecisionMargin(),
+                    "pose_error": pose_error,
+                    "x_m": x_ui,
+                    "y_m": y_ui,
+                    "z_m": z_ui,
+                    "yaw_rad": yaw_rad,
+                    "pitch_rad": pitch_rad,
+                    "roll_rad": roll_rad,
+                    "yaw_deg": yaw_deg,
+                    "pitch_deg": pitch_deg,
+                    "roll_deg": roll_deg,
+                },
+                "drawing_data": {
+                    "rvec": rvec,
+                    "tvec": tvec,
+                    "corners": corners,
+                    "id": tag.getId()
+                }
             })
             
         return results

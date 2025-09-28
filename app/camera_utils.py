@@ -102,6 +102,8 @@ class VisionProcessingThread(threading.Thread):
         self.stop_event = threading.Event()
         self.results_lock = threading.Lock()
         self.latest_results = {"status": "Starting..."}
+        self.latest_processed_frame = None
+        self.processed_frame_lock = threading.Lock()
 
         # Store camera data and initialize the pipeline object
         self.camera_db_data = camera_db_data
@@ -153,15 +155,34 @@ class VisionProcessingThread(threading.Thread):
 
                 processing_time = (time.time() - start_time) * 1000
 
+                # Separate UI data from drawing data
+                ui_detections = [d['ui_data'] for d in detections]
+                drawing_detections = [d['drawing_data'] for d in detections]
+
                 # Format results for the frontend/API
                 current_results = {
-                    "tags_found": len(detections) > 0,
-                    "detections": detections,
+                    "tags_found": len(ui_detections) > 0,
+                    "detections": ui_detections,
                     "processing_time_ms": f"{processing_time:.2f}"
                 }
 
                 with self.results_lock:
                     self.latest_results = current_results
+
+                # --- Generate Processed Frame ---
+                # Create a writable copy for drawing on
+                annotated_frame = raw_frame.copy()
+
+                # If it's an AprilTag pipeline and we have detections, draw the 3D boxes
+                if self.pipeline_type == 'AprilTag' and drawing_detections:
+                    tag_size = self.pipeline.pose_estimator_config.tagSize
+                    self._draw_3d_box_on_frame(annotated_frame, drawing_detections, camera_params, tag_size)
+                
+                # Encode the potentially annotated frame to JPEG for the processed feed
+                ret, buffer = cv2.imencode('.jpg', annotated_frame)
+                if ret:
+                    with self.processed_frame_lock:
+                        self.latest_processed_frame = buffer.tobytes()
 
             except queue.Empty:
                 continue
@@ -175,6 +196,46 @@ class VisionProcessingThread(threading.Thread):
         """Safely retrieves the latest results from this pipeline."""
         with self.results_lock:
             return self.latest_results
+
+    def _draw_3d_box_on_frame(self, frame, detections, camera_params, tag_size_m):
+        """Draws a 3D bounding box around each detected AprilTag."""
+        if not detections:
+            return
+        
+        # Camera matrix and distortion coefficients
+        cam_matrix = np.array([[camera_params['fx'], 0, camera_params['cx']],
+                               [0, camera_params['fy'], camera_params['cy']],
+                               [0, 0, 1]], dtype=np.float32)
+        dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
+
+        # Define the 3D coordinates of the corners of the tag in its own coordinate system
+        half_tag_size = tag_size_m / 2
+        obj_pts = np.array([
+            [-half_tag_size, -half_tag_size, 0], [half_tag_size, -half_tag_size, 0],
+            [half_tag_size, half_tag_size, 0], [-half_tag_size, half_tag_size, 0],
+            [-half_tag_size, -half_tag_size, -tag_size_m], [half_tag_size, -half_tag_size, -tag_size_m],
+            [half_tag_size, half_tag_size, -tag_size_m], [-half_tag_size, half_tag_size, -tag_size_m]
+        ])
+
+        for det in detections:
+            rvec, tvec = det['rvec'], det['tvec']
+            
+            # Project the 3D points to the 2D image plane
+            img_pts, _ = cv2.projectPoints(obj_pts, rvec, tvec, cam_matrix, dist_coeffs)
+            img_pts = np.int32(img_pts).reshape(-1, 2)
+
+            # Draw the base
+            cv2.drawContours(frame, [img_pts[:4]], -1, (0, 255, 0), 2)
+            # Draw the pillars
+            for i in range(4):
+                cv2.line(frame, tuple(img_pts[i]), tuple(img_pts[i + 4]), (0, 255, 0), 2)
+            # Draw the top
+            cv2.drawContours(frame, [img_pts[4:]], -1, (0, 255, 0), 2)
+
+            # Draw the tag ID
+            corner = tuple(np.int32(det['corners'][0]))
+            cv2.putText(frame, str(det['id']), corner, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
 
     def stop(self):
         """Signals the thread to stop."""
@@ -500,8 +561,6 @@ def get_camera_feed(camera):
 
     try:
         while True:
-            time.sleep(0.02)
-
             frame_to_send = None
             with acq_thread.frame_lock:
                 if acq_thread.latest_frame_for_display:
@@ -514,10 +573,45 @@ def get_camera_feed(camera):
             if not acq_thread.is_alive():
                 print(f"Stopping feed for {identifier} as acquisition thread has died.")
                 break
+            time.sleep(0.01) # A small sleep to prevent busy-waiting
     except GeneratorExit:
         print(f"Client disconnected from camera feed {identifier}.")
     except Exception as e:
         print(f"Error during streaming for feed {identifier}: {e}")
+
+
+def get_processed_camera_feed(pipeline_id):
+    """A generator that yields JPEG frames from a vision processing thread."""
+    proc_thread = None
+    with active_camera_threads_lock:
+        for thread_group in active_camera_threads.values():
+            if pipeline_id in thread_group['processing_threads']:
+                proc_thread = thread_group['processing_threads'][pipeline_id]
+                break
+
+    if not proc_thread or not proc_thread.is_alive():
+        print(f"Warning: Attempted to get processed feed for pipeline {pipeline_id}, but its thread is not running.")
+        return
+
+    try:
+        while True:
+            frame_to_send = None
+            with proc_thread.processed_frame_lock:
+                if proc_thread.latest_processed_frame:
+                    frame_to_send = proc_thread.latest_processed_frame
+            
+            if frame_to_send:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_to_send + b'\r\n')
+            
+            if not proc_thread.is_alive():
+                print(f"Stopping processed feed for {pipeline_id} as its thread has died.")
+                break
+            time.sleep(0.01) # A small sleep to prevent busy-waiting
+    except GeneratorExit:
+        print(f"Client disconnected from processed feed {pipeline_id}.")
+    except Exception as e:
+        print(f"Error during streaming for processed feed {pipeline_id}: {e}")
 
 
 if genapi:
