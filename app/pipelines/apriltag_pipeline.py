@@ -45,7 +45,7 @@ class AprilTagPipeline:
 
         print(f"AprilTag detector initialized with family: {family}")
 
-    def process_frame(self, frame, camera_params):
+def process_frame(self, frame, camera_params):
         """
         Processes a single frame to find AprilTags and estimate their pose.
 
@@ -86,25 +86,29 @@ class AprilTagPipeline:
                 continue
 
             # --- Pose Estimation ---
-            pose: Transform3d = self.pose_estimator.estimate(tag)
+            # Use estimateOrthogonalIteration to get the AprilTagPoseEstimate object
+            est_result = self.pose_estimator.estimateOrthogonalIteration(tag, 50)
             
-            # The reprojection error of the homography estimate is a good measure of ambiguity
-            pose_error = tag.getPoseError()
-            translation = pose.translation()
+            pose: Transform3d = est_result.pose1
+            pose_error = est_result.error1
+            
+            # Extract rotation from the pose
             rotation = pose.rotation()
 
-            x = -translation.y
-            y = -translation.z
-            z = translation.x
+            # Get translation and rotation using the correct capitalized methods from the reference
+            x = -pose.Y()
+            y = -pose.Z()
+            z = pose.X()
 
-            # Get Yaw, Pitch, Roll in both radians and degrees
-            yaw_rad = rotation.z_radians
-            pitch_rad = rotation.y_radians
-            roll_rad = rotation.x_radians
+            # For WPILib's Rotation3d: X()=Roll, Y()=Pitch, Z()=Yaw in radians
+            roll_rad = rotation.X()
+            pitch_rad = rotation.Y()
+            yaw_rad = rotation.Z()
             
-            yaw_deg = rotation.z_degrees
-            pitch_deg = rotation.y_degrees
-            roll_deg = rotation.x_degrees
+            # Convert radians to degrees for the UI
+            roll_deg = math.degrees(roll_rad)
+            pitch_deg = math.degrees(pitch_rad)
+            yaw_deg = math.degrees(yaw_rad)
 
             results.append({
                 "id": tag.getId(),
