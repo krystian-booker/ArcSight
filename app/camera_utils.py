@@ -7,6 +7,7 @@ import time
 import queue
 import uuid
 import numpy as np
+from .pipelines.apriltag_pipeline import AprilTagPipeline
 
 try:
     from genicam import genapi
@@ -91,7 +92,7 @@ class FrameBufferPool:
 # --- Vision Processing Thread (Consumer) ---
 class VisionProcessingThread(threading.Thread):
     """A consumer thread that runs a vision pipeline on frames from a queue."""
-    def __init__(self, identifier, pipeline_info, frame_queue):
+    def __init__(self, identifier, pipeline_info, camera_db_data, frame_queue):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
@@ -102,37 +103,61 @@ class VisionProcessingThread(threading.Thread):
         self.results_lock = threading.Lock()
         self.latest_results = {"status": "Starting..."}
 
+        # Store camera data and initialize the pipeline object
+        self.camera_db_data = camera_db_data
+        self.pipeline = None
+
+        # This is where you would load pipeline-specific settings from the DB
+        pipeline_config = {
+            'family': 'tag36h11', 
+            'threads': 2,
+            'decimate': 1.0,
+            'blur': 0.0,
+            'refine_edges': True,
+            'tag_size_m': 0.165
+        }
+
+        if self.pipeline_type == 'AprilTag':
+            self.pipeline = AprilTagPipeline(pipeline_config)
+        # elif self.pipeline_type == 'Coloured Shape':
+        #     self.pipeline = ColouredShapePipeline(pipeline_config)
+        else:
+            print(f"Warning: Unknown pipeline type '{self.pipeline_type}' for pipeline ID {self.pipeline_id}")
+
     def run(self):
         """The main loop for the vision processing thread."""
+        if not self.pipeline:
+            print(f"Stopping processing thread for pipeline {self.pipeline_id} due to no valid pipeline object.")
+            return
+
         print(f"Starting vision processing thread for pipeline {self.pipeline_id} ({self.pipeline_type}) on camera {self.identifier}")
+
+        # Define placeholder camera parameters
+        # IMPORTANT: These MUST be replaced with real values from camera calibration!
+        # You should store these in your database per camera.
+        camera_params = {
+            'fx': 600.0, 'fy': 600.0, # Focal length in pixels
+            'cx': 320.0, 'cy': 240.0   # Principal point (image center)
+        }
+
         while not self.stop_event.is_set():
             ref_counted_frame = None
             try:
                 ref_counted_frame = self.frame_queue.get(timeout=1)
-
-                # --- <<< VISION PROCESSING LOGIC GOES HERE >>> ---
-                # Default to read-only access for maximum performance.
                 raw_frame = ref_counted_frame.data
 
-                # Example of copy-on-write for a debug pipeline:
-                # if self.needs_to_draw:
-                #     debug_frame = ref_counted_frame.get_writable_copy()
-                #     cv2.putText(debug_frame, "Debug", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                #     # ... do something with debug_frame ...
-
                 start_time = time.time()
-                if self.pipeline_type == 'AprilTag':
-                    time.sleep(0.05)
-                    current_results = {"tags_found": 1, "id": 5, "x": 0.3, "y": -0.2, "z_angle": 12.5, "ambiguity": 0.01}
-                elif self.pipeline_type == 'Object Detection (ML)':
-                    time.sleep(0.1)
-                    current_results = {"objects": [{"label": "note", "confidence": 0.92}]}
-                else:
-                    time.sleep(0.02)
-                    current_results = {"status": "Processed"}
+
+                # Delegate processing to the pipeline object
+                detections = self.pipeline.process_frame(raw_frame, camera_params)
 
                 processing_time = (time.time() - start_time) * 1000
-                current_results['processing_time_ms'] = f"{processing_time:.2f}"
+
+                # Format results for the frontend/API
+                current_results = {
+                    "detections": detections,
+                    "processing_time_ms": f"{processing_time:.2f}"
+                }
 
                 with self.results_lock:
                     self.latest_results = current_results
@@ -350,7 +375,7 @@ def start_camera_thread(camera, app):
             processing_threads = {}
             for pipeline in pipelines:
                 frame_queue = queue.Queue(maxsize=2)
-                proc_thread = VisionProcessingThread(identifier, dict(pipeline), frame_queue)
+                proc_thread = VisionProcessingThread(identifier, dict(pipeline), camera, frame_queue)
                 
                 acq_thread.add_pipeline_queue(pipeline['id'], frame_queue)
                 processing_threads[pipeline['id']] = proc_thread
@@ -397,7 +422,7 @@ def add_pipeline_to_camera(camera_id, pipeline_info, app):
             if pipeline_id not in thread_group['processing_threads']:
                 print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
                 frame_queue = queue.Queue(maxsize=2)
-                proc_thread = VisionProcessingThread(identifier, pipeline_info, frame_queue)
+                proc_thread = VisionProcessingThread(identifier, pipeline_info, dict(camera), frame_queue)
                 thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
                 thread_group['processing_threads'][pipeline_id] = proc_thread
                 proc_thread.start()
