@@ -667,21 +667,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
         tbody.innerHTML = ''; // Clear previous results
 
-        if (!results || !results.tags_found) {
+        if (!results || !results.detections || results.detections.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-4">No targets detected</td></tr>';
             return;
         }
         
-        // This is a placeholder for a single tag. You would loop if your results contained an array of tags.
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${results.id || 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.x !== undefined ? results.x.toFixed(3) : 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.y !== undefined ? results.y.toFixed(3) : 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.z_angle !== undefined ? results.z_angle.toFixed(2) : 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.ambiguity !== undefined ? results.ambiguity.toFixed(4) : 'N/A'}</td>
-        `;
-        tbody.appendChild(row);
+        results.detections.forEach(tag => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${tag.id}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.x_m.toFixed(3)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.y_m.toFixed(3)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.yaw_deg.toFixed(2)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.pose_error.toFixed(4)}</td>
+            `;
+            tbody.appendChild(row);
+        });
     }
 
 
