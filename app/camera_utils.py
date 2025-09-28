@@ -636,7 +636,7 @@ def get_genicam_node(identifier, node_name):
         if ia: ia.destroy()
 
 def update_genicam_node(identifier, node_name, value):
-    if genapi is None: return False, "GenICam runtime is not available...", 500, None
+    if genapi is None: return False, "GenICam runtime is not available. Please ensure the GenICam library is installed and accessible.", 500, None
     if not node_name: return False, "Node name is required.", 400, None
     ia = _create_image_acquirer(identifier)
     if not ia: return False, "Unable to connect to the GenICam camera.", 500, None
