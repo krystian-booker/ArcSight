@@ -57,7 +57,6 @@ class AprilTagPipeline:
             list: A list of dictionaries, where each dictionary represents a detected tag.
         """
         # --- Update Pose Estimator if needed ---
-        # The pose estimator needs to be created with the correct camera intrinsics.
         if (self.pose_estimator is None or 
             self.pose_estimator_config.fx != camera_params['fx'] or
             self.pose_estimator_config.fy != camera_params['fy']):
@@ -87,35 +86,39 @@ class AprilTagPipeline:
                 continue
 
             # --- Pose Estimation ---
-            # The estimate method returns a Transform3d object
             pose: Transform3d = self.pose_estimator.estimate(tag)
-
-            # Extract translation and rotation
+            
+            # The reprojection error of the homography estimate is a good measure of ambiguity
+            pose_error = tag.getPoseError()
             translation = pose.translation()
             rotation = pose.rotation()
 
-            # The RobotPy coordinate system is already in the FRC convention (X away, Y left, Z up from camera)
-            # We will convert it to a more standard robotics view (X right, Y up, Z out of lens)
-            # This matches what we had before.
             x = -translation.y
             y = -translation.z
             z = translation.x
 
-            # Get Yaw, Pitch, Roll in degrees
-            yaw = rotation.z_degrees
-            pitch = rotation.y_degrees
-            roll = rotation.x_degrees
+            # Get Yaw, Pitch, Roll in both radians and degrees
+            yaw_rad = rotation.z_radians
+            pitch_rad = rotation.y_radians
+            roll_rad = rotation.x_radians
+            
+            yaw_deg = rotation.z_degrees
+            pitch_deg = rotation.y_degrees
+            roll_deg = rotation.x_degrees
 
             results.append({
                 "id": tag.getId(),
                 "decision_margin": tag.getDecisionMargin(),
-                "hamming": tag.getHamming(),
+                "pose_error": pose_error,
                 "x_m": x,
                 "y_m": y,
                 "z_m": z,
-                "roll_deg": roll,
-                "pitch_deg": pitch,
-                "yaw_deg": yaw
+                "yaw_rad": yaw_rad,
+                "pitch_rad": pitch_rad,
+                "roll_rad": roll_rad,
+                "yaw_deg": yaw_deg,
+                "pitch_deg": pitch_deg,
+                "roll_deg": roll_deg
             })
             
         return results

@@ -155,6 +155,7 @@ class VisionProcessingThread(threading.Thread):
 
                 # Format results for the frontend/API
                 current_results = {
+                    "tags_found": len(detections) > 0,
                     "detections": detections,
                     "processing_time_ms": f"{processing_time:.2f}"
                 }

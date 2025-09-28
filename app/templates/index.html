@@ -186,11 +186,14 @@
                         <table class="min-w-full divide-y divide-gray-700">
                             <thead class="bg-gray-700">
                                 <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Fiducial ID</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">X metres</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Y metres</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Z Angle</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Ambiguity</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">ID</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">X (m)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Y (m)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Z (m)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Yaw (°)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Pitch (°)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Roll (°)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Error</th>
                                 </tr>
                             </thead>
                             <tbody id="apriltag-targets-tbody" class="bg-gray-800 divide-y divide-gray-700">
@@ -667,23 +670,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
         tbody.innerHTML = ''; // Clear previous results
 
-        if (!results || !results.tags_found) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-4">No targets detected</td></tr>';
+        if (!results || !results.tags_found || !results.detections || results.detections.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-4">No targets detected</td></tr>';
             return;
         }
         
-        // This is a placeholder for a single tag. You would loop if your results contained an array of tags.
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${results.id || 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.x !== undefined ? results.x.toFixed(3) : 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.y !== undefined ? results.y.toFixed(3) : 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.z_angle !== undefined ? results.z_angle.toFixed(2) : 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.ambiguity !== undefined ? results.ambiguity.toFixed(4) : 'N/A'}</td>
-        `;
-        tbody.appendChild(row);
+        // Loop through each detection and create a table row
+        results.detections.forEach(tag => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${tag.id || 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.x_m !== undefined ? tag.x_m.toFixed(3) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.y_m !== undefined ? tag.y_m.toFixed(3) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.z_m !== undefined ? tag.z_m.toFixed(3) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.yaw_deg !== undefined ? tag.yaw_deg.toFixed(2) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.pitch_deg !== undefined ? tag.pitch_deg.toFixed(2) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.roll_deg !== undefined ? tag.roll_deg.toFixed(2) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.pose_error !== undefined ? tag.pose_error.toFixed(4) : 'N/A'}</td>
+            `;
+            tbody.appendChild(row);
+        });
     }
-
 
     // Initial setup
     const initialCameraId = cameraSelect.value;
