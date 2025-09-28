@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, jsonify, Response, send_file
+from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app
 from app import db, camera_utils, network_utils
 import cv2
 import numpy as np
@@ -32,11 +32,11 @@ def video_feed(camera_id):
     if not camera:
         return "Camera not found", 404
 
-    if not camera_utils.check_camera_connection(camera):
+    if not camera_utils.check_camera_connection(dict(camera)):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
-    return Response(camera_utils.get_camera_feed(camera),
+    return Response(camera_utils.get_camera_feed(dict(camera)),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @main.route('/cameras')
@@ -79,11 +79,14 @@ def add_camera():
     elif camera_type == 'GenICam':
         identifier = request.form.get('genicam-camera-select')
     else:
-        # Handle error: invalid camera type
         return redirect(url_for('main.cameras'))
 
     if name and camera_type and identifier:
         db.add_camera(name, camera_type, identifier)
+        # Find the newly added camera to start its thread
+        new_camera = db.get_camera_by_identifier(identifier)
+        if new_camera:
+            camera_utils.start_camera_thread(dict(new_camera), current_app._get_current_object())
 
     return redirect(url_for('main.cameras'))
 
@@ -96,6 +99,9 @@ def update_camera(camera_id):
 
 @main.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
+    camera = db.get_camera(camera_id)
+    if camera:
+        camera_utils.stop_camera_thread(camera['identifier'])
     db.delete_camera(camera_id)
     return redirect(url_for('main.cameras'))
 
@@ -114,7 +120,18 @@ def add_pipeline(camera_id):
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
     db.add_pipeline(camera_id, name, pipeline_type)
-    return jsonify({'success': True})
+    # Retrieve the newly added pipeline (assuming name is unique per camera)
+    new_pipeline = None
+    pipelines = db.get_pipelines(camera_id)
+    for pipeline in pipelines:
+        if pipeline['name'] == name and pipeline['pipeline_type'] == pipeline_type:
+            new_pipeline = pipeline
+            break
+    new_pipeline_id = new_pipeline['id'] if new_pipeline else None
+    if new_pipeline:
+        camera_utils.add_pipeline_to_camera(camera_id, dict(new_pipeline), current_app._get_current_object())
+
+    return jsonify({'success': True, 'pipeline_id': new_pipeline_id})
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
 def update_pipeline(pipeline_id):
@@ -130,23 +147,39 @@ def update_pipeline(pipeline_id):
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
 def delete_pipeline(pipeline_id):
-    db.delete_pipeline(pipeline_id)
-    return jsonify({'success': True})
+    pipeline = db.get_pipeline(pipeline_id)
+    if pipeline:
+        camera_id = pipeline['camera_id']
+        camera_utils.remove_pipeline_from_camera(camera_id, pipeline_id, current_app._get_current_object())
+        db.delete_pipeline(pipeline_id)
+        return jsonify({'success': True})
+    return jsonify({'error': 'Pipeline not found'}), 404
+
+@main.route('/api/cameras/results/<int:camera_id>')
+def get_camera_results(camera_id):
+    camera = db.get_camera(camera_id)
+    if not camera:
+        return jsonify({'error': 'Camera not found'}), 404
+    
+    results = camera_utils.get_camera_pipeline_results(camera['identifier'])
+    if results is None:
+        return jsonify({'error': 'Camera thread not running or no results available'}), 404
+        
+    # Convert pipeline IDs (which are integers) to strings for JSON compatibility
+    string_key_results = {str(k): v for k, v in results.items()}
+
+    return jsonify(string_key_results)
 
 @main.route('/config/genicam/update', methods=['POST'])
 def update_genicam_settings():
     path = request.form.get('genicam-cti-path', '').strip()
 
     if path and path.lower().endswith('.cti'):
-        # Basic validation: check if it's a non-empty string and ends with .cti
         db.update_setting('genicam_cti_path', path)
     elif not path:
-        # If the path is empty, clear the setting
         db.clear_setting('genicam_cti_path')
     
-    # Re-initialize the harvester to apply the new settings
     camera_utils.reinitialize_harvester()
-    
     return redirect(url_for('main.settings'))
 
 @main.route('/config/genicam/clear', methods=['POST'])
@@ -176,7 +209,7 @@ def discover_cameras():
 def camera_status(camera_id):
     camera = db.get_camera(camera_id)
     if camera:
-        is_connected = camera_utils.check_camera_connection(camera)
+        is_connected = camera_utils.check_camera_connection(dict(camera))
         return jsonify({'connected': is_connected})
     return jsonify({'error': 'Camera not found'}), 404
 
@@ -206,7 +239,6 @@ def update_camera_controls(camera_id):
     gain_mode = data.get('gain_mode')
     gain_value = data.get('gain_value')
 
-    # Basic validation
     if None in [orientation, exposure_mode, exposure_value, gain_mode, gain_value]:
         return jsonify({'error': 'Missing one or more required fields'}), 400
 
