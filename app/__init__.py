@@ -26,7 +26,8 @@ def create_app():
     with app.app_context():
         db.init_db()
         camera_utils.initialize_harvester()
-        camera_utils.start_all_camera_threads()
+        # Pass the app object directly
+        camera_utils.start_all_camera_threads(app)
 
     # Register a function to stop all threads when the application exits
     atexit.register(camera_utils.stop_all_camera_threads)

@@ -21,21 +21,8 @@ harvester_lock = threading.Lock()
 active_camera_threads = {}
 active_camera_threads_lock = threading.Lock()
 
-# << --- App instance for threads --- >>
-# This will hold the single Flask app instance.
-_app = None
-
-def set_app_for_threads(app):
-    """
-    Provides the camera threads with a reference to the main Flask app object.
-    This is called once from create_app() in __init__.py.
-    """
-    global _app
-    _app = app
-
 
 # --- VISION PROCESSING THREAD (CONSUMER) ---
-
 class VisionProcessingThread(threading.Thread):
     """
     A dedicated thread for running vision pipelines on raw frames from a queue.
@@ -96,7 +83,7 @@ class CameraAcquisitionThread(threading.Thread):
         self.camera_db_data = camera_db_data
         self.identifier = camera_db_data['identifier']
         self.camera_type = camera_db_data['camera_type']
-
+        self.app = app
         self.frame_lock = threading.Lock()
         self.latest_frame_for_display = None
 
@@ -135,14 +122,7 @@ class CameraAcquisitionThread(threading.Thread):
                     self.stop_event.wait(5.0)
                     continue
 
-                # << --- Use the shared app instance for context --- >>
-                orientation = 0
-                if not _app:
-                    print("Error: Flask app not set for threads. Cannot query database.")
-                    self.stop_event.wait(5.0)
-                    continue
-                
-                with _app.app_context():
+                with self.app.app_context():
                     camera_data = db.get_camera(self.camera_db_data['id'])
                 
                 if camera_data:
@@ -264,7 +244,7 @@ def start_camera_thread(camera):
         identifier = camera['identifier']
         if identifier not in active_camera_threads:
             print(f"Starting threads for camera {identifier}")
-            acq_thread = CameraAcquisitionThread(camera)
+            acq_thread = CameraAcquisitionThread(camera, app)
             proc_thread = VisionProcessingThread(acq_thread)
             
             active_camera_threads[identifier] = {
@@ -285,12 +265,12 @@ def stop_camera_thread(identifier):
             thread_pair['acquisition'].join(timeout=2)
             thread_pair['processing'].join(timeout=2)
 
-def start_all_camera_threads():
+def start_all_camera_threads(app):
     """To be called once at application startup to initialize all configured cameras."""
     print("Starting acquisition and processing threads for all configured cameras...")
     cameras = db.get_cameras()
     for camera in cameras:
-        start_camera_thread(camera)
+        start_camera_thread(camera, app)
 
 def stop_all_camera_threads():
     """To be called once at application shutdown to gracefully stop all threads."""
