@@ -44,8 +44,14 @@ class AprilTagPipeline:
         Returns:
             list: A list of dictionaries, where each dictionary represents a detected tag.
         """
+        
         # Convert frame to grayscale for the detector
-        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if frame.ndim == 3:
+            # If it's a color image, convert it to grayscale.
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        else:
+            # If it's already grayscale, just use it directly.
+            gray_frame = frame
         
         # Detect tags
         detections = self.detector.detect(gray_frame)
