@@ -98,14 +98,28 @@ class AprilTagPipeline:
             # --- Data for Drawing ---
             # Get the raw translation and rotation vectors used by OpenCV
             tvec = np.array([pose.X(), pose.Y(), pose.Z()])
-            
-            # Rotation from Transform3d is a Rotation3d object. We need axis-angle for projectPoints
-            axis = pose.rotation().getAxis()
-            angle = pose.rotation().getAngle()
-            rvec = np.array([axis.X() * angle, axis.Y() * angle, axis.Z() * angle])
+
+            # Get the quaternion from the pose's rotation
+            q = pose.rotation().getQuaternion()
+            w, x, y, z = q.W(), q.X(), q.Y(), q.Z()
+
+            # Manually calculate the rotation matrix from the quaternion
+            rotation_matrix = np.array([
+                [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
+                [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
+                [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y]
+            ])
+
+            # Convert the rotation matrix to a rotation vector using Rodrigues' formula
+            rvec, _ = cv2.Rodrigues(rotation_matrix)
 
             # Get the corners for drawing the bounding box
-            corners = tag.getCorners()
+            corners = np.array([
+                [tag.getCorner(0).x, tag.getCorner(0).y],
+                [tag.getCorner(1).x, tag.getCorner(1).y],
+                [tag.getCorner(2).x, tag.getCorner(2).y],
+                [tag.getCorner(3).x, tag.getCorner(3).y]
+            ])
 
             # --- Data for UI Table (with coordinate system transformation) ---
             # Transform coordinates for a more intuitive representation if needed
@@ -131,9 +145,9 @@ class AprilTagPipeline:
                 "decision_margin": tag.getDecisionMargin(),
                 "pose_error": pose_error,
                 # --- Raw Pose Data for Drawing ---
-                "rvec": rvec,
-                "tvec": tvec,
-                "corners": corners,
+                "rvec": rvec.tolist(),
+                "tvec": tvec.tolist(),
+                "corners": corners.tolist(),
                 # --- Formatted Data for UI Table ---
                 "x_m": x_ui,
                 "y_m": y_ui,

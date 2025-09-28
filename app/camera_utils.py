@@ -171,7 +171,7 @@ class VisionProcessingThread(threading.Thread):
 
                 # If it's an AprilTag pipeline and we have detections, draw the 3D boxes
                 if self.pipeline_type == 'AprilTag' and detections:
-                    tag_size = self.pipeline.pose_estimator_config.tag_size
+                    tag_size = self.pipeline.pose_estimator_config.tagSize
                     self._draw_3d_box_on_frame(annotated_frame, detections, camera_params, tag_size)
                 
                 # Encode the potentially annotated frame to JPEG for the processed feed
@@ -217,7 +217,8 @@ class VisionProcessingThread(threading.Thread):
             if 'rvec' not in det or 'tvec' not in det:
                 continue
 
-            rvec, tvec = det['rvec'], det['tvec']
+            # Convert lists back to NumPy arrays for OpenCV
+            rvec, tvec = np.array(det['rvec']), np.array(det['tvec'])
             
             # Project the 3D points to the 2D image plane
             img_pts, _ = cv2.projectPoints(obj_pts, rvec, tvec, cam_matrix, dist_coeffs)
