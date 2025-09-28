@@ -29,7 +29,7 @@
                     <div class="flex items-center">
                         <select id="pipeline-select" class="custom-select w-full">
                             <!-- Options will be populated dynamically -->
-                        </select>
+                            </select>
                         <button id="add-pipeline-btn" class="ml-2 btn btn-primary">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                 <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
@@ -193,7 +193,7 @@
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Ambiguity</th>
                                 </tr>
                             </thead>
-                            <tbody class="bg-gray-800 divide-y divide-gray-700">
+                            <tbody id="apriltag-targets-tbody" class="bg-gray-800 divide-y divide-gray-700">
                                 <!-- Target rows will be dynamically inserted here -->
                             </tbody>
                         </table>
@@ -304,7 +304,7 @@
                                 </thead>
                                 <tbody class="bg-gray-800 divide-y divide-gray-700">
                                     <!-- Target rows will be dynamically inserted here -->
-                                </tbody>
+                                    </tbody>
                             </table>
                         </div>
                     </div>
@@ -336,7 +336,7 @@
                             <label for="target-class-filter" class="block text-sm font-medium text-gray-300 mb-2">Target Class Filter</label>
                             <select id="target-class-filter" class="custom-select" multiple>
                                 <!-- Options will be populated dynamically -->
-                            </select>
+                                </select>
                         </div>
                         <div class="mb-4">
                             <label for="inference-device" class="block text-sm font-medium text-gray-300 mb-2">Inference Device</label>
@@ -364,7 +364,7 @@
                             </thead>
                             <tbody class="bg-gray-800 divide-y divide-gray-700">
                                 <!-- Target rows will be dynamically inserted here -->
-                            </tbody>
+                                </tbody>
                         </table>
                     </div>
                 </div>
@@ -400,6 +400,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const pipelineForms = document.querySelectorAll('.pipeline-form');
 
     let cameraFeed = document.getElementById('camera-feed');
+    let resultsInterval;
 
     function updateCameraFeed(cameraId) {
         if (!cameraId) {
@@ -628,12 +629,69 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function startResultsUpdates(cameraId) {
+        if (resultsInterval) {
+            clearInterval(resultsInterval);
+        }
+        if (!cameraId) return;
+
+        resultsInterval = setInterval(() => {
+            fetch(`/api/cameras/results/${cameraId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        // Clear tables if there's an error (e.g., thread stopped)
+                        updateAprilTagTable(null);
+                        return;
+                    }
+                    
+                    // Find the currently selected pipeline to display its results
+                    const selectedPipelineId = pipelineSelect.value;
+                    if (selectedPipelineId && data[selectedPipelineId]) {
+                        const pipelineResults = data[selectedPipelineId];
+                        const pipelineType = pipelineSelect.options[pipelineSelect.selectedIndex].dataset.type;
+
+                        if (pipelineType === 'AprilTag') {
+                            updateAprilTagTable(pipelineResults);
+                        }
+                        // Add similar conditions for other pipeline types
+                    }
+                })
+                .catch(error => console.error('Error fetching results:', error));
+        }, 1000); // Refresh every second
+    }
+
+    function updateAprilTagTable(results) {
+        const tbody = document.getElementById('apriltag-targets-tbody');
+        if (!tbody) return;
+
+        tbody.innerHTML = ''; // Clear previous results
+
+        if (!results || !results.tags_found) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-4">No targets detected</td></tr>';
+            return;
+        }
+        
+        // This is a placeholder for a single tag. You would loop if your results contained an array of tags.
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${results.id || 'N/A'}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.x !== undefined ? results.x.toFixed(3) : 'N/A'}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.y !== undefined ? results.y.toFixed(3) : 'N/A'}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.z_angle !== undefined ? results.z_angle.toFixed(2) : 'N/A'}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${results.ambiguity !== undefined ? results.ambiguity.toFixed(4) : 'N/A'}</td>
+        `;
+        tbody.appendChild(row);
+    }
+
+
     // Initial setup
     const initialCameraId = cameraSelect.value;
     if (initialCameraId) {
         updateCameraFeed(initialCameraId);
         updatePipelineList(initialCameraId);
         updateCameraControls(initialCameraId);
+        startResultsUpdates(initialCameraId);
     }
 
     // Event Listeners
@@ -641,6 +699,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateCameraFeed(this.value);
         updatePipelineList(this.value);
         updateCameraControls(this.value);
+        startResultsUpdates(this.value);
     });
 
     pipelineSelect.addEventListener('change', updatePipelineDetails);

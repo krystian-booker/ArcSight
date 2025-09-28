@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, jsonify, Response, send_file
+from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app
 from app import db, camera_utils, network_utils
 import cv2
 import numpy as np
@@ -83,9 +83,10 @@ def add_camera():
 
     if name and camera_type and identifier:
         db.add_camera(name, camera_type, identifier)
-        # TODO: Dynamically start the thread for the new camera
-        # camera = db.get_camera_by_identifier(identifier)
-        # camera_utils.start_camera_thread(camera, ???) -> Need app context
+        # Find the newly added camera to start its thread
+        new_camera = db.get_camera_by_identifier(identifier)
+        if new_camera:
+            camera_utils.start_camera_thread(dict(new_camera), current_app._get_current_object())
 
     return redirect(url_for('main.cameras'))
 
@@ -109,18 +110,6 @@ def get_pipelines(camera_id):
     pipelines = db.get_pipelines(camera_id)
     return jsonify([dict(row) for row in pipelines])
 
-@main.route('/api/cameras/<int:camera_id>/results', methods=['GET'])
-def get_pipeline_results(camera_id):
-    camera = db.get_camera(camera_id)
-    if not camera:
-        return jsonify({'error': 'Camera not found'}), 404
-    
-    results = camera_utils.get_camera_pipeline_results(camera['identifier'])
-    if results is None:
-        return jsonify({'error': 'No active processing threads found for this camera.'}), 404
-        
-    return jsonify(results)
-
 @main.route('/api/cameras/<int:camera_id>/pipelines', methods=['POST'])
 def add_pipeline(camera_id):
     data = request.get_json()
@@ -130,9 +119,12 @@ def add_pipeline(camera_id):
     if not name or not pipeline_type:
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
-    db.add_pipeline(camera_id, name, pipeline_type)
-    # TODO: Restart threads for this camera to pick up the new pipeline
-    return jsonify({'success': True})
+    new_pipeline_id = db.add_pipeline(camera_id, name, pipeline_type)
+    new_pipeline = db.get_pipeline(new_pipeline_id)
+    if new_pipeline:
+        camera_utils.add_pipeline_to_camera(camera_id, dict(new_pipeline), current_app._get_current_object())
+
+    return jsonify({'success': True, 'pipeline_id': new_pipeline_id})
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
 def update_pipeline(pipeline_id):
@@ -144,14 +136,32 @@ def update_pipeline(pipeline_id):
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
     db.update_pipeline(pipeline_id, name, pipeline_type)
-    # TODO: Restart threads for the associated camera to apply changes
     return jsonify({'success': True})
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
 def delete_pipeline(pipeline_id):
-    # TODO: Before deleting from DB, find the camera and stop the specific pipeline thread
-    db.delete_pipeline(pipeline_id)
-    return jsonify({'success': True})
+    pipeline = db.get_pipeline(pipeline_id)
+    if pipeline:
+        camera_id = pipeline['camera_id']
+        camera_utils.remove_pipeline_from_camera(camera_id, pipeline_id, current_app._get_current_object())
+        db.delete_pipeline(pipeline_id)
+        return jsonify({'success': True})
+    return jsonify({'error': 'Pipeline not found'}), 404
+
+@main.route('/api/cameras/results/<int:camera_id>')
+def get_camera_results(camera_id):
+    camera = db.get_camera(camera_id)
+    if not camera:
+        return jsonify({'error': 'Camera not found'}), 404
+    
+    results = camera_utils.get_camera_pipeline_results(camera['identifier'])
+    if results is None:
+        return jsonify({'error': 'Camera thread not running or no results available'}), 404
+        
+    # Convert pipeline IDs (which are integers) to strings for JSON compatibility
+    string_key_results = {str(k): v for k, v in results.items()}
+
+    return jsonify(string_key_results)
 
 @main.route('/config/genicam/update', methods=['POST'])
 def update_genicam_settings():

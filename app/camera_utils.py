@@ -60,7 +60,7 @@ class VisionProcessingThread(threading.Thread):
             if self.pipeline_type == 'AprilTag':
                 # apriltag_results = apriltag_detector.process(raw_frame)
                 time.sleep(0.05) # Simulate 50ms processing
-                current_results = {"tags_found": 1, "id": 5}
+                current_results = {"tags_found": 1, "id": 5, "x": 0.3, "y": -0.2, "z_angle": 12.5, "ambiguity": 0.01}
             elif self.pipeline_type == 'Object Detection (ML)':
                 # ml_results = ml_model.predict(raw_frame)
                 time.sleep(0.1) # Simulate 100ms processing
@@ -177,8 +177,17 @@ class CameraAcquisitionThread(threading.Thread):
 
                 start_time = time.time()
                 frame_count = 0
+                last_config_check = time.time()
 
                 while not self.stop_event.is_set():
+                    # --- Refresh configuration periodically ---
+                    if time.time() - last_config_check > 2.0:
+                        with self.app.app_context():
+                            refreshed_data = db.get_camera(self.camera_db_data['id'])
+                        if refreshed_data:
+                            orientation = int(refreshed_data['orientation'])
+                        last_config_check = time.time()
+
                     raw_frame = None
                     # --- Frame Acquisition Logic ---
                     if self.camera_type == 'GenICam':
@@ -319,6 +328,49 @@ def stop_camera_thread(identifier):
             # Wait for them to terminate
             thread_group['acquisition'].join(timeout=2)
             for proc_thread in thread_group['processing_threads'].values():
+                proc_thread.join(timeout=2)
+
+def add_pipeline_to_camera(camera_id, pipeline_info, app):
+    """Starts a new processing thread for a running camera."""
+    with app.app_context():
+        camera = db.get_camera(camera_id)
+    if not camera:
+        return
+
+    identifier = camera['identifier']
+    with active_camera_threads_lock:
+        if identifier in active_camera_threads:
+            thread_group = active_camera_threads[identifier]
+            acq_thread = thread_group['acquisition']
+            pipeline_id = pipeline_info['id']
+
+            if pipeline_id not in thread_group['processing_threads']:
+                print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
+                frame_queue = queue.Queue(maxsize=2)
+                proc_thread = VisionProcessingThread(identifier, pipeline_info, frame_queue)
+                
+                acq_thread.add_pipeline_queue(pipeline_id, frame_queue)
+                thread_group['processing_threads'][pipeline_id] = proc_thread
+                proc_thread.start()
+
+def remove_pipeline_from_camera(camera_id, pipeline_id, app):
+    """Stops a specific processing thread for a running camera."""
+    with app.app_context():
+        camera = db.get_camera(camera_id)
+    if not camera:
+        return
+
+    identifier = camera['identifier']
+    with active_camera_threads_lock:
+        if identifier in active_camera_threads:
+            thread_group = active_camera_threads[identifier]
+            if pipeline_id in thread_group['processing_threads']:
+                print(f"Dynamically removing pipeline {pipeline_id} from camera {identifier}")
+                proc_thread = thread_group['processing_threads'].pop(pipeline_id)
+                
+                # Stop the thread and remove its queue from the producer
+                proc_thread.stop()
+                thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
                 proc_thread.join(timeout=2)
 
 def start_all_camera_threads(app):
