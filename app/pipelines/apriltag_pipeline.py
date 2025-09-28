@@ -95,12 +95,27 @@ class AprilTagPipeline:
             # Extract rotation from the pose
             rotation = pose.rotation()
 
-            # Get translation and rotation using the correct capitalized methods from the reference
-            x = -pose.Y()
-            y = -pose.Z()
-            z = pose.X()
+            # --- Data for Drawing ---
+            # Get the raw translation and rotation vectors used by OpenCV
+            tvec = np.array([pose.X(), pose.Y(), pose.Z()])
+            
+            # Rotation from Transform3d is a Rotation3d object. We need axis-angle for projectPoints
+            axis = pose.rotation().getAxis()
+            angle = pose.rotation().getAngle()
+            rvec = np.array([axis.X() * angle, axis.Y() * angle, axis.Z() * angle])
+
+            # Get the corners for drawing the bounding box
+            corners = tag.getCorners()
+
+            # --- Data for UI Table (with coordinate system transformation) ---
+            # Transform coordinates for a more intuitive representation if needed
+            # For example, Z forward, Y left, X down
+            x_ui = pose.X()
+            y_ui = -pose.Y()
+            z_ui = -pose.Z()
 
             # For WPILib's Rotation3d: X()=Roll, Y()=Pitch, Z()=Yaw in radians
+            rotation = pose.rotation()
             roll_rad = rotation.X()
             pitch_rad = rotation.Y()
             yaw_rad = rotation.Z()
@@ -111,18 +126,24 @@ class AprilTagPipeline:
             yaw_deg = math.degrees(yaw_rad)
 
             results.append({
+                # --- Core Detection Info ---
                 "id": tag.getId(),
                 "decision_margin": tag.getDecisionMargin(),
                 "pose_error": pose_error,
-                "x_m": x,
-                "y_m": y,
-                "z_m": z,
+                # --- Raw Pose Data for Drawing ---
+                "rvec": rvec,
+                "tvec": tvec,
+                "corners": corners,
+                # --- Formatted Data for UI Table ---
+                "x_m": x_ui,
+                "y_m": y_ui,
+                "z_m": z_ui,
                 "yaw_rad": yaw_rad,
                 "pitch_rad": pitch_rad,
                 "roll_rad": roll_rad,
                 "yaw_deg": yaw_deg,
                 "pitch_deg": pitch_deg,
-                "roll_deg": roll_deg
+                "roll_deg": roll_deg,
             })
             
         return results

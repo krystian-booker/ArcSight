@@ -40,6 +40,18 @@ def video_feed(camera_id):
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+@main.route('/processed_video_feed/<int:pipeline_id>')
+def processed_video_feed(pipeline_id):
+    """Streams the processed video feed for a given pipeline."""
+    pipeline = db.get_pipeline(pipeline_id)
+    if not pipeline:
+        error_img = create_error_image("Pipeline not found")
+        return Response(error_img, mimetype='image/jpeg', status=404)
+
+    return Response(camera_utils.get_processed_camera_feed(pipeline_id),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
 @main.route('/cameras')
 def cameras():
     """Renders the camera management page."""

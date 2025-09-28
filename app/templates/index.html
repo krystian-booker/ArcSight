@@ -115,6 +115,16 @@
                 </div>
             </div>
         </div>
+        <div class="mt-4 text-center">
+            <label class="inline-flex items-center">
+                <input type="radio" name="feed-type" value="default" checked>
+                <span class="ml-2">Default Feed</span>
+            </label>
+            <label class="inline-flex items-center ml-6">
+                <input type="radio" name="feed-type" value="processed">
+                <span class="ml-2">Processed Feed</span>
+            </label>
+        </div>
     </div>
 </div>
 
@@ -402,27 +412,48 @@ document.addEventListener('DOMContentLoaded', function() {
     const feedContainer = document.querySelector('.camera-feed-container');
     const pipelineForms = document.querySelectorAll('.pipeline-form');
 
+    const feedTypeRadios = document.querySelectorAll('input[name="feed-type"]');
+    const processedFeedRadio = document.querySelector('input[value="processed"]');
     let cameraFeed = document.getElementById('camera-feed');
     let resultsInterval;
 
-    function updateCameraFeed(cameraId) {
+    function updateFeedSource() {
+        const cameraId = cameraSelect.value;
+        const pipelineId = pipelineSelect.value;
+        
+        // Disable 'Processed Feed' if no valid pipeline is selected
+        const isPipelineSelected = pipelineId && pipelineSelect.options.length > 0 && pipelineSelect.options[pipelineSelect.selectedIndex].value;
+        processedFeedRadio.disabled = !isPipelineSelected;
+
+        let selectedFeedType = document.querySelector('input[name="feed-type"]:checked').value;
+
+        // If processed is selected but disabled, switch back to default
+        if (selectedFeedType === 'processed' && processedFeedRadio.disabled) {
+            document.querySelector('input[value="default"]').checked = true;
+            selectedFeedType = 'default';
+        }
+
         if (!cameraId) {
+            if (cameraFeed) cameraFeed.src = "";
             feedContainer.innerHTML = '<p class="text-gray-500">No camera selected.</p>';
             return;
+        }
+
+        let newFeedUrl = '';
+        if (selectedFeedType === 'processed' && isPipelineSelected) {
+            newFeedUrl = `/processed_video_feed/${pipelineId}?t=${new Date().getTime()}`;
+        } else {
+            newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
         }
 
         fetch(`/api/cameras/status/${cameraId}`)
             .then(response => response.json())
             .then(data => {
+                const imgElement = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="w-full h-full object-contain rounded">`;
                 if (data.connected) {
-                    const newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
-                    const existingImg = document.getElementById('camera-feed');
-                    
-                    if (existingImg) {
-                        existingImg.src = newFeedUrl;
-                    } else {
-                        feedContainer.innerHTML = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="w-full h-auto rounded">`;
-                    }
+                    // Always recreate the img tag to ensure the browser reloads the stream
+                    feedContainer.innerHTML = imgElement;
+                    cameraFeed = document.getElementById('camera-feed'); // Re-assign cameraFeed
                 } else {
                     feedContainer.innerHTML = '<p class="text-red-500">Camera is not connected.</p>';
                 }
@@ -437,6 +468,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!cameraId) {
             pipelineSelect.innerHTML = '<option value="">No camera selected</option>';
             pipelineTypeSelect.disabled = true;
+            updateFeedSource(); // Update feed for "no camera" state
             return;
         }
 
@@ -454,10 +486,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         option.dataset.type = pipeline.pipeline_type;
                         pipelineSelect.appendChild(option);
                     });
-                    updatePipelineDetails();
                 } else {
                     pipelineSelect.innerHTML = '<option value="">No pipelines configured</option>';
                 }
+                // Call updatePipelineDetails which in turn calls updateFeedSource
+                updatePipelineDetails();
             });
     }
 
@@ -466,7 +499,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedOption && selectedOption.value) {
             pipelineTypeSelect.value = selectedOption.dataset.type;
             updatePipelineForm(selectedOption.dataset.type);
+        } else {
+            // If no pipeline is selected, hide all forms
+             pipelineForms.forEach(form => form.classList.add('hidden'));
         }
+        updateFeedSource(); // Always update the feed source on pipeline change
     }
 
     function addPipeline() {
@@ -695,21 +732,28 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initial setup
     const initialCameraId = cameraSelect.value;
     if (initialCameraId) {
-        updateCameraFeed(initialCameraId);
+        // updateCameraFeed(initialCameraId); // This is now handled by updateFeedSource
         updatePipelineList(initialCameraId);
         updateCameraControls(initialCameraId);
         startResultsUpdates(initialCameraId);
+    } else {
+        updateFeedSource(); // Call once to set initial state
     }
 
     // Event Listeners
     cameraSelect.addEventListener('change', function() {
-        updateCameraFeed(this.value);
+        // updateCameraFeed(this.value); // Replaced by updateFeedSource
         updatePipelineList(this.value);
         updateCameraControls(this.value);
         startResultsUpdates(this.value);
     });
 
     pipelineSelect.addEventListener('change', updatePipelineDetails);
+    
+    feedTypeRadios.forEach(radio => {
+        radio.addEventListener('change', updateFeedSource);
+    });
+
     addPipelineBtn.addEventListener('click', addPipeline);
     editPipelineBtn.addEventListener('click', updatePipeline);
     deletePipelineBtn.addEventListener('click', deletePipeline);
