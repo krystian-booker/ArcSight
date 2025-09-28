@@ -7,27 +7,27 @@ import shutil
 from . import main
 
 def create_error_image(message, width=640, height=480):
-    """Creates a black image with white text."""
+    """Creates a black image with white text for error display."""
     img = np.zeros((height, width, 3), np.uint8)
     font = cv2.FONT_HERSHEY_SIMPLEX
-    
-    # Calculate text size and position for centering
     text_size = cv2.getTextSize(message, font, 1, 2)[0]
     text_x = (width - text_size[0]) // 2
     text_y = (height + text_size[1]) // 2
-    
     cv2.putText(img, message, (text_x, text_y), font, 1, (255, 255, 255), 2)
-    
     ret, jpeg = cv2.imencode('.jpg', img)
     return jpeg.tobytes()
 
+
 @main.route('/')
 def dashboard():
+    """Renders the main dashboard."""
     cameras = db.get_cameras()
     return render_template('index.html', cameras=cameras)
 
+
 @main.route('/video_feed/<int:camera_id>')
 def video_feed(camera_id):
+    """Streams the video feed for a given camera."""
     camera = db.get_camera(camera_id)
     if not camera:
         return "Camera not found", 404
@@ -39,38 +39,44 @@ def video_feed(camera_id):
     return Response(camera_utils.get_camera_feed(dict(camera)),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
+
 @main.route('/cameras')
 def cameras():
+    """Renders the camera management page."""
     cameras = db.get_cameras()
     genicam_cti_path = db.get_setting('genicam_cti_path')
     return render_template('cameras.html', cameras=cameras, genicam_enabled=bool(genicam_cti_path))
 
+
 @main.route('/settings')
 def settings():
+    """Renders the application settings page."""
     all_settings = {
         'genicam_cti_path': db.get_setting('genicam_cti_path'),
         'team_number': db.get_setting('team_number'),
         'ip_mode': db.get_setting('ip_mode'),
         'hostname': db.get_setting('hostname'),
     }
-    # Get current network settings from the OS
     current_network_settings = network_utils.get_network_settings()
     current_hostname = network_utils.get_hostname()
-
     return render_template('settings.html', 
                            settings=all_settings, 
                            current_network_settings=current_network_settings, 
                            current_hostname=current_hostname)
 
+
 @main.route('/settings/global/update', methods=['POST'])
 def update_global_settings():
+    """Updates global application settings."""
     db.update_setting('team_number', request.form.get('team_number'))
     db.update_setting('ip_mode', request.form.get('ip_mode'))
     db.update_setting('hostname', request.form.get('hostname'))
     return redirect(url_for('main.settings'))
 
+
 @main.route('/cameras/add', methods=['POST'])
 def add_camera():
+    """Adds a new camera."""
     name = request.form.get('camera-name')
     camera_type = request.form.get('camera-type')
     
@@ -83,35 +89,42 @@ def add_camera():
 
     if name and camera_type and identifier:
         db.add_camera(name, camera_type, identifier)
-        # Find the newly added camera to start its thread
         new_camera = db.get_camera_by_identifier(identifier)
         if new_camera:
             camera_utils.start_camera_thread(dict(new_camera), current_app._get_current_object())
 
     return redirect(url_for('main.cameras'))
 
+
 @main.route('/cameras/update/<int:camera_id>', methods=['POST'])
 def update_camera(camera_id):
+    """Updates a camera's settings."""
     name = request.form.get('camera-name')
     if name:
         db.update_camera(camera_id, name)
     return redirect(url_for('main.cameras'))
 
+
 @main.route('/cameras/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
+    """Deletes a camera."""
     camera = db.get_camera(camera_id)
     if camera:
         camera_utils.stop_camera_thread(camera['identifier'])
     db.delete_camera(camera_id)
     return redirect(url_for('main.cameras'))
 
+
 @main.route('/api/cameras/<int:camera_id>/pipelines', methods=['GET'])
 def get_pipelines(camera_id):
+    """Returns all pipelines for a given camera."""
     pipelines = db.get_pipelines(camera_id)
     return jsonify([dict(row) for row in pipelines])
 
+
 @main.route('/api/cameras/<int:camera_id>/pipelines', methods=['POST'])
 def add_pipeline(camera_id):
+    """Adds a new pipeline to a camera."""
     data = request.get_json()
     name = data.get('name')
     pipeline_type = data.get('pipeline_type')
@@ -120,21 +133,23 @@ def add_pipeline(camera_id):
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
     db.add_pipeline(camera_id, name, pipeline_type)
-    # Retrieve the newly added pipeline (assuming name is unique per camera)
     new_pipeline = None
     pipelines = db.get_pipelines(camera_id)
     for pipeline in pipelines:
         if pipeline['name'] == name and pipeline['pipeline_type'] == pipeline_type:
             new_pipeline = pipeline
             break
-    new_pipeline_id = new_pipeline['id'] if new_pipeline else None
+    
     if new_pipeline:
         camera_utils.add_pipeline_to_camera(camera_id, dict(new_pipeline), current_app._get_current_object())
+        return jsonify({'success': True, 'pipeline_id': new_pipeline['id']})
+    
+    return jsonify({'error': 'Failed to retrieve new pipeline'}), 500
 
-    return jsonify({'success': True, 'pipeline_id': new_pipeline_id})
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
 def update_pipeline(pipeline_id):
+    """Updates a pipeline's settings."""
     data = request.get_json()
     name = data.get('name')
     pipeline_type = data.get('pipeline_type')
@@ -145,8 +160,10 @@ def update_pipeline(pipeline_id):
     db.update_pipeline(pipeline_id, name, pipeline_type)
     return jsonify({'success': True})
 
+
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
 def delete_pipeline(pipeline_id):
+    """Deletes a pipeline."""
     pipeline = db.get_pipeline(pipeline_id)
     if pipeline:
         camera_id = pipeline['camera_id']
@@ -155,8 +172,10 @@ def delete_pipeline(pipeline_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Pipeline not found'}), 404
 
+
 @main.route('/api/cameras/results/<int:camera_id>')
 def get_camera_results(camera_id):
+    """Returns the latest results from all pipelines for a given camera."""
     camera = db.get_camera(camera_id)
     if not camera:
         return jsonify({'error': 'Camera not found'}), 404
@@ -165,13 +184,13 @@ def get_camera_results(camera_id):
     if results is None:
         return jsonify({'error': 'Camera thread not running or no results available'}), 404
         
-    # Convert pipeline IDs (which are integers) to strings for JSON compatibility
     string_key_results = {str(k): v for k, v in results.items()}
-
     return jsonify(string_key_results)
+
 
 @main.route('/config/genicam/update', methods=['POST'])
 def update_genicam_settings():
+    """Updates the GenICam CTI path."""
     path = request.form.get('genicam-cti-path', '').strip()
 
     if path and path.lower().endswith('.cti'):
@@ -182,21 +201,23 @@ def update_genicam_settings():
     camera_utils.reinitialize_harvester()
     return redirect(url_for('main.settings'))
 
+
 @main.route('/config/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
+    """Clears the GenICam CTI path."""
     db.clear_setting('genicam_cti_path')
-    # Re-initialize the harvester to apply the new settings
     camera_utils.reinitialize_harvester()
     return redirect(url_for('main.settings'))
 
+
 @main.route('/api/cameras/discover')
 def discover_cameras():
+    """Discovers available USB and GenICam cameras."""
     existing_identifiers = request.args.get('existing', '').split(',')
     
     usb_cameras = camera_utils.list_usb_cameras()
     genicam_cameras = camera_utils.list_genicam_cameras()
 
-    # Filter out already configured cameras
     filtered_usb = [cam for cam in usb_cameras if cam['identifier'] not in existing_identifiers]
     filtered_genicam = [cam for cam in genicam_cameras if cam['identifier'] not in existing_identifiers]
 
@@ -205,56 +226,58 @@ def discover_cameras():
         'genicam': filtered_genicam
     })
 
+
 @main.route('/api/cameras/status/<int:camera_id>')
 def camera_status(camera_id):
+    """Returns the connection status of a camera."""
     camera = db.get_camera(camera_id)
     if camera:
         is_connected = camera_utils.check_camera_connection(dict(camera))
         return jsonify({'connected': is_connected})
     return jsonify({'error': 'Camera not found'}), 404
 
+
 @main.route('/api/cameras/controls/<int:camera_id>', methods=['GET'])
 def get_camera_controls(camera_id):
+    """Returns the control settings for a camera."""
     camera = db.get_camera(camera_id)
     if camera:
-        controls = {
+        return jsonify({
             'orientation': camera['orientation'],
             'exposure_mode': camera['exposure_mode'],
             'exposure_value': camera['exposure_value'],
             'gain_mode': camera['gain_mode'],
             'gain_value': camera['gain_value'],
-        }
-        return jsonify(controls)
+        })
     return jsonify({'error': 'Camera not found'}), 404
+
 
 @main.route('/api/cameras/update_controls/<int:camera_id>', methods=['POST'])
 def update_camera_controls(camera_id):
+    """Updates the control settings for a camera."""
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Invalid JSON'}), 400
 
-    orientation = data.get('orientation')
-    exposure_mode = data.get('exposure_mode')
-    exposure_value = data.get('exposure_value')
-    gain_mode = data.get('gain_mode')
-    gain_value = data.get('gain_value')
-
-    if None in [orientation, exposure_mode, exposure_value, gain_mode, gain_value]:
+    required_fields = ['orientation', 'exposure_mode', 'exposure_value', 'gain_mode', 'gain_value']
+    if not all(field in data for field in required_fields):
         return jsonify({'error': 'Missing one or more required fields'}), 400
 
     db.update_camera_controls(
         camera_id,
-        orientation,
-        exposure_mode,
-        exposure_value,
-        gain_mode,
-        gain_value
+        data['orientation'],
+        data['exposure_mode'],
+        data['exposure_value'],
+        data['gain_mode'],
+        data['gain_value']
     )
     
     return jsonify({'success': True})
 
+
 @main.route('/api/genicam/nodes/<int:camera_id>', methods=['GET'])
 def genicam_nodes(camera_id):
+    """Returns the node map for a GenICam camera."""
     camera = db.get_camera(camera_id)
     if not camera or camera['camera_type'] != 'GenICam':
         return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
@@ -265,8 +288,10 @@ def genicam_nodes(camera_id):
 
     return jsonify({'nodes': nodes})
 
+
 @main.route('/api/genicam/nodes/<int:camera_id>', methods=['POST'])
 def update_genicam_node(camera_id):
+    """Updates a node on a GenICam camera."""
     camera = db.get_camera(camera_id)
     if not camera or camera['camera_type'] != 'GenICam':
         return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
@@ -276,49 +301,55 @@ def update_genicam_node(camera_id):
     value = payload.get('value')
 
     success, message, status_code, updated_node = camera_utils.update_genicam_node(camera['identifier'], node_name, value)
+    
     if success:
         return jsonify({
             'success': True, 
             'message': message or 'Node updated successfully.',
             'node': updated_node
-        }), 200
-
-    status_code = status_code or 400
+        }), status_code
+    
     return jsonify({'error': message or 'Failed to update node.'}), status_code
+
 
 @main.route('/control/restart-app', methods=['POST'])
 def restart_app():
-    # This is a placeholder. A real implementation would need a more robust way
-    # to restart the application, e.g., using a process manager.
+    """Restarts the application."""
     print("Restarting application...")
-    os._exit(0)  # This will stop the current process.
+    os._exit(0)
     return "Restarting...", 200
+
 
 @main.route('/control/reboot', methods=['POST'])
 def reboot_device():
-    # This is a placeholder. The actual command might vary by OS.
-    # Use with extreme caution.
+    """Reboots the device."""
     print("Rebooting device...")
     os.system("sudo reboot")
     return "Rebooting...", 200
 
+
 @main.route('/control/export-db')
 def export_db():
+    """Exports the application database."""
     return send_file(db.DB_PATH, as_attachment=True)
+
 
 @main.route('/control/import-db', methods=['POST'])
 def import_db():
+    """Imports an application database."""
     if 'database' not in request.files:
         return redirect(url_for('main.settings'))
+    
     file = request.files['database']
-    if file.filename == '':
-        return redirect(url_for('main.settings'))
-    if file:
+    if file.filename and file.filename.endswith('.db'):
         file.save(db.DB_PATH)
+        
     return redirect(url_for('main.settings'))
+
 
 @main.route('/control/factory-reset', methods=['POST'])
 def factory_reset():
+    """Resets the application to its factory settings."""
     db.factory_reset()
     camera_utils.reinitialize_harvester()
     return redirect(url_for('main.settings'))

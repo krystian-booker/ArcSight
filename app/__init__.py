@@ -3,34 +3,31 @@ from . import db
 from . import camera_utils
 import atexit
 
+
 def create_app():
+    """Creates and configures the Flask application."""
     app = Flask(__name__, static_folder='static', template_folder='templates')
 
     @app.before_request
     def before_request():
-        """Create a database connection before each request."""
+        """Creates a database connection before each request."""
         g.db = db.get_db()
 
     @app.teardown_appcontext
     def teardown_db(exception):
-        """Close the database connection after each request."""
+        """Closes the database connection after each request."""
         db_conn = g.pop('db', None)
         if db_conn is not None:
             db_conn.close()
 
-    # Register blueprint
     from .blueprints.main import main as main_blueprint
     app.register_blueprint(main_blueprint)
 
-    # Initialize db and harvester
     with app.app_context():
         db.init_db()
         camera_utils.initialize_harvester()
-        
-        # Start the background threads for all cameras
         camera_utils.start_all_camera_threads(app)
 
-    # Register the shutdown function to be called when the app exits
     atexit.register(camera_utils.stop_all_camera_threads)
 
     return app

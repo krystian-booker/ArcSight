@@ -4,17 +4,12 @@ import subprocess
 import psutil
 
 def get_hostname():
-    """
-    Retrieves the hostname of the local machine.
-    This function is cross-platform and should work on Windows, Linux, and macOS.
-    """
+    """Retrieves the hostname of the local machine."""
     return socket.gethostname()
 
+
 def get_network_settings():
-    """
-    Retrieves network settings, focusing on whether the primary interface is set to DHCP or Static.
-    This function is designed to be cross-platform.
-    """
+    """Retrieves network settings, indicating whether the primary interface is using DHCP or a static IP."""
     os_type = platform.system()
     if os_type == "Windows":
         return get_windows_network_settings()
@@ -25,31 +20,21 @@ def get_network_settings():
     else:
         return {"ip_mode": "Unknown", "hostname": get_hostname()}
 
+
 def get_primary_interface_name():
-    """
-    Identifies the primary network interface name.
-    This is a helper function that attempts to find the interface most likely
-    to be the primary one for internet connectivity.
-    """
+    """Identifies the name of the primary network interface."""
     try:
-        # Get all network interfaces and their stats
         stats = psutil.net_if_stats()
-        # Get all network connections
         connections = psutil.net_connections(kind='inet')
         
-        # Find the interface associated with the default route
         for conn in connections:
             if conn.status == 'ESTABLISHED' and conn.raddr:
-                # This logic assumes the default route is used for established connections
-                # It's not foolproof but a good heuristic
                 laddr_ip = conn.laddr.ip
-                # Find the interface with this local IP
                 for intface, addrs in psutil.net_if_addrs().items():
                     for addr in addrs:
                         if addr.address == laddr_ip:
                             return intface
         
-        # Fallback: find the first 'up' and non-loopback interface
         for intface, stat in stats.items():
             if stat.isup and 'lo' not in intface.lower():
                 return intface
@@ -58,11 +43,9 @@ def get_primary_interface_name():
         return None
     return None
 
+
 def get_windows_network_settings():
-    """
-    On Windows, parse the output of `ipconfig /all` to find if DHCP is enabled
-    for the primary network interface.
-    """
+    """Retrieves network settings on Windows by parsing 'ipconfig' output."""
     try:
         primary_interface = get_primary_interface_name()
         if not primary_interface:
@@ -87,17 +70,14 @@ def get_windows_network_settings():
     except (subprocess.CalledProcessError, FileNotFoundError):
         return {"ip_mode": "Unknown"}
 
+
 def get_linux_network_settings():
-    """
-    On Linux, use `nmcli` to determine the IP assignment mode.
-    This is a common tool on modern Linux distributions.
-    """
+    """Retrieves network settings on Linux using 'nmcli'."""
     try:
         primary_interface = get_primary_interface_name()
         if not primary_interface:
             return {"ip_mode": "Unknown"}
             
-        # Get the connection name for the primary interface
         output = subprocess.check_output(["nmcli", "-t", "-f", "DEVICE,NAME", "con", "show", "--active"], text=True)
         connection_name = None
         for line in output.splitlines():
@@ -108,29 +88,23 @@ def get_linux_network_settings():
         if not connection_name:
             return {"ip_mode": "Unknown"}
 
-        # Check the IP assignment method for that connection
         output = subprocess.check_output(["nmcli", "-t", "-f", "ipv4.method", "con", "show", connection_name], text=True)
         if "auto" in output:
             return {"ip_mode": "DHCP"}
         else:
             return {"ip_mode": "Static"}
     except (subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback for systems without nmcli
         return {"ip_mode": "Unknown"}
 
+
 def get_macos_network_settings():
-    """
-    On macOS, use the `networksetup` command to check for DHCP.
-    """
+    """Retrieves network settings on macOS using 'networksetup'."""
     try:
         primary_interface = get_primary_interface_name()
         if not primary_interface:
-            # On macOS, interfaces often have user-friendly names like "Wi-Fi" or "Ethernet"
-            # Let's try to get the service name associated with the interface device
             output = subprocess.check_output(["networksetup", "-listallnetworkservices"], text=True)
-            services = output.splitlines()[1:] # Skip the header line
+            services = output.splitlines()[1:]
             for service in services:
-                # Heuristic: Wi-Fi is common, otherwise check for Ethernet
                 if "wi-fi" in service.lower() or "ethernet" in service.lower():
                     primary_interface = service
                     break
