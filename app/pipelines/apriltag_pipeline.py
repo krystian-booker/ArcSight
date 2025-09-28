@@ -1,36 +1,49 @@
-import apriltag
+import robotpy_apriltag
 import cv2
 import numpy as np
 import math
+from wpimath.geometry import Transform3d
 
 class AprilTagPipeline:
     """
-    A pipeline for detecting and estimating the pose of AprilTags.
+    A pipeline for detecting and estimating the pose of AprilTags using robotpy-apriltag.
     """
+
     def __init__(self, config):
         """
-        Initializes the AprilTag detector with given configuration.
+        Initializes the AprilTag detector and pose estimator.
 
         Args:
-            config (dict): A dictionary containing configuration for the detector,
-                           e.g., {'family': 'tag36h11', 'nthreads': 2, ...}
+            config (dict): A dictionary containing configuration options.
         """
-        # Extract detector options from the config dictionary
-        detector_options = {
-            'families': config.get('family', 'tag36h11'),
-            'nthreads': config.get('threads', 2),
-            'quad_decimate': config.get('decimate', 1.0),
-            'quad_blur': config.get('blur', 0.0),
-            'refine_edges': config.get('refine_edges', True),
-            'decode_sharpening': 0.25
-        }
+        # --- Detector Setup ---
+        self.detector = robotpy_apriltag.AprilTagDetector()
         
-        # Store other pipeline-specific settings
-        self.tag_size_m = config.get('tag_size_m', 0.165) # Default to 6.5 inches in meters
+        # Get tag family from config, default to 'tag36h11'
+        family = config.get('family', 'tag36h11')
+        
+        # Add the family to the detector. The second argument is error correction bits.
+        self.detector.addFamily(family, config.get('error_correction', 3))
 
-        # Create the detector
-        self.detector = apriltag.AprilTagDetector(**detector_options)
-        print(f"AprilTag detector initialized with families: {detector_options['families']}")
+        # --- Pose Estimator Setup ---
+        # Get tag size from config, default to 6.5 inches in meters
+        tag_size_m = config.get('tag_size_m', 0.1651)
+
+        # Pose Estimator requires camera intrinsics (fx, fy, cx, cy)
+        # We will get these from camera_params in process_frame, so we create the estimator there.
+        self.pose_estimator_config = robotpy_apriltag.AprilTagPoseEstimator.Config(
+            tag_size_m,
+            0, # fx - will be updated per frame
+            0, # fy - will be updated per frame
+            0, # cx - will be updated per frame
+            0  # cy - will be updated per frame
+        )
+        self.pose_estimator = None
+
+        # --- Reusable Buffers (for optimization) ---
+        self.gray_frame = None
+
+        print(f"AprilTag detector initialized with family: {family}")
 
     def process_frame(self, frame, camera_params):
         """
@@ -38,64 +51,71 @@ class AprilTagPipeline:
 
         Args:
             frame (np.ndarray): The input image frame from the camera.
-            camera_params (dict): A dictionary containing camera intrinsic properties,
-                                  e.g., {'fx': ..., 'fy': ..., 'cx': ..., 'cy': ...}.
+            camera_params (dict): Dict with camera intrinsics {'fx': ..., 'fy': ..., 'cx': ..., 'cy': ...}.
 
         Returns:
             list: A list of dictionaries, where each dictionary represents a detected tag.
         """
-        
-        # Convert frame to grayscale for the detector
+        # --- Update Pose Estimator if needed ---
+        # The pose estimator needs to be created with the correct camera intrinsics.
+        if (self.pose_estimator is None or 
+            self.pose_estimator_config.fx != camera_params['fx'] or
+            self.pose_estimator_config.fy != camera_params['fy']):
+            
+            self.pose_estimator_config.fx = camera_params['fx']
+            self.pose_estimator_config.fy = camera_params['fy']
+            self.pose_estimator_config.cx = camera_params['cx']
+            self.pose_estimator_config.cy = camera_params['cy']
+            self.pose_estimator = robotpy_apriltag.AprilTagPoseEstimator(self.pose_estimator_config)
+
+        # --- Grayscale Conversion ---
         if frame.ndim == 3:
-            # If it's a color image, convert it to grayscale.
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if self.gray_frame is None or self.gray_frame.shape != frame.shape[:2]:
+                self.gray_frame = np.empty(frame.shape[:2], dtype=np.uint8)
+            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY, dst=self.gray_frame)
+            detect_frame = self.gray_frame
         else:
-            # If it's already grayscale, just use it directly.
-            gray_frame = frame
+            detect_frame = frame
         
-        # Detect tags
-        detections = self.detector.detect(gray_frame)
+        # --- Detect Tags ---
+        detections = self.detector.detect(detect_frame)
         
         results = []
         for tag in detections:
-            # Skip tags with high decision margin (low confidence)
-            if tag.decision_margin < 35: # This value can be tuned
+            # Reject tags with high hamming distance or low decision margin
+            if tag.getHamming() > 1 or tag.getDecisionMargin() < 25.0:
                 continue
 
             # --- Pose Estimation ---
-            # This requires the camera matrix and distortion coefficients.
-            # For now, we assume no distortion.
-            pose, e1, e2 = self.detector.detection_pose(
-                tag,
-                (camera_params['fx'], camera_params['fy'], camera_params['cx'], camera_params['cy']),
-                tag_size=self.tag_size_m
-            )
-            
-            # The pose is a 4x4 transformation matrix
-            translation = pose[:3, 3] # Translation vector (x, y, z)
-            rotation_matrix = pose[:3, :3]
+            # The estimate method returns a Transform3d object
+            pose: Transform3d = self.pose_estimator.estimate(tag)
 
-            # FRC convention uses a different coordinate system:
-            # X: to the right, Y: up, Z: coming out of the lens
-            # AprilTag library uses:
-            # X: to the right, Y: down, Z: pointing away from the camera
-            x = translation[0]
-            y = -translation[1] # Invert Y
-            z = translation[2]
+            # Extract translation and rotation
+            translation = pose.translation()
+            rotation = pose.rotation()
 
-            # Calculate yaw (rotation around Y-axis)
-            # This is a simplified calculation for Z-up, Y-down, X-right
-            yaw = math.atan2(rotation_matrix[0, 2], rotation_matrix[2, 2])
+            # The RobotPy coordinate system is already in the FRC convention (X away, Y left, Z up from camera)
+            # We will convert it to a more standard robotics view (X right, Y up, Z out of lens)
+            # This matches what we had before.
+            x = -translation.y
+            y = -translation.z
+            z = translation.x
+
+            # Get Yaw, Pitch, Roll in degrees
+            yaw = rotation.z_degrees
+            pitch = rotation.y_degrees
+            roll = rotation.x_degrees
 
             results.append({
-                "id": tag.tag_id,
-                "decision_margin": tag.decision_margin,
-                "pose_error": e2,
+                "id": tag.getId(),
+                "decision_margin": tag.getDecisionMargin(),
+                "hamming": tag.getHamming(),
                 "x_m": x,
                 "y_m": y,
                 "z_m": z,
-                "yaw_rad": yaw,
-                "yaw_deg": math.degrees(yaw)
+                "roll_deg": roll,
+                "pitch_deg": pitch,
+                "yaw_deg": yaw
             })
             
         return results
