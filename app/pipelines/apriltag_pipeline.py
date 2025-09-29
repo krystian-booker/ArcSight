@@ -123,10 +123,10 @@ class AprilTagPipeline:
 
 
             # For WPILib's Rotation3d: X()=Roll, Y()=Pitch, Z()=Yaw in radians
-            rotation = pose.rotation()
-            roll_rad = rotation.Z()
-            pitch_rad = -rotation.X()
-            yaw_rad = -rotation.Y()
+            pose_rotation = pose.rotation()
+            roll_rad = pose_rotation.Z()
+            pitch_rad = -pose_rotation.X()
+            yaw_rad = -pose_rotation.Y()
             
             # Convert radians to degrees for the UI
             roll_deg = math.degrees(roll_rad)
