@@ -172,7 +172,3 @@ def generate_chessboard_pdf(buffer, rows, cols, square_size_mm, page_size=A4):
     # Save the PDF to the buffer
     c.showPage()
     c.save()
-
-
-# --- Singleton Instance ---
-calibration_manager = CalibrationManager()

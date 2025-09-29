@@ -1,6 +1,6 @@
 from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app, make_response
 from app import db, camera_utils, network_utils
-from app.calibration_utils import calibration_manager, generate_chessboard_pdf
+from app.calibration_utils import generate_chessboard_pdf
 import cv2
 import io
 import numpy as np
@@ -109,7 +109,7 @@ def calibration_start():
     if not all([camera_id, pattern_type, pattern_params['rows'], pattern_params['cols'], square_size]):
         return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
 
-    calibration_manager.start_session(int(camera_id), pattern_type, pattern_params, float(square_size))
+    current_app.calibration_manager.start_session(int(camera_id), pattern_type, pattern_params, float(square_size))
     return jsonify({'success': True})
 
 
@@ -129,8 +129,8 @@ def calibration_capture():
     if frame is None:
         return jsonify({'success': False, 'error': 'Could not get frame from camera.'}), 500
 
-    success, message, _ = calibration_manager.capture_points(int(camera_id), frame)
-    session = calibration_manager.get_session(int(camera_id))
+    success, message, _ = current_app.calibration_manager.capture_points(int(camera_id), frame)
+    session = current_app.calibration_manager.get_session(int(camera_id))
     capture_count = len(session['img_points']) if session else 0
 
     return jsonify({'success': success, 'message': message, 'capture_count': capture_count})
@@ -144,7 +144,7 @@ def calibration_calculate():
     if not camera_id:
         return jsonify({'success': False, 'error': 'Camera ID is required.'}), 400
 
-    results = calibration_manager.calculate_calibration(int(camera_id))
+    results = current_app.calibration_manager.calculate_calibration(int(camera_id))
     return jsonify(results)
 
 

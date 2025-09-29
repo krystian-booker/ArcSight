@@ -1,12 +1,14 @@
 from flask import Flask, g
 from . import db
 from . import camera_utils
+from .calibration_utils import CalibrationManager
 import atexit
 
 
 def create_app():
     """Creates and configures the Flask application."""
     app = Flask(__name__, static_folder='static', template_folder='templates')
+    app.calibration_manager = CalibrationManager()
 
     @app.before_request
     def before_request():
