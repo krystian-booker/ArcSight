@@ -112,17 +112,15 @@ class VisionProcessingThread(threading.Thread):
         
         # Pre-calculation variables for drawing
         self.cam_matrix = None
-        self.dist_coeffs = np.zeros((4, 1))
         self.obj_pts = None
 
         # Load camera calibration data
-        if self.camera_db_data.get('camera_matrix_json') and self.camera_db_data.get('dist_coeffs_json'):
+        if self.camera_db_data.get('camera_matrix_json'):
             try:
                 self.cam_matrix = np.array(json.loads(self.camera_db_data['camera_matrix_json']))
-                self.dist_coeffs = np.array(json.loads(self.camera_db_data['dist_coeffs_json']))
-                print(f"[{self.identifier}] Loaded calibration data from DB.")
+                print(f"[{self.identifier}] Loaded camera matrix from DB.")
             except (json.JSONDecodeError, TypeError):
-                print(f"[{self.identifier}] Failed to parse calibration data from DB. Falling back to default.")
+                print(f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default.")
                 self.cam_matrix = None # Will be set in run()
         
         # This is where you would load pipeline-specific settings from the DB
@@ -172,7 +170,6 @@ class VisionProcessingThread(threading.Thread):
                 [0, camera_params['fy'], camera_params['cy']],
                 [0, 0, 1]
             ], dtype=np.float32)
-            self.dist_coeffs = np.zeros((4, 1)) # Assuming no distortion if not calibrated
 
         while not self.stop_event.is_set():
             ref_counted_frame = None
@@ -183,7 +180,7 @@ class VisionProcessingThread(threading.Thread):
                 start_time = time.time()
 
                 # Delegate processing to the pipeline object
-                detections = self.pipeline.process_frame(raw_frame, self.cam_matrix, self.dist_coeffs)
+                detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
 
                 processing_time = (time.time() - start_time) * 1000
 
@@ -230,8 +227,8 @@ class VisionProcessingThread(threading.Thread):
         for det in detections:
             rvec, tvec = det['rvec'], det['tvec']
             
-            # Project the 3D points to the 2D image plane
-            img_pts, _ = cv2.projectPoints(self.obj_pts, rvec, tvec, self.cam_matrix, self.dist_coeffs)
+            # Project points assuming an undistorted (zero distortion) image
+            img_pts, _ = cv2.projectPoints(self.obj_pts, rvec, tvec, self.cam_matrix, np.zeros((4, 1)))
             img_pts = np.int32(img_pts).reshape(-1, 2)
 
             # Draw the base

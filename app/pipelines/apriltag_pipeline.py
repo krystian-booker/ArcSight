@@ -45,14 +45,13 @@ class AprilTagPipeline:
 
         print(f"AprilTag detector initialized with family: {family}")
 
-    def process_frame(self, frame, cam_matrix, dist_coeffs):
+    def process_frame(self, frame, cam_matrix):
         """
         Processes a single frame to find AprilTags and estimate their pose.
 
         Args:
             frame (np.ndarray): The input image frame from the camera.
             cam_matrix (np.ndarray): The 3x3 camera intrinsic matrix.
-            dist_coeffs (np.ndarray): The camera distortion coefficients.
 
         Returns:
             list: A list of dictionaries, where each dictionary represents a detected tag.
