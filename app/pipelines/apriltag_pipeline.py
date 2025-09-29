@@ -45,26 +45,32 @@ class AprilTagPipeline:
 
         print(f"AprilTag detector initialized with family: {family}")
 
-    def process_frame(self, frame, camera_params):
+    def process_frame(self, frame, cam_matrix, dist_coeffs):
         """
         Processes a single frame to find AprilTags and estimate their pose.
 
         Args:
             frame (np.ndarray): The input image frame from the camera.
-            camera_params (dict): Dict with camera intrinsics {'fx': ..., 'fy': ..., 'cx': ..., 'cy': ...}.
+            cam_matrix (np.ndarray): The 3x3 camera intrinsic matrix.
+            dist_coeffs (np.ndarray): The camera distortion coefficients.
 
         Returns:
             list: A list of dictionaries, where each dictionary represents a detected tag.
         """
         # --- Update Pose Estimator if needed ---
+        fx = cam_matrix[0, 0]
+        fy = cam_matrix[1, 1]
+        cx = cam_matrix[0, 2]
+        cy = cam_matrix[1, 2]
+
         if (self.pose_estimator is None or 
-            self.pose_estimator_config.fx != camera_params['fx'] or
-            self.pose_estimator_config.fy != camera_params['fy']):
+            self.pose_estimator_config.fx != fx or
+            self.pose_estimator_config.fy != fy):
             
-            self.pose_estimator_config.fx = camera_params['fx']
-            self.pose_estimator_config.fy = camera_params['fy']
-            self.pose_estimator_config.cx = camera_params['cx']
-            self.pose_estimator_config.cy = camera_params['cy']
+            self.pose_estimator_config.fx = fx
+            self.pose_estimator_config.fy = fy
+            self.pose_estimator_config.cx = cx
+            self.pose_estimator_config.cy = cy
             self.pose_estimator = robotpy_apriltag.AprilTagPoseEstimator(self.pose_estimator_config)
 
         # --- Grayscale Conversion ---

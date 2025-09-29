@@ -71,6 +71,18 @@ def init_db():
         except sqlite3.OperationalError:
             cursor.execute(f"ALTER TABLE cameras ADD COLUMN {column} {definition}")
 
+    calibration_columns_to_add = {
+        'camera_matrix_json': 'TEXT',
+        'dist_coeffs_json': 'TEXT',
+        'reprojection_error': 'REAL'
+    }
+
+    for column, definition in calibration_columns_to_add.items():
+        try:
+            cursor.execute(f"SELECT {column} FROM cameras LIMIT 1")
+        except sqlite3.OperationalError:
+            cursor.execute(f"ALTER TABLE cameras ADD COLUMN {column} {definition}")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -116,6 +128,20 @@ def update_camera(camera_id, name):
     """Updates a camera's name in the database."""
     db = get_db()
     db.execute("UPDATE cameras SET name = ? WHERE id = ?", (name, camera_id))
+    db.commit()
+
+
+def update_camera_calibration(camera_id, matrix, dist_coeffs, error):
+    """Saves the camera calibration data to the database."""
+    db = get_db()
+    db.execute(
+        """UPDATE cameras SET
+            camera_matrix_json = ?,
+            dist_coeffs_json = ?,
+            reprojection_error = ?
+        WHERE id = ?""",
+        (matrix, dist_coeffs, error, camera_id)
+    )
     db.commit()
 
 

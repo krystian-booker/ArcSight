@@ -10,6 +10,7 @@ dependencies:
   - c-ares=1.34.5=h5505292_0
   - ca-certificates=2025.9.9=hca03da5_0
   - cairo=1.18.4=h191e429_0
+  - charset-normalizer=3.3.2=pyhd3eb1b0_0
   - contourpy=1.3.1=py311h48ca7d4_0
   - cycler=0.11.0=pyhd3eb1b0_0
   - cyrus-sasl=2.1.28=ha1cbb27_0
@@ -99,6 +100,7 @@ dependencies:
   - python-dateutil=2.9.0post0=py311hca03da5_2
   - qtbase=6.7.3=h89abe44_4
   - readline=8.3=h0b18652_0
+  - reportlab=4.4.3=py311hca03da5_0
   - setuptools=78.1.1=py311hca03da5_0
   - six=1.17.0=py311hca03da5_0
   - sqlite=3.50.2=h79febb2_1

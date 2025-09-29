@@ -7,6 +7,7 @@ import time
 import queue
 import uuid
 import numpy as np
+import json
 from .pipelines.apriltag_pipeline import AprilTagPipeline
 
 try:
@@ -111,9 +112,19 @@ class VisionProcessingThread(threading.Thread):
         
         # Pre-calculation variables for drawing
         self.cam_matrix = None
-        self.dist_coeffs = np.zeros((4, 1)) 
+        self.dist_coeffs = np.zeros((4, 1))
         self.obj_pts = None
 
+        # Load camera calibration data
+        if self.camera_db_data.get('camera_matrix_json') and self.camera_db_data.get('dist_coeffs_json'):
+            try:
+                self.cam_matrix = np.array(json.loads(self.camera_db_data['camera_matrix_json']))
+                self.dist_coeffs = np.array(json.loads(self.camera_db_data['dist_coeffs_json']))
+                print(f"[{self.identifier}] Loaded calibration data from DB.")
+            except (json.JSONDecodeError, TypeError):
+                print(f"[{self.identifier}] Failed to parse calibration data from DB. Falling back to default.")
+                self.cam_matrix = None # Will be set in run()
+        
         # This is where you would load pipeline-specific settings from the DB
         pipeline_config = {
             'family': 'tag36h11', 
@@ -148,16 +159,20 @@ class VisionProcessingThread(threading.Thread):
 
         print(f"Starting vision processing thread for pipeline {self.pipeline_id} ({self.pipeline_type}) on camera {self.identifier}")
 
-        # IMPORTANT: These MUST be replaced with real values from camera calibration!
-        camera_params = {
-            'fx': 600.0, 'fy': 600.0, # Focal length in pixels
-            'cx': 320.0, 'cy': 240.0   # Principal point (image center)
-        }
-        
-        # Create the camera matrix once
-        self.cam_matrix = np.array([[camera_params['fx'], 0, camera_params['cx']],
-                               [0, camera_params['fy'], camera_params['cy']],
-                               [0, 0, 1]], dtype=np.float32)
+        # If no calibration data was loaded from the DB, create a default matrix.
+        if self.cam_matrix is None:
+            print(f"[{self.identifier}] No calibration data found, using default camera matrix.")
+            # IMPORTANT: These MUST be replaced with real values from camera calibration!
+            camera_params = {
+                'fx': 600.0, 'fy': 600.0, # Focal length in pixels
+                'cx': 320.0, 'cy': 240.0   # Principal point (image center)
+            }
+            self.cam_matrix = np.array([
+                [camera_params['fx'], 0, camera_params['cx']],
+                [0, camera_params['fy'], camera_params['cy']],
+                [0, 0, 1]
+            ], dtype=np.float32)
+            self.dist_coeffs = np.zeros((4, 1)) # Assuming no distortion if not calibrated
 
         while not self.stop_event.is_set():
             ref_counted_frame = None
@@ -168,7 +183,7 @@ class VisionProcessingThread(threading.Thread):
                 start_time = time.time()
 
                 # Delegate processing to the pipeline object
-                detections = self.pipeline.process_frame(raw_frame, camera_params)
+                detections = self.pipeline.process_frame(raw_frame, self.cam_matrix, self.dist_coeffs)
 
                 processing_time = (time.time() - start_time) * 1000
 
@@ -249,6 +264,8 @@ class CameraAcquisitionThread(threading.Thread):
         self.app = app
         self.frame_lock = threading.Lock()
         self.latest_frame_for_display = None
+        self.raw_frame_lock = threading.Lock()
+        self.latest_raw_frame = None
         self.processing_queues = {}
         self.queues_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -322,6 +339,9 @@ class CameraAcquisitionThread(threading.Thread):
                     raw_frame_from_cam = self._get_one_frame(ia, cap)
                     if raw_frame_from_cam is None:
                         break
+
+                    with self.raw_frame_lock:
+                        self.latest_raw_frame = raw_frame_from_cam.copy()
 
                     pooled_buffer = self.buffer_pool.get_buffer()
                     if pooled_buffer is None:
@@ -607,6 +627,21 @@ def get_processed_camera_feed(pipeline_id):
         print(f"Client disconnected from processed feed {pipeline_id}.")
     except Exception as e:
         print(f"Error during streaming for processed feed {pipeline_id}: {e}")
+
+
+def get_latest_raw_frame(identifier):
+    """Gets the latest raw, unprocessed frame from a camera's acquisition thread."""
+    with active_camera_threads_lock:
+        thread_group = active_camera_threads.get(identifier)
+    
+    if not thread_group or not thread_group['acquisition'].is_alive():
+        return None
+
+    acq_thread = thread_group['acquisition']
+    with acq_thread.raw_frame_lock:
+        if acq_thread.latest_raw_frame is not None:
+            return acq_thread.latest_raw_frame.copy()
+    return None
 
 
 if genapi:
