@@ -7,6 +7,8 @@ import time
 import queue
 import uuid
 import numpy as np
+import json
+from .pipelines.apriltag_pipeline import AprilTagPipeline
 
 try:
     from genicam import genapi
@@ -91,7 +93,7 @@ class FrameBufferPool:
 # --- Vision Processing Thread (Consumer) ---
 class VisionProcessingThread(threading.Thread):
     """A consumer thread that runs a vision pipeline on frames from a queue."""
-    def __init__(self, identifier, pipeline_info, frame_queue):
+    def __init__(self, identifier, pipeline_info, camera_db_data, frame_queue):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
@@ -101,41 +103,111 @@ class VisionProcessingThread(threading.Thread):
         self.stop_event = threading.Event()
         self.results_lock = threading.Lock()
         self.latest_results = {"status": "Starting..."}
+        self.latest_processed_frame = None
+        self.processed_frame_lock = threading.Lock()
+
+        # Store camera data and initialize the pipeline object
+        self.camera_db_data = camera_db_data
+        self.pipeline = None
+        
+        # Pre-calculation variables for drawing
+        self.cam_matrix = None
+        self.obj_pts = None
+
+        # Load camera calibration data
+        if self.camera_db_data.get('camera_matrix_json'):
+            try:
+                self.cam_matrix = np.array(json.loads(self.camera_db_data['camera_matrix_json']))
+                print(f"[{self.identifier}] Loaded camera matrix from DB.")
+            except (json.JSONDecodeError, TypeError):
+                print(f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default.")
+                self.cam_matrix = None # Will be set in run()
+        
+        # This is where you would load pipeline-specific settings from the DB
+        pipeline_config = {
+            'family': 'tag36h11', 
+            'threads': 2,
+            'decimate': 1.0,
+            'blur': 0.0,
+            'refine_edges': True,
+            'tag_size_m': 0.165
+        }
+
+        if self.pipeline_type == 'AprilTag':
+            self.pipeline = AprilTagPipeline(pipeline_config)
+            # Pre-calculate the 3D coordinates of the tag corners
+            tag_size_m = pipeline_config.get('tag_size_m', 0.165)
+            half_tag_size = tag_size_m / 2
+            self.obj_pts = np.array([
+                [-half_tag_size, -half_tag_size, 0], [half_tag_size, -half_tag_size, 0],
+                [half_tag_size, half_tag_size, 0], [-half_tag_size, half_tag_size, 0],
+                [-half_tag_size, -half_tag_size, -tag_size_m], [half_tag_size, -half_tag_size, -tag_size_m],
+                [half_tag_size, half_tag_size, -tag_size_m], [-half_tag_size, half_tag_size, -tag_size_m]
+            ])
+        # elif self.pipeline_type == 'Coloured Shape':
+        #     self.pipeline = ColouredShapePipeline(pipeline_config)
+        else:
+            print(f"Warning: Unknown pipeline type '{self.pipeline_type}' for pipeline ID {self.pipeline_id}")
 
     def run(self):
         """The main loop for the vision processing thread."""
+        if not self.pipeline:
+            print(f"Stopping processing thread for pipeline {self.pipeline_id} due to no valid pipeline object.")
+            return
+
         print(f"Starting vision processing thread for pipeline {self.pipeline_id} ({self.pipeline_type}) on camera {self.identifier}")
+
+        # If no calibration data was loaded from the DB, create a default matrix.
+        if self.cam_matrix is None:
+            print(f"[{self.identifier}] No calibration data found, using default camera matrix.")
+            # IMPORTANT: These MUST be replaced with real values from camera calibration!
+            camera_params = {
+                'fx': 600.0, 'fy': 600.0, # Focal length in pixels
+                'cx': 320.0, 'cy': 240.0   # Principal point (image center)
+            }
+            self.cam_matrix = np.array([
+                [camera_params['fx'], 0, camera_params['cx']],
+                [0, camera_params['fy'], camera_params['cy']],
+                [0, 0, 1]
+            ], dtype=np.float32)
+
         while not self.stop_event.is_set():
             ref_counted_frame = None
             try:
                 ref_counted_frame = self.frame_queue.get(timeout=1)
-
-                # --- <<< VISION PROCESSING LOGIC GOES HERE >>> ---
-                # Default to read-only access for maximum performance.
                 raw_frame = ref_counted_frame.data
 
-                # Example of copy-on-write for a debug pipeline:
-                # if self.needs_to_draw:
-                #     debug_frame = ref_counted_frame.get_writable_copy()
-                #     cv2.putText(debug_frame, "Debug", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                #     # ... do something with debug_frame ...
-
                 start_time = time.time()
-                if self.pipeline_type == 'AprilTag':
-                    time.sleep(0.05)
-                    current_results = {"tags_found": 1, "id": 5, "x": 0.3, "y": -0.2, "z_angle": 12.5, "ambiguity": 0.01}
-                elif self.pipeline_type == 'Object Detection (ML)':
-                    time.sleep(0.1)
-                    current_results = {"objects": [{"label": "note", "confidence": 0.92}]}
-                else:
-                    time.sleep(0.02)
-                    current_results = {"status": "Processed"}
+
+                # Delegate processing to the pipeline object
+                detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
 
                 processing_time = (time.time() - start_time) * 1000
-                current_results['processing_time_ms'] = f"{processing_time:.2f}"
+
+                # Separate UI data from drawing data
+                ui_detections = [d['ui_data'] for d in detections]
+                drawing_detections = [d['drawing_data'] for d in detections]
+
+                # Format results for the frontend/API
+                current_results = {
+                    "tags_found": len(ui_detections) > 0,
+                    "detections": ui_detections,
+                    "processing_time_ms": f"{processing_time:.2f}"
+                }
 
                 with self.results_lock:
                     self.latest_results = current_results
+
+                # --- Generate Processed Frame ---
+                annotated_frame = raw_frame.copy()
+
+                if self.pipeline_type == 'AprilTag' and drawing_detections:
+                    self._draw_3d_box_on_frame(annotated_frame, drawing_detections)
+                
+                ret, buffer = cv2.imencode('.jpg', annotated_frame)
+                if ret:
+                    with self.processed_frame_lock:
+                        self.latest_processed_frame = buffer.tobytes()
 
             except queue.Empty:
                 continue
@@ -149,6 +221,28 @@ class VisionProcessingThread(threading.Thread):
         """Safely retrieves the latest results from this pipeline."""
         with self.results_lock:
             return self.latest_results
+
+    def _draw_3d_box_on_frame(self, frame, detections):
+        """Draws a 3D bounding box around each detected AprilTag."""
+        for det in detections:
+            rvec, tvec = det['rvec'], det['tvec']
+            
+            # Project points assuming an undistorted (zero distortion) image
+            img_pts, _ = cv2.projectPoints(self.obj_pts, rvec, tvec, self.cam_matrix, np.zeros((4, 1)))
+            img_pts = np.int32(img_pts).reshape(-1, 2)
+
+            # Draw the base
+            cv2.drawContours(frame, [img_pts[:4]], -1, (0, 255, 0), 2)
+            # Draw the pillars
+            for i in range(4):
+                cv2.line(frame, tuple(img_pts[i]), tuple(img_pts[i + 4]), (0, 255, 0), 2)
+            # Draw the top
+            cv2.drawContours(frame, [img_pts[4:]], -1, (0, 255, 0), 2)
+
+            # Draw the tag ID
+            corner = tuple(np.int32(det['corners'][0]))
+            cv2.putText(frame, str(det['id']), corner, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
 
     def stop(self):
         """Signals the thread to stop."""
@@ -167,6 +261,8 @@ class CameraAcquisitionThread(threading.Thread):
         self.app = app
         self.frame_lock = threading.Lock()
         self.latest_frame_for_display = None
+        self.raw_frame_lock = threading.Lock()
+        self.latest_raw_frame = None
         self.processing_queues = {}
         self.queues_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -218,16 +314,20 @@ class CameraAcquisitionThread(threading.Thread):
                     if not cap.isOpened():
                         raise ConnectionError("Failed to open USB camera.")
 
+                # The orientation value from DB must be an integer for comparisons.
+                orientation = int(self.camera_db_data['orientation'])
+
                 if self.buffer_pool._buffer_shape is None:
                     first_frame = self._get_one_frame(ia, cap)
                     if first_frame is not None:
-                        self.buffer_pool.initialize(first_frame)
+                        # Apply orientation to the first frame to correctly size the buffer pool
+                        oriented_first_frame = self._apply_orientation(first_frame, orientation)
+                        self.buffer_pool.initialize(oriented_first_frame)
                     else:
                         raise ConnectionError("Failed to get initial frame to size buffer pool.")
                 
                 print(f"Camera {self.identifier} initialized successfully.")
                 start_time, frame_count, last_config_check = time.time(), 0, time.time()
-                orientation = self.camera_db_data['orientation']
 
                 while not self.stop_event.is_set():
                     if time.time() - last_config_check > 2.0:
@@ -241,11 +341,18 @@ class CameraAcquisitionThread(threading.Thread):
                     if raw_frame_from_cam is None:
                         break
 
+                    # Apply orientation to the frame right after capture
+                    oriented_frame = self._apply_orientation(raw_frame_from_cam, orientation)
+
+                    with self.raw_frame_lock:
+                        self.latest_raw_frame = oriented_frame.copy()
+
                     pooled_buffer = self.buffer_pool.get_buffer()
                     if pooled_buffer is None:
                         continue
 
-                    np.copyto(pooled_buffer, raw_frame_from_cam)
+                    # Copy the oriented frame into the buffer for pipelines.
+                    np.copyto(pooled_buffer, oriented_frame)
                     ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
                     
                     with self.queues_lock:
@@ -258,8 +365,11 @@ class CameraAcquisitionThread(threading.Thread):
 
                     ref_counted_frame.acquire()
                     try:
-                        display_frame = self._prepare_display_frame(ref_counted_frame.data, orientation)
-                        ret, buffer = cv2.imencode('.jpg', display_frame)
+                        # The frame from the buffer is already oriented.
+                        # We must use a copy so the FPS overlay isn't drawn on the shared buffer.
+                        display_frame_copy = ref_counted_frame.get_writable_copy()
+                        display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
+                        ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
                         if ret:
                             with self.frame_lock:
                                 self.latest_frame_for_display = buffer.tobytes()
@@ -311,15 +421,18 @@ class CameraAcquisitionThread(threading.Thread):
             return frame if ret and frame is not None else None
         return None
 
-    def _prepare_display_frame(self, frame, orientation):
-        """Applies orientation and an FPS overlay to a frame."""
+    def _apply_orientation(self, frame, orientation):
+        """Applies rotation to a frame based on the orientation value."""
         if orientation == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         elif orientation == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
+            return cv2.rotate(frame, cv2.ROTATE_180)
         elif orientation == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame
 
+    def _prepare_display_frame(self, frame):
+        """Applies an FPS overlay to a frame."""
         text = f"FPS: {self.fps:.2f}"
         font_scale, font_thickness = 0.7, 2
         text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
@@ -350,7 +463,7 @@ def start_camera_thread(camera, app):
             processing_threads = {}
             for pipeline in pipelines:
                 frame_queue = queue.Queue(maxsize=2)
-                proc_thread = VisionProcessingThread(identifier, dict(pipeline), frame_queue)
+                proc_thread = VisionProcessingThread(identifier, dict(pipeline), camera, frame_queue)
                 
                 acq_thread.add_pipeline_queue(pipeline['id'], frame_queue)
                 processing_threads[pipeline['id']] = proc_thread
@@ -397,7 +510,7 @@ def add_pipeline_to_camera(camera_id, pipeline_info, app):
             if pipeline_id not in thread_group['processing_threads']:
                 print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
                 frame_queue = queue.Queue(maxsize=2)
-                proc_thread = VisionProcessingThread(identifier, pipeline_info, frame_queue)
+                proc_thread = VisionProcessingThread(identifier, pipeline_info, dict(camera), frame_queue)
                 thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
                 thread_group['processing_threads'][pipeline_id] = proc_thread
                 proc_thread.start()
@@ -474,8 +587,6 @@ def get_camera_feed(camera):
 
     try:
         while True:
-            time.sleep(0.02)
-
             frame_to_send = None
             with acq_thread.frame_lock:
                 if acq_thread.latest_frame_for_display:
@@ -488,10 +599,60 @@ def get_camera_feed(camera):
             if not acq_thread.is_alive():
                 print(f"Stopping feed for {identifier} as acquisition thread has died.")
                 break
+            time.sleep(0.01) # A small sleep to prevent busy-waiting
     except GeneratorExit:
         print(f"Client disconnected from camera feed {identifier}.")
     except Exception as e:
         print(f"Error during streaming for feed {identifier}: {e}")
+
+
+def get_processed_camera_feed(pipeline_id):
+    """A generator that yields JPEG frames from a vision processing thread."""
+    proc_thread = None
+    with active_camera_threads_lock:
+        for thread_group in active_camera_threads.values():
+            if pipeline_id in thread_group['processing_threads']:
+                proc_thread = thread_group['processing_threads'][pipeline_id]
+                break
+
+    if not proc_thread or not proc_thread.is_alive():
+        print(f"Warning: Attempted to get processed feed for pipeline {pipeline_id}, but its thread is not running.")
+        return
+
+    try:
+        while True:
+            frame_to_send = None
+            with proc_thread.processed_frame_lock:
+                if proc_thread.latest_processed_frame:
+                    frame_to_send = proc_thread.latest_processed_frame
+            
+            if frame_to_send:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_to_send + b'\r\n')
+            
+            if not proc_thread.is_alive():
+                print(f"Stopping processed feed for {pipeline_id} as its thread has died.")
+                break
+            time.sleep(0.01) # A small sleep to prevent busy-waiting
+    except GeneratorExit:
+        print(f"Client disconnected from processed feed {pipeline_id}.")
+    except Exception as e:
+        print(f"Error during streaming for processed feed {pipeline_id}: {e}")
+
+
+def get_latest_raw_frame(identifier):
+    """Gets the latest raw, unprocessed frame from a camera's acquisition thread."""
+    with active_camera_threads_lock:
+        thread_group = active_camera_threads.get(identifier)
+    
+    if not thread_group or not thread_group['acquisition'].is_alive():
+        return None
+
+    acq_thread = thread_group['acquisition']
+    with acq_thread.raw_frame_lock:
+        if acq_thread.latest_raw_frame is not None:
+            return acq_thread.latest_raw_frame.copy()
+    return None
 
 
 if genapi:

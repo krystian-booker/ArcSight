@@ -6,7 +6,6 @@
 <h1 class="text-3xl font-bold mb-4">Dashboard</h1>
 
 <div class="flex flex-wrap md:flex-nowrap gap-4">
-    <!-- Left side form -->
     <div class="w-full md:w-1/3">
         <div class="bg-gray-800 rounded-lg p-4">
             <h2 class="text-xl font-bold mb-4">Configuration</h2>
@@ -28,7 +27,6 @@
                     <label for="pipeline-select" class="block text-sm font-medium text-gray-300 mb-2">Pipeline</label>
                     <div class="flex items-center">
                         <select id="pipeline-select" class="custom-select w-full">
-                            <!-- Options will be populated dynamically -->
                             </select>
                         <button id="add-pipeline-btn" class="ml-2 btn btn-primary">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -59,7 +57,6 @@
         </div>
     </div>
 
-    <!-- Input Card -->
     <div class="w-full md:w-1/3">
         <div class="bg-gray-800 rounded-lg p-4">
             <h2 class="text-xl font-bold mb-4">Input</h2>
@@ -102,7 +99,6 @@
     </div>
 
 
-    <!-- Right side video feed -->
     <div class="w-full md:w-1/3">
         <div id="video-feed-wrapper" class="video-feed-wrapper">
             <div class="bg-gray-800 rounded-lg p-4 h-full">
@@ -115,16 +111,24 @@
                 </div>
             </div>
         </div>
+        <div class="mt-4 text-center">
+            <label class="inline-flex items-center">
+                <input type="radio" name="feed-type" value="default" checked>
+                <span class="ml-2">Default Feed</span>
+            </label>
+            <label class="inline-flex items-center ml-6">
+                <input type="radio" name="feed-type" value="processed">
+                <span class="ml-2">Processed Feed</span>
+            </label>
+        </div>
     </div>
 </div>
 
-<!-- Full-width pipeline form card -->
 <div class="w-full bg-gray-800 rounded-lg p-4 mt-4">
     <div id="pipeline-forms">
         <div id="form-AprilTag" class="pipeline-form">
             <h3 class="text-lg font-bold mb-4">AprilTag Configuration</h3>
             <div class="flex flex-wrap md:flex-nowrap gap-4">
-                <!-- Left side of form -->
                 <div class="w-full md:w-1/2">
                     <form>
                         <div class="mb-4">
@@ -179,23 +183,24 @@
                         </div>
                     </form>
                 </div>
-                <!-- Right side of form -->
                 <div class="w-full md:w-1/2">
                     <h4 class="text-md font-bold mb-2">Targets</h4>
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-700">
                             <thead class="bg-gray-700">
                                 <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Fiducial ID</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">X metres</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Y metres</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Z Angle</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Ambiguity</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">ID</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">X (m)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Y (m)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Z (m)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Yaw (°)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Pitch (°)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Roll (°)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Error</th>
                                 </tr>
                             </thead>
                             <tbody id="apriltag-targets-tbody" class="bg-gray-800 divide-y divide-gray-700">
-                                <!-- Target rows will be dynamically inserted here -->
-                            </tbody>
+                                </tbody>
                         </table>
                     </div>
                 </div>
@@ -205,7 +210,6 @@
             <h3 class="text-lg font-bold mb-4">Coloured Shape Configuration</h3>
             <form>
                 <div class="flex flex-wrap md:flex-nowrap gap-4">
-                    <!-- Left side of form -->
                     <div class="w-full md:w-1/2">
                         <h4 class="text-md font-bold mb-2">Core Configuration</h4>
                         <div class="mb-4">
@@ -287,7 +291,6 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Right side of form -->
                     <div class="w-full md:w-1/2">
                         <h4 class="text-md font-bold mb-2">Targets</h4>
                         <div class="overflow-x-auto">
@@ -303,7 +306,6 @@
                                     </tr>
                                 </thead>
                                 <tbody class="bg-gray-800 divide-y divide-gray-700">
-                                    <!-- Target rows will be dynamically inserted here -->
                                     </tbody>
                             </table>
                         </div>
@@ -314,7 +316,6 @@
         <div id="form-Object Detection (ML)" class="pipeline-form hidden">
             <h3 class="text-lg font-bold mb-4">Object Detection (ML) Configuration</h3>
             <div class="flex flex-wrap md:flex-nowrap gap-4">
-                <!-- Left side of form -->
                 <div class="w-full md:w-1/2">
                     <form>
                         <div class="mb-4">
@@ -335,7 +336,6 @@
                         <div class="mb-4">
                             <label for="target-class-filter" class="block text-sm font-medium text-gray-300 mb-2">Target Class Filter</label>
                             <select id="target-class-filter" class="custom-select" multiple>
-                                <!-- Options will be populated dynamically -->
                                 </select>
                         </div>
                         <div class="mb-4">
@@ -348,7 +348,6 @@
                         </div>
                     </form>
                 </div>
-                <!-- Right side of form -->
                 <div class="w-full md:w-1/2">
                     <h4 class="text-md font-bold mb-2">Targets</h4>
                     <div class="overflow-x-auto">
@@ -363,7 +362,6 @@
                                 </tr>
                             </thead>
                             <tbody class="bg-gray-800 divide-y divide-gray-700">
-                                <!-- Target rows will be dynamically inserted here -->
                                 </tbody>
                         </table>
                     </div>
@@ -374,7 +372,6 @@
 </div>
 
 
-<!-- Modal -->
 <div id="pipeline-warning-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
     <div class="bg-gray-800 rounded-lg p-6 shadow-xl">
         <h3 class="text-lg font-bold mb-4">Warning</h3>
@@ -399,27 +396,48 @@ document.addEventListener('DOMContentLoaded', function() {
     const feedContainer = document.querySelector('.camera-feed-container');
     const pipelineForms = document.querySelectorAll('.pipeline-form');
 
+    const feedTypeRadios = document.querySelectorAll('input[name="feed-type"]');
+    const processedFeedRadio = document.querySelector('input[value="processed"]');
     let cameraFeed = document.getElementById('camera-feed');
     let resultsInterval;
 
-    function updateCameraFeed(cameraId) {
+    function updateFeedSource() {
+        const cameraId = cameraSelect.value;
+        const pipelineId = pipelineSelect.value;
+        
+        // Disable 'Processed Feed' if no valid pipeline is selected
+        const isPipelineSelected = pipelineId && pipelineSelect.options.length > 0 && pipelineSelect.options[pipelineSelect.selectedIndex].value;
+        processedFeedRadio.disabled = !isPipelineSelected;
+
+        let selectedFeedType = document.querySelector('input[name="feed-type"]:checked').value;
+
+        // If processed is selected but disabled, switch back to default
+        if (selectedFeedType === 'processed' && processedFeedRadio.disabled) {
+            document.querySelector('input[value="default"]').checked = true;
+            selectedFeedType = 'default';
+        }
+
         if (!cameraId) {
+            if (cameraFeed) cameraFeed.src = "";
             feedContainer.innerHTML = '<p class="text-gray-500">No camera selected.</p>';
             return;
+        }
+
+        let newFeedUrl = '';
+        if (selectedFeedType === 'processed' && isPipelineSelected) {
+            newFeedUrl = `/processed_video_feed/${pipelineId}?t=${new Date().getTime()}`;
+        } else {
+            newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
         }
 
         fetch(`/api/cameras/status/${cameraId}`)
             .then(response => response.json())
             .then(data => {
+                const imgElement = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="w-full h-full object-contain rounded">`;
                 if (data.connected) {
-                    const newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
-                    const existingImg = document.getElementById('camera-feed');
-                    
-                    if (existingImg) {
-                        existingImg.src = newFeedUrl;
-                    } else {
-                        feedContainer.innerHTML = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="w-full h-auto rounded">`;
-                    }
+                    // Always recreate the img tag to ensure the browser reloads the stream
+                    feedContainer.innerHTML = imgElement;
+                    cameraFeed = document.getElementById('camera-feed'); // Re-assign cameraFeed
                 } else {
                     feedContainer.innerHTML = '<p class="text-red-500">Camera is not connected.</p>';
                 }
@@ -434,6 +452,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!cameraId) {
             pipelineSelect.innerHTML = '<option value="">No camera selected</option>';
             pipelineTypeSelect.disabled = true;
+            updateFeedSource(); // Update feed for "no camera" state
             return;
         }
 
@@ -451,10 +470,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         option.dataset.type = pipeline.pipeline_type;
                         pipelineSelect.appendChild(option);
                     });
-                    updatePipelineDetails();
                 } else {
                     pipelineSelect.innerHTML = '<option value="">No pipelines configured</option>';
                 }
+                // Call updatePipelineDetails which in turn calls updateFeedSource
+                updatePipelineDetails();
             });
     }
 
@@ -463,7 +483,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedOption && selectedOption.value) {
             pipelineTypeSelect.value = selectedOption.dataset.type;
             updatePipelineForm(selectedOption.dataset.type);
+        } else {
+            // If no pipeline is selected, hide all forms
+             pipelineForms.forEach(form => form.classList.add('hidden'));
         }
+        updateFeedSource(); // Always update the feed source on pipeline change
     }
 
     function addPipeline() {
@@ -619,7 +643,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Maybe show a success message
                 console.log('Camera controls saved successfully');
                 // We need to refresh the camera feed to see the orientation change
-                updateCameraFeed(cameraId);
+                updateFeedSource();
             } else {
                 console.error('Error saving camera controls:', data.error);
             }
@@ -667,49 +691,77 @@ document.addEventListener('DOMContentLoaded', function() {
 
         tbody.innerHTML = ''; // Clear previous results
 
-        if (!results || !results.detections || results.detections.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-4">No targets detected</td></tr>';
+        if (!results || !results.tags_found || !results.detections || results.detections.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-4">No targets detected</td></tr>';
             return;
         }
         
+        // Loop through each detection and create a table row
         results.detections.forEach(tag => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${tag.id}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.x_m.toFixed(3)}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.y_m.toFixed(3)}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.yaw_deg.toFixed(2)}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.pose_error.toFixed(4)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${tag.id || 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.x_m !== undefined ? tag.x_m.toFixed(3) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.y_m !== undefined ? tag.y_m.toFixed(3) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.z_m !== undefined ? tag.z_m.toFixed(3) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.yaw_deg !== undefined ? tag.yaw_deg.toFixed(2) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.pitch_deg !== undefined ? tag.pitch_deg.toFixed(2) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.roll_deg !== undefined ? tag.roll_deg.toFixed(2) : 'N/A'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${tag.pose_error !== undefined ? tag.pose_error.toFixed(4) : 'N/A'}</td>
             `;
             tbody.appendChild(row);
         });
     }
 
-
     // Initial setup
     const initialCameraId = cameraSelect.value;
     if (initialCameraId) {
-        updateCameraFeed(initialCameraId);
+        // updateCameraFeed(initialCameraId); // This is now handled by updateFeedSource
         updatePipelineList(initialCameraId);
         updateCameraControls(initialCameraId);
         startResultsUpdates(initialCameraId);
+    } else {
+        updateFeedSource(); // Call once to set initial state
     }
 
     // Event Listeners
     cameraSelect.addEventListener('change', function() {
-        updateCameraFeed(this.value);
+        // updateCameraFeed(this.value); // Replaced by updateFeedSource
         updatePipelineList(this.value);
         updateCameraControls(this.value);
         startResultsUpdates(this.value);
     });
 
     pipelineSelect.addEventListener('change', updatePipelineDetails);
+    
+    feedTypeRadios.forEach(radio => {
+        radio.addEventListener('change', updateFeedSource);
+    });
+
     addPipelineBtn.addEventListener('click', addPipeline);
     editPipelineBtn.addEventListener('click', updatePipeline);
     deletePipelineBtn.addEventListener('click', deletePipeline);
     pipelineTypeSelect.addEventListener('change', updatePipelineType);
     
     document.getElementById('orientation-select').addEventListener('change', saveCameraControls);
+    document.getElementById('exposure-mode-select').addEventListener('change', () => {
+        const isManual = document.getElementById('exposure-mode-select').value === 'manual';
+        document.getElementById('exposure-slider').disabled = !isManual;
+        document.getElementById('exposure-value').disabled = !isManual;
+        saveCameraControls();
+    });
+    document.getElementById('exposure-slider').addEventListener('change', saveCameraControls);
+    document.getElementById('exposure-value').addEventListener('change', saveCameraControls);
+
+    document.getElementById('gain-mode-select').addEventListener('change', () => {
+        const isManual = document.getElementById('gain-mode-select').value === 'manual';
+        document.getElementById('gain-slider').disabled = !isManual;
+        document.getElementById('gain-value').disabled = !isManual;
+        saveCameraControls();
+    });
+    document.getElementById('gain-slider').addEventListener('change', saveCameraControls);
+    document.getElementById('gain-value').addEventListener('change', saveCameraControls);
+
 
     // Floating video feed logic
     const videoFeedWrapper = document.getElementById('video-feed-wrapper');

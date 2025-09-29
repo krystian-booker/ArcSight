@@ -1,9 +1,12 @@
-from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app
+from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app, make_response
 from app import db, camera_utils, network_utils
+from app.calibration_utils import generate_chessboard_pdf, generate_charuco_board_pdf
 import cv2
+import io
 import numpy as np
 import os
 import shutil
+import time
 from . import main
 
 def create_error_image(message, width=640, height=480):
@@ -40,12 +43,191 @@ def video_feed(camera_id):
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+@main.route('/processed_video_feed/<int:pipeline_id>')
+def processed_video_feed(pipeline_id):
+    """Streams the processed video feed for a given pipeline."""
+    pipeline = db.get_pipeline(pipeline_id)
+    if not pipeline:
+        error_img = create_error_image("Pipeline not found")
+        return Response(error_img, mimetype='image/jpeg', status=404)
+
+    return Response(camera_utils.get_processed_camera_feed(pipeline_id),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
 @main.route('/cameras')
 def cameras():
     """Renders the camera management page."""
     cameras = db.get_cameras()
     genicam_cti_path = db.get_setting('genicam_cti_path')
     return render_template('cameras.html', cameras=cameras, genicam_enabled=bool(genicam_cti_path))
+
+
+@main.route('/calibration')
+def calibration():
+    """Renders the camera calibration page."""
+    cameras = db.get_cameras()
+    return render_template('calibration.html', cameras=cameras)
+
+
+@main.route('/calibration/generate_pattern')
+def calibration_generate_pattern():
+    """Generates and returns a downloadable chessboard pattern as a PDF."""
+    try:
+        rows = int(request.args.get('rows', 7))
+        cols = int(request.args.get('cols', 10))
+        square_size_mm = float(request.args.get('square_size', 20))
+    except (ValueError, TypeError):
+        return "Invalid parameters", 400
+
+    try:
+        buffer = io.BytesIO()
+        generate_chessboard_pdf(buffer, rows, cols, square_size_mm)
+        buffer.seek(0)
+        
+        response = make_response(buffer.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=chessboard_{cols+1}x{rows+1}_{square_size_mm}mm.pdf'
+        return response
+
+    except Exception as e:
+        return str(e), 500
+
+
+@main.route('/calibration/generate_charuco_pattern')
+def calibration_generate_charuco_pattern():
+    """Generates and returns a downloadable ChAruco board pattern as a PDF."""
+    try:
+        params = {
+            'squares_x': int(request.args.get('squares_x')),
+            'squares_y': int(request.args.get('squares_y')),
+            'square_size': float(request.args.get('square_size')),
+            'marker_size': float(request.args.get('marker_size')),
+            'dictionary_name': request.args.get('dictionary_name')
+        }
+    except (ValueError, TypeError, KeyError):
+        return "Invalid parameters", 400
+
+    try:
+        buffer = io.BytesIO()
+        generate_charuco_board_pdf(buffer, params)
+        buffer.seek(0)
+        
+        response = make_response(buffer.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        filename = f"charuco_{params['squares_x']}x{params['squares_y']}_{params['dictionary_name']}.pdf"
+        response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+        return response
+
+    except Exception as e:
+        return str(e), 500
+
+
+@main.route('/calibration/start', methods=['POST'])
+def calibration_start():
+    """Starts a new calibration session."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Invalid request format.'}), 400
+
+    camera_id = data.get('camera_id')
+    pattern_type = data.get('pattern_type')
+    pattern_params = data.get('pattern_params')
+
+    if not all([camera_id, pattern_type, pattern_params]):
+        return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
+
+    try:
+        current_app.calibration_manager.start_session(
+            int(camera_id), 
+            pattern_type, 
+            pattern_params
+        )
+        return jsonify({'success': True})
+    except (ValueError, KeyError, AttributeError) as e:
+        return jsonify({'success': False, 'error': f'Invalid parameters for {pattern_type}: {e}'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'An unexpected error occurred: {e}'}), 500
+
+
+@main.route('/calibration/capture', methods=['POST'])
+def calibration_capture():
+    """Captures a frame for calibration."""
+    data = request.get_json()
+    camera_id = data.get('camera_id')
+    if not camera_id:
+        return jsonify({'success': False, 'error': 'Camera ID is required.'}), 400
+
+    camera = db.get_camera(int(camera_id))
+    if not camera:
+        return jsonify({'success': False, 'error': 'Camera not found.'}), 404
+
+    frame = camera_utils.get_latest_raw_frame(camera['identifier'])
+    if frame is None:
+        return jsonify({'success': False, 'error': 'Could not get frame from camera.'}), 500
+
+    success, message, _ = current_app.calibration_manager.capture_points(int(camera_id), frame)
+    session = current_app.calibration_manager.get_session(int(camera_id))
+    
+    capture_count = 0
+    if session:
+        if session.get('pattern_type') == 'ChAruco':
+            capture_count = len(session.get('all_charuco_corners', []))
+        else:
+            capture_count = len(session.get('img_points', []))
+
+
+    return jsonify({'success': success, 'message': message, 'capture_count': capture_count})
+
+
+@main.route('/calibration/calculate', methods=['POST'])
+def calibration_calculate():
+    """Calculates the camera intrinsics."""
+    data = request.get_json()
+    camera_id = data.get('camera_id')
+    if not camera_id:
+        return jsonify({'success': False, 'error': 'Camera ID is required.'}), 400
+
+    results = current_app.calibration_manager.calculate_calibration(int(camera_id))
+    return jsonify(results)
+
+
+@main.route('/calibration/save', methods=['POST'])
+def calibration_save():
+    """Saves the calibration data."""
+    data = request.get_json()
+    camera_id = data.get('camera_id')
+    matrix = data.get('camera_matrix')
+    dist_coeffs = data.get('dist_coeffs')
+    error = data.get('reprojection_error')
+
+    if not all([camera_id, matrix, dist_coeffs, error]):
+        return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
+
+    db.update_camera_calibration(int(camera_id), matrix, dist_coeffs, float(error))
+    
+    # Restart the camera thread to apply the new calibration
+    camera = db.get_camera(int(camera_id))
+    if camera:
+        camera_utils.stop_camera_thread(camera['identifier'])
+        camera_utils.start_camera_thread(dict(camera), current_app._get_current_object())
+
+    return jsonify({'success': True})
+
+
+@main.route('/calibration_feed/<int:camera_id>')
+def calibration_feed(camera_id):
+    """Streams the standard video feed for a given camera, used on the calibration page."""
+    camera = db.get_camera(camera_id)
+    if not camera:
+        return "Camera not found", 404
+
+    if not camera_utils.check_camera_connection(dict(camera)):
+        error_img = create_error_image("Camera not connected")
+        return Response(error_img, mimetype='image/jpeg')
+
+    return Response(camera_utils.get_camera_feed(dict(camera)),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @main.route('/settings')

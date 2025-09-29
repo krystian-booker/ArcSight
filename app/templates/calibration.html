@@ -1,0 +1,460 @@
+{% extends "layout.html" %}
+
+{% block title %}Camera Calibration{% endblock %}
+
+{% block content %}
+<div class="container mx-auto">
+    <h1 class="text-3xl font-bold mb-6">Camera Calibration</h1>
+
+    <div id="setup-step" class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+        <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">Step 1: Setup</h2>
+        <form id="setup-form" class="space-y-4">
+            <div>
+                <label for="camera-select" class="block text-sm font-medium mb-1">Select Camera</label>
+                <select id="camera-select" name="camera_id" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">-- Select a Camera --</option>
+                    {% for camera in cameras %}
+                    <option value="{{ camera.id }}">{{ camera.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="pattern-type" class="block text-sm font-medium mb-1">Pattern Type</label>
+                <select id="pattern-type" name="pattern_type" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    <option value="Chessboard">Chessboard</option>
+                    <option value="ChAruco" selected>ChAruco</option>
+                </select>
+            </div>
+
+            <div id="chessboard-params" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="chessboard-cols" class="block text-sm font-medium mb-1">Inner Corners Width</label>
+                        <input type="number" id="chessboard-cols" name="chessboard_cols" value="7" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                    <div>
+                        <label for="chessboard-rows" class="block text-sm font-medium mb-1">Inner Corners Height</label>
+                        <input type="number" id="chessboard-rows" name="chessboard_rows" value="10" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                    <div>
+                        <label for="chessboard-square-size" class="block text-sm font-medium mb-1">Square Size (mm)</label>
+                        <input type="number" id="chessboard-square-size" name="chessboard_square_size" value="20" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                </div>
+            </div>
+
+            <div id="charuco-params" class="space-y-4 hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="charuco-squares-x" class="block text-sm font-medium mb-1">Squares X</label>
+                        <input type="number" id="charuco-squares-x" name="charuco_squares_x" value="7" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                    <div>
+                        <label for="charuco-squares-y" class="block text-sm font-medium mb-1">Squares Y</label>
+                        <input type="number" id="charuco-squares-y" name="charuco_squares_y" value="10" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                    <div>
+                        <label for="charuco-square-size" class="block text-sm font-medium mb-1">Square Size (mm)</label>
+                        <input type="number" id="charuco-square-size" name="charuco_square_size" value="25" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                    <div>
+                        <label for="charuco-marker-size" class="block text-sm font-medium mb-1">Marker Size (mm)</label>
+                        <input type="number" id="charuco-marker-size" name="charuco_marker_size" value="20" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                </div>
+                <div id="charuco-size-error" class="text-red-500 text-sm hidden">Marker size must be smaller than the square size.</div>
+                <div>
+                    <label for="charuco-dictionary" class="block text-sm font-medium mb-1">ArUco Dictionary</label>
+                    <select id="charuco-dictionary" name="charuco_dictionary" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                        <option value="DICT_4X4_250">4x4 (250 markers)</option>
+                        <option value="DICT_5X5_250">5x5 (250 markers)</option>
+                        <option value="DICT_6X6_250">6x6 (250 markers)</option>
+                        <option value="DICT_7X7_250">7x7 (250 markers)</option>
+                        <option value="DICT_APRILTAG_36h11" selected>AprilTag 36h11</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="mt-4 text-center">
+                <a href="#" id="download-pattern-link" class="text-blue-400 hover:text-blue-300 hover:underline">Download Pattern</a>
+            </div>
+            <button type="submit" id="start-calibration-btn" class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300">Start Calibration</button>
+        </form>
+    </div>
+
+    <div id="capture-step" class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 hidden">
+        <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">Step 2: Capture</h2>
+        <div class="flex flex-col md:flex-row gap-6">
+            <div class="flex-grow">
+                <img id="calibration-feed" src="" alt="Calibration Feed" class="w-full rounded-md bg-black">
+            </div>
+            <div class="md:w-1/3 flex flex-col space-y-4">
+                <p class="text-gray-400">Show the pattern at different angles and distances. Capture at least 15 images for good results.</p>
+                <button id="capture-frame-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md">Capture Frame</button>
+                <div class="text-center">
+                    <p class="text-lg">Images Captured: <span id="capture-count">0</span></p>
+                </div>
+                <button id="calculate-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Calculate Intrinsics</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="results-step" class="bg-gray-800 p-6 rounded-lg shadow-lg hidden">
+        <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">Step 3: Results</h2>
+        <div id="results-content" class="space-y-4">
+             <div>
+                <label class="block text-sm font-medium">Reprojection Error:</label>
+                <p id="reprojection-error" class="text-lg font-mono p-2 bg-gray-700 rounded"></p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium">Camera Matrix (fx, fy, cx, cy):</label>
+                <pre id="camera-matrix" class="text-sm font-mono p-2 bg-gray-700 rounded"></pre>
+            </div>
+            <div>
+                <label class="block text-sm font-medium">Distortion Coefficients:</label>
+                <pre id="dist-coeffs" class="text-sm font-mono p-2 bg-gray-700 rounded"></pre>
+            </div>
+        </div>
+        <div class="flex gap-4 mt-6">
+            <button id="save-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save to Camera</button>
+            <button id="restart-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Discard and Restart</button>
+        </div>
+    </div>
+
+    <div id="status-area" class="mt-4 p-3 bg-gray-700 rounded-md text-center hidden"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const setupStep = document.getElementById('setup-step');
+    const captureStep = document.getElementById('capture-step');
+    const resultsStep = document.getElementById('results-step');
+
+    const setupForm = document.getElementById('setup-form');
+    const cameraSelect = document.getElementById('camera-select');
+    const patternTypeSelect = document.getElementById('pattern-type');
+    const downloadLink = document.getElementById('download-pattern-link');
+    const startBtn = document.getElementById('start-calibration-btn');
+
+    // Parameter sections
+    const chessboardParams = document.getElementById('chessboard-params');
+    const charucoParams = document.getElementById('charuco-params');
+
+    // Chessboard inputs
+    const chessboardColsEl = document.getElementById('chessboard-cols');
+    const chessboardRowsEl = document.getElementById('chessboard-rows');
+    const chessboardSquareSizeEl = document.getElementById('chessboard-square-size');
+
+    // ChAruco inputs
+    const charucoSquaresXEl = document.getElementById('charuco-squares-x');
+    const charucoSquaresYEl = document.getElementById('charuco-squares-y');
+    const charucoSquareSizeEl = document.getElementById('charuco-square-size');
+    const charucoMarkerSizeEl = document.getElementById('charuco-marker-size');
+    const charucoDictionaryEl = document.getElementById('charuco-dictionary');
+    const charucoSizeErrorEl = document.getElementById('charuco-size-error');
+
+    const calibrationFeed = document.getElementById('calibration-feed');
+    const captureBtn = document.getElementById('capture-frame-btn');
+    const captureCountSpan = document.getElementById('capture-count');
+    const calculateBtn = document.getElementById('calculate-btn');
+
+    const reprojectionErrorEl = document.getElementById('reprojection-error');
+    const cameraMatrixEl = document.getElementById('camera-matrix');
+    const distCoeffsEl = document.getElementById('dist-coeffs');
+    const saveBtn = document.getElementById('save-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    const statusArea = document.getElementById('status-area');
+
+    let state = {
+        cameraId: null,
+        results: null
+    };
+
+    function showStatus(message, isError = false) {
+        statusArea.textContent = message;
+        statusArea.className = `mt-4 p-3 rounded-md text-center ${isError ? 'bg-red-500' : 'bg-blue-500'}`;
+        statusArea.classList.remove('hidden');
+    }
+
+    function hideStatus() {
+        statusArea.classList.add('hidden');
+    }
+
+    function resetUI() {
+        state.cameraId = null;
+        state.results = null;
+
+        setupStep.classList.remove('hidden');
+        captureStep.classList.add('hidden');
+        resultsStep.classList.add('hidden');
+
+        setupForm.reset();
+        
+        // Restore defaults after reset
+        patternTypeSelect.value = 'ChAruco';
+        charucoSquareSizeEl.value = 25;
+        charucoMarkerSizeEl.value = 20;
+
+        togglePatternParams(); // Ensure correct params are shown after reset
+        updateDownloadLink(); // Reset download link
+        
+        if (cameraSelect.options.length === 2) {
+            cameraSelect.selectedIndex = 1;
+        }
+
+        calibrationFeed.src = '';
+        captureCountSpan.textContent = '0';
+        calculateBtn.disabled = true;
+        hideStatus();
+    }
+
+    function validateCharucoSizes() {
+        const squareSize = parseFloat(charucoSquareSizeEl.value);
+        const markerSize = parseFloat(charucoMarkerSizeEl.value);
+        if (markerSize >= squareSize) {
+            charucoSizeErrorEl.classList.remove('hidden');
+            startBtn.disabled = true;
+            downloadLink.style.pointerEvents = 'none';
+            downloadLink.classList.add('text-gray-500');
+            downloadLink.classList.remove('text-blue-400', 'hover:text-blue-300');
+            return false;
+        } else {
+            charucoSizeErrorEl.classList.add('hidden');
+            startBtn.disabled = false;
+            downloadLink.style.pointerEvents = 'auto';
+            downloadLink.classList.remove('text-gray-500');
+            downloadLink.classList.add('text-blue-400', 'hover:text-blue-300');
+            return true;
+        }
+    }
+
+    function togglePatternParams() {
+        const selectedType = patternTypeSelect.value;
+        if (selectedType === 'Chessboard') {
+            chessboardParams.classList.remove('hidden');
+            charucoParams.classList.add('hidden');
+        } else {
+            chessboardParams.classList.add('hidden');
+            charucoParams.classList.remove('hidden');
+        }
+        updateDownloadLink();
+    }
+
+    function updateDownloadLink() {
+        if (patternTypeSelect.value === 'ChAruco' && !validateCharucoSizes()) {
+            downloadLink.href = '#';
+            return;
+        }
+
+        const patternType = patternTypeSelect.value;
+        let url = '#';
+        if (patternType === 'Chessboard') {
+            const rows = chessboardRowsEl.value;
+            const cols = chessboardColsEl.value;
+            const squareSize = chessboardSquareSizeEl.value;
+            url = `/calibration/generate_pattern?rows=${rows}&cols=${cols}&square_size=${squareSize}`;
+            downloadLink.textContent = 'Download Chessboard Pattern';
+        } else { // ChAruco
+            const squaresX = charucoSquaresXEl.value;
+            const squaresY = charucoSquaresYEl.value;
+            const squareSize = charucoSquareSizeEl.value;
+            const markerSize = charucoMarkerSizeEl.value;
+            const dictionary = charucoDictionaryEl.value;
+            url = `/calibration/generate_charuco_pattern?squares_x=${squaresX}&squares_y=${squaresY}&square_size=${squareSize}&marker_size=${markerSize}&dictionary_name=${dictionary}`;
+            downloadLink.textContent = 'Download ChAruco Pattern';
+        }
+        downloadLink.href = url;
+    }
+
+    // --- Step 1: Setup ---
+    patternTypeSelect.addEventListener('change', togglePatternParams);
+    document.querySelectorAll('#setup-form input, #setup-form select').forEach(el => {
+        el.addEventListener('input', updateDownloadLink);
+    });
+    
+    charucoSquareSizeEl.addEventListener('input', validateCharucoSizes);
+    charucoMarkerSizeEl.addEventListener('input', validateCharucoSizes);
+
+    // --- Initial State Setup ---
+    // Auto-select camera if only one is available
+    if (cameraSelect.options.length === 2) { // 1 camera + "-- Select a Camera --"
+        cameraSelect.selectedIndex = 1;
+    }
+    
+    // Set default pattern and values
+    patternTypeSelect.value = 'ChAruco';
+    charucoSquareSizeEl.value = 25;
+    charucoMarkerSizeEl.value = 20;
+    
+    togglePatternParams();
+    validateCharucoSizes();
+
+
+    setupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        if (patternTypeSelect.value === 'ChAruco' && !validateCharucoSizes()) {
+            return;
+        }
+
+        state.cameraId = cameraSelect.value;
+        if (!state.cameraId) {
+            showStatus('Please select a camera.', true);
+            return;
+        }
+
+        const patternType = patternTypeSelect.value;
+        let payload = {
+            camera_id: parseInt(state.cameraId),
+            pattern_type: patternType,
+            pattern_params: {}
+        };
+
+        if (patternType === 'Chessboard') {
+            payload.pattern_params = {
+                cols: parseInt(chessboardColsEl.value),
+                rows: parseInt(chessboardRowsEl.value),
+                square_size: parseFloat(chessboardSquareSizeEl.value)
+            };
+        } else { // ChAruco
+            payload.pattern_params = {
+                squares_x: parseInt(charucoSquaresXEl.value),
+                squares_y: parseInt(charucoSquaresYEl.value),
+                square_size: parseFloat(charucoSquareSizeEl.value),
+                marker_size: parseFloat(charucoMarkerSizeEl.value),
+                dictionary_name: charucoDictionaryEl.value
+            };
+        }
+
+        try {
+            const response = await fetch('/calibration/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Failed to start session.' }));
+                throw new Error(errorData.error || 'Failed to start session.');
+            }
+            
+            const data = await response.json();
+            if (data.success) {
+                setupStep.classList.add('hidden');
+                captureStep.classList.remove('hidden');
+                calibrationFeed.src = `/calibration_feed/${state.cameraId}`;
+                showStatus('Calibration session started. Begin capturing frames.');
+            } else {
+                showStatus(data.error || 'An unknown error occurred.', true);
+            }
+        } catch (err) {
+            showStatus(err.message, true);
+        }
+    });
+
+    // --- Step 2: Capture ---
+    captureBtn.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/calibration/capture', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera_id: state.cameraId })
+            });
+
+            if (!response.ok) throw new Error('Capture request failed.');
+            
+            const data = await response.json();
+            if (data.success) {
+                captureCountSpan.textContent = data.capture_count;
+                showStatus(`Frame captured successfully. Total: ${data.capture_count}`);
+                if (data.capture_count >= 5) { // Recommend at least 5 good captures
+                    calculateBtn.disabled = false;
+                }
+            } else {
+                showStatus(data.message || 'Pattern not found in frame.', true);
+            }
+        } catch (err) {
+            showStatus(err.message, true);
+        }
+    });
+
+    calculateBtn.addEventListener('click', async () => {
+        showStatus('Calculating... This may take a moment.');
+        try {
+            const response = await fetch('/calibration/calculate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera_id: state.cameraId })
+            });
+
+            if (!response.ok) throw new Error('Calculation request failed.');
+            
+            const data = await response.json();
+            if (data.success) {
+                state.results = data;
+                displayResults(data);
+                captureStep.classList.add('hidden');
+                resultsStep.classList.remove('hidden');
+                calibrationFeed.src = ''; // Stop the feed
+                showStatus('Calculation complete. Review the results below.');
+            } else {
+                showStatus(data.error, true);
+            }
+        } catch (err) {
+            showStatus(err.message, true);
+        }
+    });
+
+    // --- Step 3: Results ---
+    function displayResults(data) {
+        const error = data.reprojection_error;
+        reprojectionErrorEl.textContent = error.toFixed(4);
+        reprojectionErrorEl.style.color = error < 1.0 ? '#4ade80' : '#f87171'; // green-400 or red-400
+
+        const matrix = JSON.parse(data.camera_matrix);
+        const dist = JSON.parse(data.dist_coeffs);
+
+        cameraMatrixEl.textContent = `fx: ${matrix[0][0].toFixed(2)}, fy: ${matrix[1][1].toFixed(2)}\ncx: ${matrix[0][2].toFixed(2)}, cy: ${matrix[1][2].toFixed(2)}`;
+        distCoeffsEl.textContent = JSON.stringify(dist, null, 2);
+    }
+
+    saveBtn.addEventListener('click', async () => {
+        if (!state.results) {
+            showStatus('No results to save.', true);
+            return;
+        }
+
+        const payload = {
+            camera_id: state.cameraId,
+            ...state.results
+        };
+
+        showStatus('Saving...');
+        try {
+            const response = await fetch('/calibration/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error('Save request failed.');
+            
+            const data = await response.json();
+            if (data.success) {
+                showStatus('Calibration data saved successfully! The camera thread is restarting to apply changes.');
+                setTimeout(resetUI, 3000);
+            } else {
+                showStatus(data.error, true);
+            }
+        } catch (err) {
+            showStatus(err.message, true);
+        }
+    });
+
+    restartBtn.addEventListener('click', () => {
+        resetUI();
+    });
+});
+</script>
+{% endblock %}
