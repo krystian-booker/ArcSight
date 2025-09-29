@@ -124,6 +124,12 @@ def get_camera(camera_id):
     return db.execute("SELECT * FROM cameras WHERE id = ?", (camera_id,)).fetchone()
 
 
+def get_camera_by_identifier(identifier):
+    """Retrieves a single camera by its unique identifier."""
+    db = get_db()
+    return db.execute("SELECT * FROM cameras WHERE identifier = ?", (identifier,)).fetchone()
+
+
 def update_camera(camera_id, name):
     """Updates a camera's name in the database."""
     db = get_db()
