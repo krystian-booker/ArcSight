@@ -314,16 +314,20 @@ class CameraAcquisitionThread(threading.Thread):
                     if not cap.isOpened():
                         raise ConnectionError("Failed to open USB camera.")
 
+                # The orientation value from DB must be an integer for comparisons.
+                orientation = int(self.camera_db_data['orientation'])
+
                 if self.buffer_pool._buffer_shape is None:
                     first_frame = self._get_one_frame(ia, cap)
                     if first_frame is not None:
-                        self.buffer_pool.initialize(first_frame)
+                        # Apply orientation to the first frame to correctly size the buffer pool
+                        oriented_first_frame = self._apply_orientation(first_frame, orientation)
+                        self.buffer_pool.initialize(oriented_first_frame)
                     else:
                         raise ConnectionError("Failed to get initial frame to size buffer pool.")
                 
                 print(f"Camera {self.identifier} initialized successfully.")
                 start_time, frame_count, last_config_check = time.time(), 0, time.time()
-                orientation = self.camera_db_data['orientation']
 
                 while not self.stop_event.is_set():
                     if time.time() - last_config_check > 2.0:
@@ -337,14 +341,18 @@ class CameraAcquisitionThread(threading.Thread):
                     if raw_frame_from_cam is None:
                         break
 
+                    # Apply orientation to the frame right after capture
+                    oriented_frame = self._apply_orientation(raw_frame_from_cam, orientation)
+
                     with self.raw_frame_lock:
-                        self.latest_raw_frame = raw_frame_from_cam.copy()
+                        self.latest_raw_frame = oriented_frame.copy()
 
                     pooled_buffer = self.buffer_pool.get_buffer()
                     if pooled_buffer is None:
                         continue
 
-                    np.copyto(pooled_buffer, raw_frame_from_cam)
+                    # Copy the oriented frame into the buffer for pipelines.
+                    np.copyto(pooled_buffer, oriented_frame)
                     ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
                     
                     with self.queues_lock:
@@ -357,8 +365,11 @@ class CameraAcquisitionThread(threading.Thread):
 
                     ref_counted_frame.acquire()
                     try:
-                        display_frame = self._prepare_display_frame(ref_counted_frame.data, orientation)
-                        ret, buffer = cv2.imencode('.jpg', display_frame)
+                        # The frame from the buffer is already oriented.
+                        # We must use a copy so the FPS overlay isn't drawn on the shared buffer.
+                        display_frame_copy = ref_counted_frame.get_writable_copy()
+                        display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
+                        ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
                         if ret:
                             with self.frame_lock:
                                 self.latest_frame_for_display = buffer.tobytes()
@@ -410,15 +421,18 @@ class CameraAcquisitionThread(threading.Thread):
             return frame if ret and frame is not None else None
         return None
 
-    def _prepare_display_frame(self, frame, orientation):
-        """Applies orientation and an FPS overlay to a frame."""
+    def _apply_orientation(self, frame, orientation):
+        """Applies rotation to a frame based on the orientation value."""
         if orientation == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         elif orientation == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
+            return cv2.rotate(frame, cv2.ROTATE_180)
         elif orientation == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame
 
+    def _prepare_display_frame(self, frame):
+        """Applies an FPS overlay to a frame."""
         text = f"FPS: {self.fps:.2f}"
         font_scale, font_thickness = 0.7, 2
         text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
