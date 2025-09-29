@@ -1,6 +1,6 @@
 from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app, make_response
 from app import db, camera_utils, network_utils
-from app.calibration_utils import generate_chessboard_pdf
+from app.calibration_utils import generate_chessboard_pdf, generate_charuco_board_pdf
 import cv2
 import io
 import numpy as np
@@ -74,8 +74,8 @@ def calibration():
 def calibration_generate_pattern():
     """Generates and returns a downloadable chessboard pattern as a PDF."""
     try:
-        rows = int(request.args.get('rows', 6))
-        cols = int(request.args.get('cols', 9))
+        rows = int(request.args.get('rows', 7))
+        cols = int(request.args.get('cols', 10))
         square_size_mm = float(request.args.get('square_size', 20))
     except (ValueError, TypeError):
         return "Invalid parameters", 400
@@ -94,23 +94,60 @@ def calibration_generate_pattern():
         return str(e), 500
 
 
+@main.route('/calibration/generate_charuco_pattern')
+def calibration_generate_charuco_pattern():
+    """Generates and returns a downloadable ChAruco board pattern as a PDF."""
+    try:
+        params = {
+            'squares_x': int(request.args.get('squares_x')),
+            'squares_y': int(request.args.get('squares_y')),
+            'square_size': float(request.args.get('square_size')),
+            'marker_size': float(request.args.get('marker_size')),
+            'dictionary_name': request.args.get('dictionary_name')
+        }
+    except (ValueError, TypeError, KeyError):
+        return "Invalid parameters", 400
+
+    try:
+        buffer = io.BytesIO()
+        generate_charuco_board_pdf(buffer, params)
+        buffer.seek(0)
+        
+        response = make_response(buffer.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        filename = f"charuco_{params['squares_x']}x{params['squares_y']}_{params['dictionary_name']}.pdf"
+        response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+        return response
+
+    except Exception as e:
+        return str(e), 500
+
+
 @main.route('/calibration/start', methods=['POST'])
 def calibration_start():
     """Starts a new calibration session."""
     data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Invalid request format.'}), 400
+
     camera_id = data.get('camera_id')
     pattern_type = data.get('pattern_type')
-    square_size = data.get('square_size')
-    pattern_params = {
-        'rows': int(data.get('pattern_rows')),
-        'cols': int(data.get('pattern_cols')),
-    }
-    
-    if not all([camera_id, pattern_type, pattern_params['rows'], pattern_params['cols'], square_size]):
+    pattern_params = data.get('pattern_params')
+
+    if not all([camera_id, pattern_type, pattern_params]):
         return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
 
-    current_app.calibration_manager.start_session(int(camera_id), pattern_type, pattern_params, float(square_size))
-    return jsonify({'success': True})
+    try:
+        current_app.calibration_manager.start_session(
+            int(camera_id), 
+            pattern_type, 
+            pattern_params
+        )
+        return jsonify({'success': True})
+    except (ValueError, KeyError, AttributeError) as e:
+        return jsonify({'success': False, 'error': f'Invalid parameters for {pattern_type}: {e}'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'An unexpected error occurred: {e}'}), 500
 
 
 @main.route('/calibration/capture', methods=['POST'])
@@ -131,7 +168,14 @@ def calibration_capture():
 
     success, message, _ = current_app.calibration_manager.capture_points(int(camera_id), frame)
     session = current_app.calibration_manager.get_session(int(camera_id))
-    capture_count = len(session['img_points']) if session else 0
+    
+    capture_count = 0
+    if session:
+        if session.get('pattern_type') == 'ChAruco':
+            capture_count = len(session.get('all_charuco_corners', []))
+        else:
+            capture_count = len(session.get('img_points', []))
+
 
     return jsonify({'success': success, 'message': message, 'capture_count': capture_count})
 
