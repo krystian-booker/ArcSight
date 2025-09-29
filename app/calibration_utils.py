@@ -82,7 +82,7 @@ class CalibrationManager:
 
             if session['pattern_type'] == 'Chessboard':
                 objp = np.zeros((p['rows'] * p['cols'], 3), np.float32)
-                objp[:, :2] = np.mgrid[0:p['cols'], 0:p['rows']].T.reshape(-input, 2)
+                objp[:, :2] = np.mgrid[0:p['cols'], 0:p['rows']].T.reshape(-1, 2)
                 objp *= p['square_size']
 
                 ret, corners = cv2.findChessboardCorners(gray, (p['cols'], p['rows']), None)

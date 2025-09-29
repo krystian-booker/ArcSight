@@ -168,7 +168,14 @@ def calibration_capture():
 
     success, message, _ = current_app.calibration_manager.capture_points(int(camera_id), frame)
     session = current_app.calibration_manager.get_session(int(camera_id))
-    capture_count = len(session['img_points']) if session else 0
+    
+    capture_count = 0
+    if session:
+        if session.get('pattern_type') == 'ChAruco':
+            capture_count = len(session.get('all_charuco_corners', []))
+        else:
+            capture_count = len(session.get('img_points', []))
+
 
     return jsonify({'success': success, 'message': message, 'capture_count': capture_count})
 
