@@ -5,9 +5,9 @@ from . import db
 import threading
 import time
 import queue
-import uuid
 import numpy as np
 import json
+import depthai as dai
 from .pipelines.apriltag_pipeline import AprilTagPipeline
 
 try:
@@ -226,7 +226,7 @@ class VisionProcessingThread(threading.Thread):
         """Draws a 3D bounding box around each detected AprilTag."""
         for det in detections:
             rvec, tvec = det['rvec'], det['tvec']
-            
+      
             # Project points assuming an undistorted (zero distortion) image
             img_pts, _ = cv2.projectPoints(self.obj_pts, rvec, tvec, self.cam_matrix, np.zeros((4, 1)))
             img_pts = np.int32(img_pts).reshape(-1, 2)
@@ -242,7 +242,6 @@ class VisionProcessingThread(threading.Thread):
             # Draw the tag ID
             corner = tuple(np.int32(det['corners'][0]))
             cv2.putText(frame, str(det['id']), corner, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
 
     def stop(self):
         """Signals the thread to stop."""
@@ -291,115 +290,145 @@ class CameraAcquisitionThread(threading.Thread):
                 return False
         elif self.camera_type == 'GenICam':
             return any(cam['identifier'] == self.identifier for cam in list_genicam_cameras())
+        elif self.camera_type == 'OAK-D':
+            return any(cam['identifier'] == self.identifier for cam in list_oakd_cameras())
         return False
 
     def run(self):
         """The main loop for the camera acquisition thread."""
         print(f"Starting {self.camera_type} acquisition thread for {self.identifier}")
+        
         while not self.stop_event.is_set():
-            ia, cap = None, None
             try:
+                # This outer try-catch handles connection errors and triggers the retry delay.
                 if not self._is_physically_connected():
                     print(f"Camera {self.identifier} is not connected. Retrying in 5 seconds...")
                     self.stop_event.wait(5.0)
                     continue
 
                 print(f"Initializing camera {self.identifier}...")
-                if self.camera_type == 'GenICam':
-                    with harvester_lock:
-                        ia = h.create({'serial_number': self.identifier})
-                    ia.start()
-                elif self.camera_type == 'USB':
-                    cap = cv2.VideoCapture(int(self.identifier))
-                    if not cap.isOpened():
-                        raise ConnectionError("Failed to open USB camera.")
 
-                # The orientation value from DB must be an integer for comparisons.
-                orientation = int(self.camera_db_data['orientation'])
+                if self.camera_type == 'OAK-D':
+                    pipeline = dai.Pipeline()
+                    cam = pipeline.create(dai.node.Camera)
+                    cam.build(boardSocket=dai.CameraBoardSocket.CAM_A)
 
-                if self.buffer_pool._buffer_shape is None:
-                    first_frame = self._get_one_frame(ia, cap)
-                    if first_frame is not None:
-                        # Apply orientation to the first frame to correctly size the buffer pool
-                        oriented_first_frame = self._apply_orientation(first_frame, orientation)
-                        self.buffer_pool.initialize(oriented_first_frame)
-                    else:
-                        raise ConnectionError("Failed to get initial frame to size buffer pool.")
-                
-                print(f"Camera {self.identifier} initialized successfully.")
-                start_time, frame_count, last_config_check = time.time(), 0, time.time()
+                    camera_out = cam.requestOutput(
+                        size=(1280, 720),
+                        type=dai.ImgFrame.Type.BGR888p
+                    )
 
-                while not self.stop_event.is_set():
-                    if time.time() - last_config_check > 2.0:
-                        with self.app.app_context():
-                            refreshed_data = db.get_camera(self.camera_db_data['id'])
-                        if refreshed_data:
-                            orientation = int(refreshed_data['orientation'])
-                        last_config_check = time.time()
-
-                    raw_frame_from_cam = self._get_one_frame(ia, cap)
-                    if raw_frame_from_cam is None:
-                        break
-
-                    # Apply orientation to the frame right after capture
-                    oriented_frame = self._apply_orientation(raw_frame_from_cam, orientation)
-
-                    with self.raw_frame_lock:
-                        self.latest_raw_frame = oriented_frame.copy()
-
-                    pooled_buffer = self.buffer_pool.get_buffer()
-                    if pooled_buffer is None:
-                        continue
-
-                    # Copy the oriented frame into the buffer for pipelines.
-                    np.copyto(pooled_buffer, oriented_frame)
-                    ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
-                    
-                    with self.queues_lock:
-                        for q in self.processing_queues.values():
-                            ref_counted_frame.acquire()
-                            try:
-                                q.put_nowait(ref_counted_frame)
-                            except queue.Full:
-                                ref_counted_frame.release()
-
-                    ref_counted_frame.acquire()
+                    q_rgb = camera_out.createOutputQueue(maxSize=4)
+                    pipeline.start()
+                    self._acquisition_loop(ia=None, cap=None, q_rgb=q_rgb)
+                else:
+                    ia, cap = None, None
                     try:
-                        # The frame from the buffer is already oriented.
-                        # We must use a copy so the FPS overlay isn't drawn on the shared buffer.
-                        display_frame_copy = ref_counted_frame.get_writable_copy()
-                        display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
-                        ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
-                        if ret:
-                            with self.frame_lock:
-                                self.latest_frame_for_display = buffer.tobytes()
+                        if self.camera_type == 'GenICam':
+                            with harvester_lock:
+                                ia = h.create({'serial_number': self.identifier})
+                            ia.start()
+                        elif self.camera_type == 'USB':
+                            cap = cv2.VideoCapture(int(self.identifier))
+                            if not cap.isOpened():
+                                raise ConnectionError("Failed to open USB camera.")
+                        
+                        print(f"Camera {self.identifier} initialized successfully.")
+                        self._acquisition_loop(ia=ia, cap=cap, q_rgb=None) # Enter the main loop
+
                     finally:
-                        ref_counted_frame.release()
-                    
-                        frame_count += 1
-                        elapsed_time = time.time() - start_time
-                        if elapsed_time >= 1.0:
-                            self.fps = frame_count / elapsed_time
-                            frame_count = 0
-                            start_time = time.time()
+                        # This finally block now only cleans up GenICam/USB resources
+                        print(f"Cleaning up resources for {self.identifier}.")
+                        if ia:
+                            try:
+                                ia.destroy()
+                            except Exception as e:
+                                print(f"Error destroying IA: {e}")
+                        if cap:
+                            cap.release()
 
             except Exception as e:
-                print(f"Major error in acquisition loop for {self.identifier}: {e}. Retrying...")
-                self.stop_event.wait(5.0)
-            finally:
-                print(f"Cleaning up resources for {self.identifier}.")
-                if ia:
-                    try:
-                        ia.destroy()
-                    except Exception as e:
-                        print(f"Error destroying IA: {e}")
-                if cap:
-                    cap.release()
+                print(f"Major error in acquisition thread for {self.identifier}: {e}. Retrying...")
+                # The loop will naturally wait 5 seconds on the next iteration if the camera 
+                # is now considered "not connected" due to the error.
+                # If it's a different error, we add a small delay to prevent rapid failing.
+                if self._is_physically_connected():
+                    self.stop_event.wait(5.0)
         
         print(f"Acquisition thread for {self.identifier} has stopped.")
 
-    def _get_one_frame(self, ia, cap):
-        """Abstracts frame grabbing from either a GenICam or USB camera."""
+    def _acquisition_loop(self, ia, cap, q_rgb):
+        """This is the inner loop that processes frames once a camera is connected."""
+        # The orientation value from DB must be an integer for comparisons.
+        orientation = int(self.camera_db_data['orientation'])
+
+        if self.buffer_pool._buffer_shape is None:
+            first_frame = self._get_one_frame(ia, cap, q_rgb, blocking_first=True)
+            if first_frame is not None:
+                # Apply orientation to the first frame to correctly size the buffer pool
+                oriented_first_frame = self._apply_orientation(first_frame, orientation)
+                self.buffer_pool.initialize(oriented_first_frame)
+            else:
+                raise ConnectionError("Timed out waiting for first frame to size buffer pool.")
+        
+        start_time, frame_count, last_config_check = time.time(), 0, time.time()
+
+        while not self.stop_event.is_set():
+            if time.time() - last_config_check > 2.0:
+                with self.app.app_context():
+                    refreshed_data = db.get_camera(self.camera_db_data['id'])
+                if refreshed_data:
+                    orientation = int(refreshed_data['orientation'])
+                last_config_check = time.time()
+
+            raw_frame_from_cam = self._get_one_frame(ia, cap, q_rgb)
+            if raw_frame_from_cam is None:
+                # Queue had no frame this tick; try again
+                time.sleep(0.002)
+                continue
+
+            # Apply orientation to the frame right after capture
+            oriented_frame = self._apply_orientation(raw_frame_from_cam, orientation)
+
+            with self.raw_frame_lock:
+                self.latest_raw_frame = oriented_frame.copy()
+
+            pooled_buffer = self.buffer_pool.get_buffer()
+            if pooled_buffer is None:
+                continue
+
+            # Copy the oriented frame into the buffer for pipelines.
+            np.copyto(pooled_buffer, oriented_frame)
+            ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
+            
+            with self.queues_lock:
+                for q in self.processing_queues.values():
+                    ref_counted_frame.acquire()
+                    try:
+                        q.put_nowait(ref_counted_frame)
+                    except queue.Full:
+                        ref_counted_frame.release()
+
+            ref_counted_frame.acquire()
+            try:
+                display_frame_copy = ref_counted_frame.get_writable_copy()
+                display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
+                ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
+                if ret:
+                    with self.frame_lock:
+                        self.latest_frame_for_display = buffer.tobytes()
+            finally:
+                ref_counted_frame.release()
+            
+            frame_count += 1
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= 1.0:
+                self.fps = frame_count / elapsed_time
+                frame_count = 0
+                start_time = time.time()
+
+    def _get_one_frame(self, ia, cap, q_rgb=None, blocking_first=False):
+        """Abstracts frame grabbing from either a GenICam, USB, or OAK-D camera."""
         if self.camera_type == 'GenICam' and ia:
             try:
                 with ia.fetch(timeout=1.0) as buffer:
@@ -419,6 +448,10 @@ class CameraAcquisitionThread(threading.Thread):
         elif self.camera_type == 'USB' and cap:
             ret, frame = cap.read()
             return frame if ret and frame is not None else None
+        elif self.camera_type == 'OAK-D' and q_rgb:
+            in_rgb = q_rgb.get()
+            if in_rgb is not None:
+                return in_rgb.getCvFrame()
         return None
 
     def _apply_orientation(self, frame, orientation):
@@ -439,7 +472,6 @@ class CameraAcquisitionThread(threading.Thread):
         text_x = frame.shape[1] - text_size[0] - 10
         text_y = text_size[1] + 10
         cv2.putText(frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
-        
         return frame
 
     def stop(self):
@@ -713,6 +745,22 @@ def list_usb_cameras():
             cap.release()
     return usb_cameras
 
+def list_oakd_cameras():
+    """Returns a list of available OAK-D cameras."""
+    if dai is None:
+        return []
+    
+    oakd_cameras = []
+    try:
+        for device_info in dai.Device.getAllAvailableDevices():
+            oakd_cameras.append({
+                'identifier': device_info.getDeviceId(),
+                'name': f"OAK-D {device_info.getDeviceId()}"
+            })
+    except Exception as e:
+        print(f"Error listing OAK-D cameras: {e}")
+    return oakd_cameras
+
 
 def list_genicam_cameras():
     """Returns a list of available GenICam cameras."""
@@ -749,6 +797,8 @@ def check_camera_connection(camera):
             return False
     elif camera['camera_type'] == 'GenICam':
         return any(cam['identifier'] == identifier for cam in list_genicam_cameras())
+    elif camera['camera_type'] == 'OAK-D':
+        return any(cam['identifier'] == identifier for cam in list_oakd_cameras())
         
     return False
 
