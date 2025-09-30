@@ -266,6 +266,8 @@ def add_camera():
         identifier = request.form.get('usb-camera-select')
     elif camera_type == 'GenICam':
         identifier = request.form.get('genicam-camera-select')
+    elif camera_type == 'OAK-D':
+        identifier = request.form.get('oakd-camera-select')
     else:
         return redirect(url_for('main.cameras'))
 
@@ -394,18 +396,21 @@ def clear_genicam_settings():
 
 @main.route('/api/cameras/discover')
 def discover_cameras():
-    """Discovers available USB and GenICam cameras."""
+    """Discovers available USB, GenICam, and OAK-D cameras."""
     existing_identifiers = request.args.get('existing', '').split(',')
     
     usb_cameras = camera_utils.list_usb_cameras()
     genicam_cameras = camera_utils.list_genicam_cameras()
+    oakd_cameras = camera_utils.list_oakd_cameras()
 
     filtered_usb = [cam for cam in usb_cameras if cam['identifier'] not in existing_identifiers]
     filtered_genicam = [cam for cam in genicam_cameras if cam['identifier'] not in existing_identifiers]
+    filtered_oakd = [cam for cam in oakd_cameras if cam['identifier'] not in existing_identifiers]
 
     return jsonify({
         'usb': filtered_usb,
-        'genicam': filtered_genicam
+        'genicam': filtered_genicam,
+        'oakd': filtered_oakd
     })
 
 

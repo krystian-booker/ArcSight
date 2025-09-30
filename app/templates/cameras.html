@@ -110,6 +110,7 @@
                                 {% if genicam_enabled %}
                                 <option value="GenICam">GenICam</option>
                                 {% endif %}
+                                <option value="OAK-D">OAK-D Camera</option>
                             </select>
                         </div>
                 
@@ -125,6 +126,14 @@
                         <div id="genicam-camera-section-modal" class="mt-4 hidden">
                             <label for="genicam-camera-select-modal" class="block text-sm font-medium text-gray-300">Select GenICam Camera:</label>
                             <select id="genicam-camera-select-modal" name="genicam-camera-select" class="custom-select">
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+
+                        <!-- OAK-D Camera Selection -->
+                        <div id="oakd-camera-section-modal" class="mt-4 hidden">
+                            <label for="oakd-camera-select-modal" class="block text-sm font-medium text-gray-300">Select OAK-D Camera:</label>
+                            <select id="oakd-camera-select-modal" name="oakd-camera-select" class="custom-select">
                                 <!-- Options will be populated by JavaScript -->
                             </select>
                         </div>
@@ -634,8 +643,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const cameraTypeSelect = document.getElementById('camera-type-modal');
     const usbSection = document.getElementById('usb-camera-section-modal');
     const genicamSection = document.getElementById('genicam-camera-section-modal');
+    const oakdSection = document.getElementById('oakd-camera-section-modal');
     const usbSelect = document.getElementById('usb-camera-select-modal');
     const genicamSelect = document.getElementById('genicam-camera-select-modal');
+    const oakdSelect = document.getElementById('oakd-camera-select-modal');
     const saveButton = document.getElementById('save-camera-button');
 
     function validateModalForm() {
@@ -657,6 +668,8 @@ document.addEventListener('DOMContentLoaded', function() {
             isCameraSelected = !!usbSelect.value;
         } else if (cameraType === 'GenICam') {
             isCameraSelected = !!genicamSelect.value;
+        } else if (cameraType === 'OAK-D') {
+            isCameraSelected = !!oakdSelect.value;
         }
 
         saveButton.disabled = !(isNameValid && isTypeSelected && isCameraSelected);
@@ -667,6 +680,7 @@ document.addEventListener('DOMContentLoaded', function() {
     cameraTypeSelect.addEventListener('change', validateModalForm);
     usbSelect.addEventListener('change', validateModalForm);
     genicamSelect.addEventListener('change', validateModalForm);
+    oakdSelect.addEventListener('change', validateModalForm);
 
     // --- Modal Control ---
     window.openAddModal = function() {
@@ -719,8 +733,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         usbSection.classList.add('hidden');
         genicamSection.classList.add('hidden');
+        oakdSection.classList.add('hidden');
         usbSelect.disabled = true;
         genicamSelect.disabled = true;
+        oakdSelect.disabled = true;
 
         if (!selectedType) {
             validateModalForm();
@@ -735,13 +751,24 @@ document.addEventListener('DOMContentLoaded', function() {
         const url = `/api/cameras/discover?existing=${Array.from(existingIdentifiers).join(',')}`;
         
         // Show a loading state in the relevant select
-        const targetSelect = selectedType === 'USB' ? usbSelect : genicamSelect;
-        const targetSection = selectedType === 'USB' ? usbSection : genicamSection;
+        let targetSelect, targetSection;
+        if (selectedType === 'USB') {
+            targetSelect = usbSelect;
+            targetSection = usbSection;
+        } else if (selectedType === 'GenICam') {
+            targetSelect = genicamSelect;
+            targetSection = genicamSection;
+        } else if (selectedType === 'OAK-D') {
+            targetSelect = oakdSelect;
+            targetSection = oakdSection;
+        }
 
-        targetSection.classList.remove('hidden');
-        targetSelect.disabled = true;
-        targetSelect.innerHTML = '<option>Loading...</option>';
-        validateModalForm();
+        if (targetSelect && targetSection) {
+            targetSection.classList.remove('hidden');
+            targetSelect.disabled = true;
+            targetSelect.innerHTML = '<option>Loading...</option>';
+            validateModalForm();
+        }
 
         fetch(url)
             .then(response => response.json())
@@ -752,6 +779,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else if (selectedType === 'GenICam') {
                     populateSelect(genicamSelect, data.genicam);
                     genicamSelect.disabled = false;
+                } else if (selectedType === 'OAK-D') {
+                    populateSelect(oakdSelect, data.oakd);
+                    oakdSelect.disabled = false;
                 }
                 // Re-validate after populating and enabling the select
                 validateModalForm();
