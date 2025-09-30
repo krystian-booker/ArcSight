@@ -308,34 +308,19 @@ class CameraAcquisitionThread(threading.Thread):
 
                 print(f"Initializing camera {self.identifier}...")
 
-                # --- OAK-D Specific Logic ---
                 if self.camera_type == 'OAK-D':
-                    if dai is None:
-                        raise ImportError("depthai library is not installed.")
-
                     pipeline = dai.Pipeline()
-
-                    # Create and BUILD the unified Camera node on a socket
                     cam = pipeline.create(dai.node.Camera)
-                    cam.build(boardSocket=dai.CameraBoardSocket.CAM_A)  # v3 way to choose sensor/socket
+                    cam.build(boardSocket=dai.CameraBoardSocket.CAM_A)
 
-                    # Ask the camera for an output stream (replaces .preview/.isp + XLinkOut)
                     camera_out = cam.requestOutput(
-                        size=(1280, 720),                          # pick what you want rendered
-                        type=dai.ImgFrame.Type.BGR888p,            # convenient for cv2.imshow / getCvFrame()
-                        fps=30                                     # optional; v3 can auto-pick if omitted
+                        size=(1280, 720),
+                        type=dai.ImgFrame.Type.BGR888p
                     )
 
-                    # Create a host-side queue straight from the output (no XLinkOut node)
                     q_rgb = camera_out.createOutputQueue(maxSize=4)
-
-                    # Start the pipeline and read frames while it runs
                     pipeline.start()
-
-                    # Enter the main loop using q_rgb
                     self._acquisition_loop(ia=None, cap=None, q_rgb=q_rgb)
-                
-                # --- GenICam & USB Logic (Remains largely the same) ---
                 else:
                     ia, cap = None, None
                     try:
@@ -378,19 +363,13 @@ class CameraAcquisitionThread(threading.Thread):
         orientation = int(self.camera_db_data['orientation'])
 
         if self.buffer_pool._buffer_shape is None:
-            first_frame = None
-            deadline = time.time() + 5.0  # wait up to 5s for first frame
-            while first_frame is None and time.time() < deadline:
-                # Ask for a blocking frame only for the very first fetch on OAK-D
-                first_frame = self._get_one_frame(ia, cap, q_rgb, blocking_first=True)
-                if first_frame is None:
-                    time.sleep(0.01)
+            first_frame = self._get_one_frame(ia, cap, q_rgb, blocking_first=True)
             if first_frame is not None:
                 # Apply orientation to the first frame to correctly size the buffer pool
                 oriented_first_frame = self._apply_orientation(first_frame, orientation)
                 self.buffer_pool.initialize(oriented_first_frame)
             else:
-                raise ConnectionError("Timed out waiting for first OAK-D frame to size buffer pool.")
+                raise ConnectionError("Timed out waiting for first frame to size buffer pool.")
         
         start_time, frame_count, last_config_check = time.time(), 0, time.time()
 
@@ -470,12 +449,9 @@ class CameraAcquisitionThread(threading.Thread):
             ret, frame = cap.read()
             return frame if ret and frame is not None else None
         elif self.camera_type == 'OAK-D' and q_rgb:
-            # Always block until a frame arrives
-            try:
-                in_rgb = q_rgb.get()  # blocks until frame is available
-            except Exception:
-                return None
-            return in_rgb.getCvFrame() if in_rgb is not None else None
+            in_rgb = q_rgb.get()
+            if in_rgb is not None:
+                return in_rgb.getCvFrame()
         return None
 
     def _apply_orientation(self, frame, orientation):
@@ -768,7 +744,6 @@ def list_usb_cameras():
             usb_cameras.append({'identifier': str(index), 'name': f"USB Camera {index}"})
             cap.release()
     return usb_cameras
-
 
 def list_oakd_cameras():
     """Returns a list of available OAK-D cameras."""
