@@ -1,23 +1,20 @@
 import cv2
-from harvesters.core import Harvester
-import os
-from . import db
 import threading
 import time
 import queue
 import numpy as np
 import json
-import depthai as dai
+import os
+
+from . import db
 from .pipelines.apriltag_pipeline import AprilTagPipeline
 
-try:
-    from genicam import genapi
-except ImportError:
-    genapi = None
+# --- Import the new drivers ---
+from .drivers.usb_driver import USBDriver
+from .drivers.genicam_driver import GenICamDriver
+from .drivers.oakd_driver import OAKDDriver
 
 # --- Globals & Threading Primitives ---
-h = Harvester()
-harvester_lock = threading.Lock()
 active_camera_threads = {}
 active_camera_threads_lock = threading.Lock()
 
@@ -65,14 +62,20 @@ class FrameBufferPool:
 
     def initialize(self, frame, num_buffers=5):
         """Initializes the pool with buffers matching the shape and type of a sample frame."""
-        if self._buffer_shape is not None:
+        
+        # Already initialized with correct shape
+        if self._buffer_shape is not None and self._buffer_shape == frame.shape:
             return
+        
+        # If shape is different, we need to re-initialize.
+        print(f"[{self._name}] Initializing buffer pool for shape {frame.shape}...")
+        self._pool = queue.Queue()
         self._buffer_shape = frame.shape
         self._buffer_dtype = frame.dtype
         for _ in range(num_buffers):
             self._pool.put(np.empty(self._buffer_shape, dtype=self._buffer_dtype))
         self._allocated = num_buffers
-        print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers of shape {self._buffer_shape}")
+        print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers.")
 
     def get_buffer(self):
         """Retrieves a buffer from the pool, allocating a new one if the pool is empty."""
@@ -109,7 +112,7 @@ class VisionProcessingThread(threading.Thread):
         # Store camera data and initialize the pipeline object
         self.camera_db_data = camera_db_data
         self.pipeline = None
-        
+   
         # Pre-calculation variables for drawing
         self.cam_matrix = None
         self.obj_pts = None
@@ -121,9 +124,9 @@ class VisionProcessingThread(threading.Thread):
                 print(f"[{self.identifier}] Loaded camera matrix from DB.")
             except (json.JSONDecodeError, TypeError):
                 print(f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default.")
-                self.cam_matrix = None # Will be set in run()
+                self.cam_matrix = None
         
-        # This is where you would load pipeline-specific settings from the DB
+        #TODO: Need to update these to load from the database
         pipeline_config = {
             'family': 'tag36h11', 
             'threads': 2,
@@ -208,7 +211,6 @@ class VisionProcessingThread(threading.Thread):
                 if ret:
                     with self.processed_frame_lock:
                         self.latest_processed_frame = buffer.tobytes()
-
             except queue.Empty:
                 continue
             finally:
@@ -248,16 +250,34 @@ class VisionProcessingThread(threading.Thread):
         self.stop_event.set()
 
 
-# --- Unified Camera Acquisition Thread (Producer) ---
+# --- Driver Factory ---
+def get_driver(camera_db_data):
+    """Factory function to get the correct driver instance."""
+    camera_type = camera_db_data['camera_type']
+    if camera_type == 'USB':
+        return USBDriver(camera_db_data)
+    elif camera_type == 'GenICam':
+        return GenICamDriver(camera_db_data)
+    elif camera_type == 'OAK-D':
+        return OAKDDriver(camera_db_data)
+    else:
+        raise ValueError(f"Unknown camera type: {camera_type}")
+
+
+# --- Refactored Camera Acquisition Thread (Producer) ---
 class CameraAcquisitionThread(threading.Thread):
-    """A producer thread that acquires frames and distributes them to multiple consumer queues."""
+    """
+    A producer thread that uses a driver to acquire frames and distributes them 
+    to multiple consumer queues. It handles camera connection, disconnection, 
+    and reconnection automatically.
+    """
     def __init__(self, camera_db_data, app):
         super().__init__()
         self.daemon = True
         self.camera_db_data = camera_db_data
         self.identifier = camera_db_data['identifier']
-        self.camera_type = camera_db_data['camera_type']
         self.app = app
+        self.driver = None
         self.frame_lock = threading.Lock()
         self.latest_frame_for_display = None
         self.raw_frame_lock = threading.Lock()
@@ -278,114 +298,65 @@ class CameraAcquisitionThread(threading.Thread):
         with self.queues_lock:
             self.processing_queues.pop(pipeline_id, None)
 
-    def _is_physically_connected(self):
-        """Checks if the camera is physically connected to the system."""
-        if self.camera_type == 'USB':
-            try:
-                cap = cv2.VideoCapture(int(self.identifier))
-                is_open = cap.isOpened()
-                cap.release()
-                return is_open
-            except Exception:
-                return False
-        elif self.camera_type == 'GenICam':
-            return any(cam['identifier'] == self.identifier for cam in list_genicam_cameras())
-        elif self.camera_type == 'OAK-D':
-            return any(cam['identifier'] == self.identifier for cam in list_oakd_cameras())
-        return False
-
     def run(self):
         """The main loop for the camera acquisition thread."""
-        print(f"Starting {self.camera_type} acquisition thread for {self.identifier}")
+        print(f"Starting acquisition thread for {self.identifier}")
         
         while not self.stop_event.is_set():
             try:
-                # This outer try-catch handles connection errors and triggers the retry delay.
-                if not self._is_physically_connected():
-                    print(f"Camera {self.identifier} is not connected. Retrying in 5 seconds...")
-                    self.stop_event.wait(5.0)
-                    continue
-
-                print(f"Initializing camera {self.identifier}...")
-
-                if self.camera_type == 'OAK-D':
-                    pipeline = dai.Pipeline()
-                    cam = pipeline.create(dai.node.Camera)
-                    cam.build(boardSocket=dai.CameraBoardSocket.CAM_A)
-
-                    camera_out = cam.requestOutput(
-                        size=(1280, 720),
-                        type=dai.ImgFrame.Type.BGR888p
-                    )
-
-                    q_rgb = camera_out.createOutputQueue(maxSize=4)
-                    pipeline.start()
-                    self._acquisition_loop(ia=None, cap=None, q_rgb=q_rgb)
-                else:
-                    ia, cap = None, None
-                    try:
-                        if self.camera_type == 'GenICam':
-                            with harvester_lock:
-                                ia = h.create({'serial_number': self.identifier})
-                            ia.start()
-                        elif self.camera_type == 'USB':
-                            cap = cv2.VideoCapture(int(self.identifier))
-                            if not cap.isOpened():
-                                raise ConnectionError("Failed to open USB camera.")
-                        
-                        print(f"Camera {self.identifier} initialized successfully.")
-                        self._acquisition_loop(ia=ia, cap=cap, q_rgb=None) # Enter the main loop
-
-                    finally:
-                        # This finally block now only cleans up GenICam/USB resources
-                        print(f"Cleaning up resources for {self.identifier}.")
-                        if ia:
-                            try:
-                                ia.destroy()
-                            except Exception as e:
-                                print(f"Error destroying IA: {e}")
-                        if cap:
-                            cap.release()
+                # Initialize the driver inside the loop for automatic reconnection
+                self.driver = get_driver(self.camera_db_data)
+                self.driver.connect()
+                print(f"Camera {self.identifier} connected successfully via driver.")
+                
+                # The acquisition loop now uses the driver interface
+                self._acquisition_loop()
 
             except Exception as e:
-                print(f"Major error in acquisition thread for {self.identifier}: {e}. Retrying...")
-                # The loop will naturally wait 5 seconds on the next iteration if the camera 
-                # is now considered "not connected" due to the error.
-                # If it's a different error, we add a small delay to prevent rapid failing.
-                if self._is_physically_connected():
-                    self.stop_event.wait(5.0)
-        
+                print(f"Error with camera {self.identifier}: {e}. Retrying in 5 seconds...")
+            finally:
+                if self.driver:
+                    self.driver.disconnect()
+                # Wait before retrying connection
+                self.stop_event.wait(5.0) 
+
         print(f"Acquisition thread for {self.identifier} has stopped.")
 
-    def _acquisition_loop(self, ia, cap, q_rgb):
-        """This is the inner loop that processes frames once a camera is connected."""
-        # The orientation value from DB must be an integer for comparisons.
+    def _acquisition_loop(self):
+        """Inner loop that processes frames once a camera is connected."""
         orientation = int(self.camera_db_data['orientation'])
-
-        if self.buffer_pool._buffer_shape is None:
-            first_frame = self._get_one_frame(ia, cap, q_rgb, blocking_first=True)
-            if first_frame is not None:
-                # Apply orientation to the first frame to correctly size the buffer pool
-                oriented_first_frame = self._apply_orientation(first_frame, orientation)
-                self.buffer_pool.initialize(oriented_first_frame)
-            else:
-                raise ConnectionError("Timed out waiting for first frame to size buffer pool.")
+        last_config_check = time.time()
         
-        start_time, frame_count, last_config_check = time.time(), 0, time.time()
+        # Initialize buffer pool with the first frame
+        first_frame = self.driver.get_frame()
+        if first_frame is None:
+            print(f"[{self.identifier}] Failed to get first frame, cannot initialize buffer pool.")
+            return # Exit to trigger reconnection
+        
+        oriented_first_frame = self._apply_orientation(first_frame, orientation)
+        self.buffer_pool.initialize(oriented_first_frame)
+
+        start_time, frame_count = time.time(), 0
 
         while not self.stop_event.is_set():
+            # Periodically check for orientation changes in the DB
             if time.time() - last_config_check > 2.0:
                 with self.app.app_context():
                     refreshed_data = db.get_camera(self.camera_db_data['id'])
                 if refreshed_data:
-                    orientation = int(refreshed_data['orientation'])
+                    new_orientation = int(refreshed_data['orientation'])
+                    if new_orientation != orientation:
+                        print(f"[{self.identifier}] Orientation changed to {new_orientation}. Re-initializing resources.")
+                        orientation = new_orientation
+                        # Re-initialize buffer pool if orientation changes frame size
+                        test_frame = self._apply_orientation(first_frame.copy(), orientation)
+                        self.buffer_pool.initialize(test_frame)
                 last_config_check = time.time()
 
-            raw_frame_from_cam = self._get_one_frame(ia, cap, q_rgb)
+            raw_frame_from_cam = self.driver.get_frame()
             if raw_frame_from_cam is None:
-                # Queue had no frame this tick; try again
-                time.sleep(0.002)
-                continue
+                print(f"Lost frame from {self.identifier}, attempting to reconnect.")
+                break # Exit inner loop to trigger reconnection
 
             # Apply orientation to the frame right after capture
             oriented_frame = self._apply_orientation(raw_frame_from_cam, orientation)
@@ -427,35 +398,7 @@ class CameraAcquisitionThread(threading.Thread):
                 frame_count = 0
                 start_time = time.time()
 
-    def _get_one_frame(self, ia, cap, q_rgb=None, blocking_first=False):
-        """Abstracts frame grabbing from either a GenICam, USB, or OAK-D camera."""
-        if self.camera_type == 'GenICam' and ia:
-            try:
-                with ia.fetch(timeout=1.0) as buffer:
-                    component = buffer.payload.components[0]
-                    img = component.data.reshape(component.height, component.width)
-                    if 'Bayer' in component.data_format:
-                        return cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
-                    elif len(img.shape) == 2:
-                        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-                    else:
-                        return img
-            except genapi.TimeoutException:
-                return None
-            except Exception as e:
-                print(f"Error fetching GenICam frame for {self.identifier}: {e}")
-                return None
-        elif self.camera_type == 'USB' and cap:
-            ret, frame = cap.read()
-            return frame if ret and frame is not None else None
-        elif self.camera_type == 'OAK-D' and q_rgb:
-            in_rgb = q_rgb.get()
-            if in_rgb is not None:
-                return in_rgb.getCvFrame()
-        return None
-
     def _apply_orientation(self, frame, orientation):
-        """Applies rotation to a frame based on the orientation value."""
         if orientation == 90:
             return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         elif orientation == 180:
@@ -467,11 +410,7 @@ class CameraAcquisitionThread(threading.Thread):
     def _prepare_display_frame(self, frame):
         """Applies an FPS overlay to a frame."""
         text = f"FPS: {self.fps:.2f}"
-        font_scale, font_thickness = 0.7, 2
-        text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-        text_x = frame.shape[1] - text_size[0] - 10
-        text_y = text_size[1] + 10
-        cv2.putText(frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), font_thickness)
+        cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         return frame
 
     def stop(self):
@@ -479,7 +418,24 @@ class CameraAcquisitionThread(threading.Thread):
         self.stop_event.set()
 
 
-# --- Centralized Thread Management ---
+# --- Camera Discovery ---
+def discover_cameras(existing_identifiers):
+    """Discovers all available cameras by polling the drivers."""
+    # Note: This can be slow if drivers take time to scan.
+    # Consider running discovery in a separate thread in a real application.
+    print("Discovering cameras...")
+    usb_cams = [c for c in USBDriver.list_devices() if c['identifier'] not in existing_identifiers]
+    
+    # Assuming GenICamDriver has been initialized at startup
+    genicam_cams = [c for c in GenICamDriver.list_devices() if c['identifier'] not in existing_identifiers]
+    
+    oakd_cams = [c for c in OAKDDriver.list_devices() if c['identifier'] not in existing_identifiers]
+    
+    print(f"Found {len(usb_cams)} new USB, {len(genicam_cams)} new GenICam, {len(oakd_cams)} new OAK-D cameras.")
+    return {'usb': usb_cams, 'genicam': genicam_cams, 'oakd': oakd_cams}
+
+
+# --- Centralized Thread Management (Largely Unchanged) ---
 def start_camera_thread(camera, app):
     """Starts acquisition and processing threads for a single camera."""
     with active_camera_threads_lock:
@@ -603,6 +559,12 @@ def get_camera_pipeline_results(identifier):
         return results
 
 
+def is_camera_thread_running(identifier):
+    """Checks if a camera's acquisition thread is active."""
+    with active_camera_threads_lock:
+        thread_group = active_camera_threads.get(identifier)
+        return thread_group and thread_group['acquisition'].is_alive()
+
 # --- Web Streaming & Camera Utilities ---
 def get_camera_feed(camera):
     """A generator that yields JPEG frames from a camera's acquisition thread."""
@@ -631,12 +593,9 @@ def get_camera_feed(camera):
             if not acq_thread.is_alive():
                 print(f"Stopping feed for {identifier} as acquisition thread has died.")
                 break
-            time.sleep(0.01) # A small sleep to prevent busy-waiting
+            time.sleep(0.01)
     except GeneratorExit:
         print(f"Client disconnected from camera feed {identifier}.")
-    except Exception as e:
-        print(f"Error during streaming for feed {identifier}: {e}")
-
 
 def get_processed_camera_feed(pipeline_id):
     """A generator that yields JPEG frames from a vision processing thread."""
@@ -665,12 +624,9 @@ def get_processed_camera_feed(pipeline_id):
             if not proc_thread.is_alive():
                 print(f"Stopping processed feed for {pipeline_id} as its thread has died.")
                 break
-            time.sleep(0.01) # A small sleep to prevent busy-waiting
+            time.sleep(0.01)
     except GeneratorExit:
         print(f"Client disconnected from processed feed {pipeline_id}.")
-    except Exception as e:
-        print(f"Error during streaming for processed feed {pipeline_id}: {e}")
-
 
 def get_latest_raw_frame(identifier):
     """Gets the latest raw, unprocessed frame from a camera's acquisition thread."""
@@ -685,284 +641,3 @@ def get_latest_raw_frame(identifier):
         if acq_thread.latest_raw_frame is not None:
             return acq_thread.latest_raw_frame.copy()
     return None
-
-
-if genapi:
-    SUPPORTED_INTERFACE_TYPES = {
-        genapi.EInterfaceType.intfIInteger: 'integer',
-        genapi.EInterfaceType.intfIFloat: 'float',
-        genapi.EInterfaceType.intfIString: 'string',
-        genapi.EInterfaceType.intfIBoolean: 'boolean',
-        genapi.EInterfaceType.intfIEnumeration: 'enumeration',
-    }
-    READABLE_ACCESS_MODES = {genapi.EAccessMode.RO, genapi.EAccessMode.RW}
-    WRITABLE_ACCESS_MODES = {genapi.EAccessMode.WO, genapi.EAccessMode.RW}
-else:
-    SUPPORTED_INTERFACE_TYPES = {}
-    READABLE_ACCESS_MODES = set()
-    WRITABLE_ACCESS_MODES = set()
-
-
-def initialize_harvester():
-    """Initializes the Harvester with the CTI file specified in the settings."""
-    with harvester_lock:
-        cti_path = db.get_setting('genicam_cti_path')
-        if cti_path and os.path.exists(cti_path):
-            try:
-                h.add_file(cti_path)
-                h.update()
-                print("Harvester initialized successfully.")
-            except Exception as e:
-                print(f"Error initializing Harvester: {e}")
-        else:
-            print("GenICam CTI file not found or not configured. Harvester not initialized.")
-
-
-def reinitialize_harvester():
-    """Resets and re-initializes the Harvester instance."""
-    with harvester_lock:
-        h.reset()
-        print("Harvester instance cleaned up.")
-        cti_path = db.get_setting('genicam_cti_path')
-        if cti_path and os.path.exists(cti_path):
-            try:
-                h.add_file(cti_path)
-                h.update()
-                print("Harvester re-initialized with new CTI file.")
-            except Exception as e:
-                print(f"Error re-initializing Harvester: {e}")
-        else:
-            print("GenICam CTI file not found or not configured. Harvester remains empty.")
-
-
-def list_usb_cameras():
-    """Returns a list of available USB cameras."""
-    usb_cameras = []
-    for index in range(10):
-        cap = cv2.VideoCapture(index)
-        if cap.isOpened():
-            usb_cameras.append({'identifier': str(index), 'name': f"USB Camera {index}"})
-            cap.release()
-    return usb_cameras
-
-def list_oakd_cameras():
-    """Returns a list of available OAK-D cameras."""
-    if dai is None:
-        return []
-    
-    oakd_cameras = []
-    try:
-        for device_info in dai.Device.getAllAvailableDevices():
-            oakd_cameras.append({
-                'identifier': device_info.getDeviceId(),
-                'name': f"OAK-D {device_info.getDeviceId()}"
-            })
-    except Exception as e:
-        print(f"Error listing OAK-D cameras: {e}")
-    return oakd_cameras
-
-
-def list_genicam_cameras():
-    """Returns a list of available GenICam cameras."""
-    genicam_cameras = []
-    with harvester_lock:
-        try:
-            h.update()
-            for device_info in h.device_info_list:
-                genicam_cameras.append({
-                    'identifier': device_info.serial_number,
-                    'name': f"{device_info.model} ({device_info.serial_number})"
-                })
-        except Exception as e:
-            print(f"Error listing GenICam cameras: {e}")
-    return genicam_cameras
-
-
-def check_camera_connection(camera):
-    """Checks if a given camera is currently connected."""
-    identifier = camera['identifier']
-    with active_camera_threads_lock:
-        thread_group = active_camera_threads.get(identifier)
-    
-    if thread_group and thread_group['acquisition'].is_alive():
-        return True
-    
-    if camera['camera_type'] == 'USB':
-        try:
-            cap = cv2.VideoCapture(int(identifier))
-            is_connected = cap.isOpened()
-            cap.release()
-            return is_connected
-        except (ValueError, TypeError):
-            return False
-    elif camera['camera_type'] == 'GenICam':
-        return any(cam['identifier'] == identifier for cam in list_genicam_cameras())
-    elif camera['camera_type'] == 'OAK-D':
-        return any(cam['identifier'] == identifier for cam in list_oakd_cameras())
-        
-    return False
-
-
-def _create_image_acquirer(identifier):
-    """Creates and returns an image acquirer for a GenICam device."""
-    if not identifier:
-        return None
-    with harvester_lock:
-        try:
-            return h.create({'serial_number': identifier})
-        except Exception as error:
-            print(f"Error creating ImageAcquirer for {identifier}: {error}")
-            return None
-
-
-def get_genicam_node_map(identifier):
-    """Retrieves the node map for a GenICam camera."""
-    if genapi is None:
-        return [], "GenICam runtime is not available on the server."
-    ia = _create_image_acquirer(identifier)
-    if not ia:
-        return [], "Unable to establish a connection to the GenICam camera."
-    try:
-        node_map = ia.remote_device.node_map
-        nodes = []
-        for node_wrapper in node_map.nodes:
-            try:
-                interface_type = genapi.EInterfaceType(node_wrapper.node.principal_interface_type)
-            except Exception:
-                continue
-            if interface_type not in SUPPORTED_INTERFACE_TYPES:
-                continue
-            try:
-                access_value = node_wrapper.node.get_access_mode()
-                access_mode = genapi.EAccessMode(access_value)
-            except (ValueError, TypeError):
-                access_mode = None
-
-            is_readable = access_mode in READABLE_ACCESS_MODES if access_mode else False
-            is_writable = access_mode in WRITABLE_ACCESS_MODES if access_mode else False
-            node = node_wrapper.node
-            display_name = str(getattr(node, 'display_name', '') or '')
-            name = str(getattr(node, 'name', '') or '')
-            description = str(getattr(node, 'tooltip', '') or getattr(node, 'description', '') or '')
-
-            node_info = {
-                'name': name, 'display_name': display_name or name,
-                'description': description.strip(),
-                'interface_type': SUPPORTED_INTERFACE_TYPES[interface_type],
-                'access_mode': access_mode.name if access_mode else str(access_value),
-                'is_readable': is_readable, 'is_writable': is_writable,
-                'value': None, 'choices': []
-            }
-
-            if is_readable:
-                try:
-                    node_info['value'] = str(node_wrapper.to_string())
-                except Exception as read_error:
-                    print(f"Error reading node {name}: {read_error}")
-            if interface_type == genapi.EInterfaceType.intfIEnumeration:
-                try:
-                    node_info['choices'] = [str(symbol) for symbol in node_wrapper.symbolics]
-                except Exception as enum_error:
-                    print(f"Error retrieving enumeration values for {name}: {enum_error}")
-            nodes.append(node_info)
-        nodes.sort(key=lambda item: item['display_name'].lower())
-        return nodes, None
-    except Exception as error:
-        return [], f"Failed to retrieve node map: {error}"
-    finally:
-        if ia:
-            ia.destroy()
-
-
-def get_genicam_node(identifier, node_name):
-    """Retrieves a single node from a GenICam camera."""
-    if genapi is None:
-        return None, "GenICam runtime is not available on the server."
-    ia = _create_image_acquirer(identifier)
-    if not ia:
-        return None, "Unable to establish a connection to the GenICam camera."
-    try:
-        node_wrapper = ia.remote_device.node_map.get_node(node_name)
-        if node_wrapper is None:
-            return None, f"Node '{node_name}' not found."
-        
-        interface_type = genapi.EInterfaceType(node_wrapper.node.principal_interface_type)
-        if interface_type not in SUPPORTED_INTERFACE_TYPES:
-            return None, "Unsupported node type."
-        
-        access_mode = genapi.EAccessMode(node_wrapper.node.get_access_mode())
-        node = node_wrapper.node
-        node_info = {
-            'name': node_name,
-            'display_name': str(getattr(node, 'display_name', '') or ''),
-            'description': str(getattr(node, 'tooltip', '') or getattr(node, 'description', '') or '').strip(),
-            'interface_type': SUPPORTED_INTERFACE_TYPES[interface_type],
-            'access_mode': access_mode.name,
-            'is_readable': access_mode in READABLE_ACCESS_MODES,
-            'is_writable': access_mode in WRITABLE_ACCESS_MODES,
-            'value': None, 'choices': []
-        }
-        if node_info['is_readable']:
-            try:
-                node_info['value'] = str(node_wrapper.to_string())
-            except Exception as e:
-                print(f"Could not read value for node {node_name}: {e}")
-        if interface_type == genapi.EInterfaceType.intfIEnumeration:
-            node_info['choices'] = [str(symbol) for symbol in node_wrapper.symbolics]
-        return node_info, None
-    except Exception as error:
-        return None, f"Failed to retrieve node: {error}"
-    finally:
-        if ia:
-            ia.destroy()
-
-
-def update_genicam_node(identifier, node_name, value):
-    """Updates a node on a GenICam camera."""
-    if genapi is None:
-        return False, "GenICam runtime is not available. Please ensure the GenICam library is installed and accessible.", 500, None
-    if not node_name:
-        return False, "Node name is required.", 400, None
-    ia = _create_image_acquirer(identifier)
-    if not ia:
-        return False, "Unable to connect to the GenICam camera.", 500, None
-    try:
-        node = ia.remote_device.node_map.get_node(node_name)
-        if node is None:
-            return False, f"Node '{node_name}' not found.", 404, None
-        
-        access_mode = genapi.EAccessMode(node.get_access_mode())
-        if access_mode not in WRITABLE_ACCESS_MODES:
-            return False, f"Node '{node_name}' is not writable.", 400, None
-        if value is None:
-            return False, "A value must be provided.", 400, None
-
-        try:
-            if isinstance(node, genapi.IInteger):
-                node.set_value(int(value))
-            elif isinstance(node, genapi.IFloat):
-                node.set_value(float(value))
-            elif isinstance(node, genapi.IBoolean):
-                norm_val = str(value).strip().lower()
-                if norm_val in ('true', '1', 'yes', 'on'):
-                    node.set_value(True)
-                elif norm_val in ('false', '0', 'no', 'off'):
-                    node.set_value(False)
-                else:
-                    return False, f"'{value}' is not a valid boolean.", 400, None
-            else:
-                node.from_string(str(value))
-        except Exception as set_error:
-            return False, f"Failed to update node '{node_name}': {set_error}", 400, None
-
-        ia.destroy()
-        ia = None
-        updated_node, error = get_genicam_node(identifier, node_name)
-        if error:
-            return False, f"Node updated, but failed to retrieve new state: {error}", 500, None
-        return True, f"Node '{node_name}' updated successfully.", 200, updated_node
-    except Exception as error:
-        return False, f"Unexpected error while updating node: {error}", 500, None
-    finally:
-        if ia:
-            ia.destroy()

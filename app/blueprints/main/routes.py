@@ -35,7 +35,7 @@ def video_feed(camera_id):
     if not camera:
         return "Camera not found", 404
 
-    if not camera_utils.check_camera_connection(dict(camera)):
+    if not camera_utils.is_camera_thread_running(camera['identifier']):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
@@ -222,7 +222,7 @@ def calibration_feed(camera_id):
     if not camera:
         return "Camera not found", 404
 
-    if not camera_utils.check_camera_connection(dict(camera)):
+    if not camera_utils.is_camera_thread_running(camera['identifier']):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
@@ -376,13 +376,16 @@ def get_camera_results(camera_id):
 def update_genicam_settings():
     """Updates the GenICam CTI path."""
     path = request.form.get('genicam-cti-path', '').strip()
+    new_path = None
 
-    if path and path.lower().endswith('.cti'):
+    if path and path.lower().endswith('.cti') and os.path.exists(path):
         db.update_setting('genicam_cti_path', path)
-    elif not path:
+        new_path = path
+    else:
         db.clear_setting('genicam_cti_path')
     
-    camera_utils.reinitialize_harvester()
+    # Re-initialize the driver with the new path
+    camera_utils.GenICamDriver.initialize(new_path)
     return redirect(url_for('main.settings'))
 
 
@@ -390,7 +393,8 @@ def update_genicam_settings():
 def clear_genicam_settings():
     """Clears the GenICam CTI path."""
     db.clear_setting('genicam_cti_path')
-    camera_utils.reinitialize_harvester()
+    # Re-initialize the driver with no CTI file
+    camera_utils.GenICamDriver.initialize(None)
     return redirect(url_for('main.settings'))
 
 
@@ -399,19 +403,10 @@ def discover_cameras():
     """Discovers available USB, GenICam, and OAK-D cameras."""
     existing_identifiers = request.args.get('existing', '').split(',')
     
-    usb_cameras = camera_utils.list_usb_cameras()
-    genicam_cameras = camera_utils.list_genicam_cameras()
-    oakd_cameras = camera_utils.list_oakd_cameras()
+    # Delegate discovery to the new centralized function in camera_utils
+    discovered = camera_utils.discover_cameras(existing_identifiers)
 
-    filtered_usb = [cam for cam in usb_cameras if cam['identifier'] not in existing_identifiers]
-    filtered_genicam = [cam for cam in genicam_cameras if cam['identifier'] not in existing_identifiers]
-    filtered_oakd = [cam for cam in oakd_cameras if cam['identifier'] not in existing_identifiers]
-
-    return jsonify({
-        'usb': filtered_usb,
-        'genicam': filtered_genicam,
-        'oakd': filtered_oakd
-    })
+    return jsonify(discovered)
 
 
 @main.route('/api/cameras/status/<int:camera_id>')
@@ -419,8 +414,8 @@ def camera_status(camera_id):
     """Returns the connection status of a camera."""
     camera = db.get_camera(camera_id)
     if camera:
-        is_connected = camera_utils.check_camera_connection(dict(camera))
-        return jsonify({'connected': is_connected})
+        is_running = camera_utils.is_camera_thread_running(camera['identifier'])
+        return jsonify({'connected': is_running})
     return jsonify({'error': 'Camera not found'}), 404
 
 
@@ -469,7 +464,8 @@ def genicam_nodes(camera_id):
     if not camera or camera['camera_type'] != 'GenICam':
         return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
 
-    nodes, error = camera_utils.get_genicam_node_map(camera['identifier'])
+    # Call the static method on the driver class
+    nodes, error = camera_utils.GenICamDriver.get_node_map(camera['identifier'])
     if error:
         return jsonify({'error': error}), 500
 
@@ -487,7 +483,10 @@ def update_genicam_node(camera_id):
     node_name = payload.get('name')
     value = payload.get('value')
 
-    success, message, status_code, updated_node = camera_utils.update_genicam_node(camera['identifier'], node_name, value)
+    # Call the static method on the driver class
+    success, message, status_code, updated_node = camera_utils.GenICamDriver.update_node(
+        camera['identifier'], node_name, value
+    )
     
     if success:
         return jsonify({
