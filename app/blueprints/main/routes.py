@@ -342,6 +342,37 @@ def update_pipeline(pipeline_id):
         return jsonify({'error': 'Name and pipeline_type are required'}), 400
 
     db.update_pipeline(pipeline_id, name, pipeline_type)
+    
+    # Also update the pipeline in the running camera thread
+    pipeline = db.get_pipeline(pipeline_id)
+    if pipeline:
+        camera_utils.update_pipeline_in_camera(
+            pipeline['camera_id'], 
+            pipeline_id, 
+            current_app._get_current_object()
+        )
+
+    return jsonify({'success': True})
+
+
+@main.route('/api/pipelines/<int:pipeline_id>/config', methods=['PUT'])
+def update_pipeline_config(pipeline_id):
+    """Updates a pipeline's configuration."""
+    config = request.get_json()
+    if config is None:
+        return jsonify({'error': 'Invalid config format'}), 400
+
+    db.update_pipeline_config(pipeline_id, config)
+    
+    # Also update the pipeline in the running camera thread
+    pipeline = db.get_pipeline(pipeline_id)
+    if pipeline:
+        camera_utils.update_pipeline_in_camera(
+            pipeline['camera_id'], 
+            pipeline_id, 
+            current_app._get_current_object()
+        )
+
     return jsonify({'success': True})
 
 

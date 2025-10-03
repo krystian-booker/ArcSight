@@ -400,6 +400,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const processedFeedRadio = document.querySelector('input[value="processed"]');
     let cameraFeed = document.getElementById('camera-feed');
     let resultsInterval;
+    window.currentPipelines = []; // To store full pipeline data
 
     function updateFeedSource() {
         const cameraId = cameraSelect.value;
@@ -461,19 +462,18 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(`/api/cameras/${cameraId}/pipelines`)
             .then(response => response.json())
             .then(pipelines => {
+                window.currentPipelines = pipelines; // Store full data
                 pipelineSelect.innerHTML = '';
+
                 if (pipelines.length > 0) {
                     pipelines.forEach(pipeline => {
-                        const option = document.createElement('option');
-                        option.value = pipeline.id;
-                        option.textContent = pipeline.name;
+                        const option = new Option(pipeline.name, pipeline.id);
                         option.dataset.type = pipeline.pipeline_type;
                         pipelineSelect.appendChild(option);
                     });
                 } else {
                     pipelineSelect.innerHTML = '<option value="">No pipelines configured</option>';
                 }
-                // Call updatePipelineDetails which in turn calls updateFeedSource
                 updatePipelineDetails();
             });
     }
@@ -481,13 +481,184 @@ document.addEventListener('DOMContentLoaded', function() {
     function updatePipelineDetails() {
         const selectedOption = pipelineSelect.options[pipelineSelect.selectedIndex];
         if (selectedOption && selectedOption.value) {
-            pipelineTypeSelect.value = selectedOption.dataset.type;
-            updatePipelineForm(selectedOption.dataset.type);
+            const pipelineType = selectedOption.dataset.type;
+            pipelineTypeSelect.value = pipelineType;
+            updatePipelineForm(pipelineType);
+
+            // Find the full pipeline object from the fetched list
+            const pipelineData = window.currentPipelines.find(p => p.id == selectedOption.value);
+            if (pipelineData) {
+                loadPipelineConfig(pipelineData);
+            }
         } else {
             // If no pipeline is selected, hide all forms
-             pipelineForms.forEach(form => form.classList.add('hidden'));
+            pipelineForms.forEach(form => form.classList.add('hidden'));
         }
         updateFeedSource(); // Always update the feed source on pipeline change
+    }
+
+    function loadPipelineConfig(pipelineData) {
+        let config = {};
+        try {
+            // Use an empty object if config is null, undefined, or not a valid JSON string
+            config = pipelineData.config ? JSON.parse(pipelineData.config) : {};
+        } catch (e) {
+            console.error("Error parsing pipeline config:", e);
+            config = {}; // Fallback to default
+        }
+
+        if (pipelineData.pipeline_type === 'AprilTag') {
+            const form = document.getElementById('form-AprilTag');
+            
+            // Helper to set value for both slider and number input
+            const setSliderValue = (baseId, value) => {
+                const slider = form.querySelector(`#${baseId}`);
+                const number = form.querySelector(`#${baseId}-value`);
+                if (slider) slider.value = value;
+                if (number) number.value = value;
+            };
+
+            form.querySelector('#target-family').value = config.family || 'tag36h11';
+            form.querySelector('#tag-size').value = config.tag_size_m || 0.165;
+            form.querySelector('#refine-edges').checked = config.refine_edges !== undefined ? config.refine_edges : true;
+            
+            setSliderValue('threads', config.threads || 2);
+            setSliderValue('decimate', config.decimate || 1.0);
+            setSliderValue('blur', config.blur || 0.0);
+            setSliderValue('decision-margin', config.decision_margin || 35);
+            setSliderValue('pose-iterations', config.pose_iterations || 40);
+        } else if (pipelineData.pipeline_type === 'Coloured Shape') {
+            const form = document.getElementById('form-Coloured Shape');
+
+            const setSliderValue = (baseId, value) => {
+                const slider = form.querySelector(`#${baseId}`);
+                const number = form.querySelector(`#${baseId}-value`);
+                if (slider) slider.value = value;
+                if (number) number.value = value;
+            };
+
+            setSliderValue('hue-min', config.hue_min !== undefined ? config.hue_min : 0);
+            setSliderValue('hue-max', config.hue_max !== undefined ? config.hue_max : 179);
+            setSliderValue('saturation-min', config.saturation_min !== undefined ? config.saturation_min : 0);
+            setSliderValue('saturation-max', config.saturation_max !== undefined ? config.saturation_max : 255);
+            setSliderValue('value-min', config.value_min !== undefined ? config.value_min : 0);
+            setSliderValue('value-max', config.value_max !== undefined ? config.value_max : 255);
+            setSliderValue('min-area', config.min_area !== undefined ? config.min_area : 100);
+            setSliderValue('max-area', config.max_area !== undefined ? config.max_area : 10000);
+            setSliderValue('min-aspect-ratio', config.min_aspect_ratio !== undefined ? config.min_aspect_ratio : 0.5);
+            setSliderValue('max-aspect-ratio', config.max_aspect_ratio !== undefined ? config.max_aspect_ratio : 2.0);
+            setSliderValue('min-fullness', config.min_fullness !== undefined ? config.min_fullness : 0.4);
+        } else if (pipelineData.pipeline_type === 'Object Detection (ML)') {
+            const form = document.getElementById('form-Object Detection (ML)');
+
+            const setSliderValue = (baseId, value) => {
+                const slider = form.querySelector(`#${baseId}`);
+                const number = form.querySelector(`#${baseId}-value`);
+                if (slider) slider.value = value;
+                if (number) number.value = value;
+            };
+
+            // For file inputs, we can't set the value, but we can show the last saved filename
+            const modelInput = form.querySelector('#ml-model-upload');
+            const labelsInput = form.querySelector('#labels-file-upload');
+            modelInput.dataset.lastValue = config.model_filename || '';
+            labelsInput.dataset.lastValue = config.labels_filename || '';
+            // We can maybe add a placeholder or a text element to show the saved filename
+            
+            setSliderValue('confidence-threshold', config.confidence_threshold !== undefined ? config.confidence_threshold : 0.5);
+            form.querySelector('#inference-device').value = config.inference_device || 'CPU';
+
+            // For the multi-select, we need to populate it and then select the saved values
+            const classFilterSelect = form.querySelector('#target-class-filter');
+            // Assuming the labels file needs to be parsed to populate this, which is complex for now.
+            // For now, let's just restore the selections if they exist.
+            if (config.target_classes && Array.isArray(config.target_classes)) {
+                Array.from(classFilterSelect.options).forEach(option => {
+                    option.selected = config.target_classes.includes(option.value);
+                });
+            }
+        }
+    }
+
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    const debouncedSave = debounce(() => savePipelineConfig(), 500);
+
+    function savePipelineConfig() {
+        const pipelineId = pipelineSelect.value;
+        if (!pipelineId) return;
+
+        const selectedOption = pipelineSelect.options[pipelineSelect.selectedIndex];
+        const pipelineType = selectedOption.dataset.type;
+
+        let config = {};
+
+        if (pipelineType === 'AprilTag') {
+            const form = document.getElementById('form-AprilTag');
+            config = {
+                family: form.querySelector('#target-family').value,
+                tag_size_m: parseFloat(form.querySelector('#tag-size').value),
+                threads: parseInt(form.querySelector('#threads-value').value, 10),
+                decimate: parseFloat(form.querySelector('#decimate-value').value),
+                blur: parseFloat(form.querySelector('#blur-value').value),
+                refine_edges: form.querySelector('#refine-edges').checked,
+                decision_margin: parseInt(form.querySelector('#decision-margin-value').value, 10),
+                pose_iterations: parseInt(form.querySelector('#pose-iterations-value').value, 10),
+            };
+        } else if (pipelineType === 'Coloured Shape') {
+            const form = document.getElementById('form-Coloured Shape');
+            config = {
+                'hue_min': parseInt(form.querySelector('#hue-min-value').value, 10),
+                'hue_max': parseInt(form.querySelector('#hue-max-value').value, 10),
+                'saturation_min': parseInt(form.querySelector('#saturation-min-value').value, 10),
+                'saturation_max': parseInt(form.querySelector('#saturation-max-value').value, 10),
+                'value_min': parseInt(form.querySelector('#value-min-value').value, 10),
+                'value_max': parseInt(form.querySelector('#value-max-value').value, 10),
+                'min_area': parseInt(form.querySelector('#min-area-value').value, 10),
+                'max_area': parseInt(form.querySelector('#max-area-value').value, 10),
+                'min_aspect_ratio': parseFloat(form.querySelector('#min-aspect-ratio-value').value),
+                'max_aspect_ratio': parseFloat(form.querySelector('#max-aspect-ratio-value').value),
+                'min_fullness': parseFloat(form.querySelector('#min-fullness-value').value),
+            };
+        } else if (pipelineType === 'Object Detection (ML)') {
+            const form = document.getElementById('form-Object Detection (ML)');
+            const modelFile = form.querySelector('#ml-model-upload').files[0];
+            const labelsFile = form.querySelector('#labels-file-upload').files[0];
+            const selectedClasses = Array.from(form.querySelector('#target-class-filter').selectedOptions).map(opt => opt.value);
+
+            config = {
+                'model_filename': modelFile ? modelFile.name : (form.querySelector('#ml-model-upload').dataset.lastValue || null),
+                'labels_filename': labelsFile ? labelsFile.name : (form.querySelector('#labels-file-upload').dataset.lastValue || null),
+                'confidence_threshold': parseFloat(form.querySelector('#confidence-threshold-value').value),
+                'target_classes': selectedClasses,
+                'inference_device': form.querySelector('#inference-device').value,
+            };
+        }
+
+        fetch(`/api/pipelines/${pipelineId}/config`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log(`Pipeline ${pipelineId} config saved.`);
+            } else {
+                console.error('Error saving pipeline config:', data.error);
+            }
+        })
+        .catch(error => console.error('Error saving pipeline config:', error));
     }
 
     function addPipeline() {
@@ -814,6 +985,16 @@ document.addEventListener('DOMContentLoaded', function() {
             // Set initial value
             updateTagSize();
         }
+
+        // Add event listeners to all form inputs to trigger the debounced save
+        const formInputs = aprilTagForm.querySelectorAll('input, select');
+        formInputs.forEach(input => {
+            input.addEventListener('change', debouncedSave);
+            // Use 'input' for sliders for real-time feedback saving
+            if (input.type === 'range') {
+                input.addEventListener('input', debouncedSave);
+            }
+        });
     }
 
     // Coloured Shape form logic
@@ -880,6 +1061,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Update table every 2 seconds
         setInterval(updateColouredShapeTable, 2000);
+
+        // Add event listeners to all form inputs to trigger the debounced save
+        const formInputs = colouredShapeForm.querySelectorAll('input, select');
+        formInputs.forEach(input => {
+            input.addEventListener('change', debouncedSave);
+            // Use 'input' for sliders for real-time feedback saving
+            if (input.type === 'range') {
+                input.addEventListener('input', debouncedSave);
+            }
+        });
     }
 
     // Object Detection (ML) form logic
@@ -896,6 +1087,16 @@ document.addEventListener('DOMContentLoaded', function() {
             if (rangeInput && numberInput) {
                 rangeInput.addEventListener('input', () => numberInput.value = rangeInput.value);
                 numberInput.addEventListener('input', () => rangeInput.value = numberInput.value);
+            }
+        });
+
+        // Add event listeners to all form inputs to trigger the debounced save
+        const formInputs = objectDetectionForm.querySelectorAll('input, select');
+        formInputs.forEach(input => {
+            input.addEventListener('change', debouncedSave);
+            // Use 'input' for sliders for real-time feedback saving
+            if (input.type === 'range') {
+                input.addEventListener('input', debouncedSave);
             }
         });
     }

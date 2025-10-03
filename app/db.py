@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from appdirs import user_data_dir
 from flask import g
 
@@ -48,6 +49,7 @@ def init_db():
             name TEXT NOT NULL,
             pipeline_type TEXT NOT NULL DEFAULT 'AprilTag',
             camera_id INTEGER NOT NULL,
+            config TEXT,
             FOREIGN KEY (camera_id) REFERENCES cameras (id) ON DELETE CASCADE
         );
     """)
@@ -82,6 +84,11 @@ def init_db():
             cursor.execute(f"SELECT {column} FROM cameras LIMIT 1")
         except sqlite3.OperationalError:
             cursor.execute(f"ALTER TABLE cameras ADD COLUMN {column} {definition}")
+
+    try:
+        cursor.execute("SELECT config FROM pipelines LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE pipelines ADD COLUMN config TEXT")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
@@ -181,12 +188,14 @@ def delete_camera(camera_id):
     db.commit()
 
 
-def add_pipeline(camera_id, name, pipeline_type):
+def add_pipeline(camera_id, name, pipeline_type, config=None):
     """Adds a new pipeline to the database for a specific camera."""
+    if config is None:
+        config = json.dumps({})
     db = get_db()
     db.execute(
-        "INSERT INTO pipelines (camera_id, name, pipeline_type) VALUES (?, ?, ?)",
-        (camera_id, name, pipeline_type),
+        "INSERT INTO pipelines (camera_id, name, pipeline_type, config) VALUES (?, ?, ?, ?)",
+        (camera_id, name, pipeline_type, config),
     )
     db.commit()
 
@@ -209,6 +218,16 @@ def update_pipeline(pipeline_id, name, pipeline_type):
     db.execute(
         "UPDATE pipelines SET name = ?, pipeline_type = ? WHERE id = ?",
         (name, pipeline_type, pipeline_id)
+    )
+    db.commit()
+
+
+def update_pipeline_config(pipeline_id, config):
+    """Updates a pipeline's config in the database."""
+    db = get_db()
+    db.execute(
+        "UPDATE pipelines SET config = ? WHERE id = ?",
+        (json.dumps(config), pipeline_id)
     )
     db.commit()
 

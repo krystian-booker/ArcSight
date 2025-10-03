@@ -8,6 +8,9 @@ import os
 
 from . import db
 from .pipelines.apriltag_pipeline import AprilTagPipeline
+from .pipelines.coloured_shape_pipeline import ColouredShapePipeline
+from .pipelines.object_detection_ml_pipeline import ObjectDetectionMLPipeline
+
 
 # --- Import the new drivers ---
 from .drivers.usb_driver import USBDriver
@@ -126,8 +129,15 @@ class VisionProcessingThread(threading.Thread):
                 print(f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default.")
                 self.cam_matrix = None
         
-        #TODO: Need to update these to load from the database
-        pipeline_config = {
+        pipeline_config = {}
+        if pipeline_info.get('config'):
+            try:
+                pipeline_config = json.loads(pipeline_info['config'])
+            except (json.JSONDecodeError, TypeError):
+                print(f"[{self.identifier}] Failed to parse pipeline config from DB. Using default.")
+        
+        # Merge with default config to ensure all keys are present
+        default_config = {
             'family': 'tag36h11', 
             'threads': 2,
             'decimate': 1.0,
@@ -135,11 +145,13 @@ class VisionProcessingThread(threading.Thread):
             'refine_edges': True,
             'tag_size_m': 0.165
         }
+        # This ensures user settings override defaults, but defaults are there as a fallback
+        final_config = {**default_config, **pipeline_config}
 
         if self.pipeline_type == 'AprilTag':
-            self.pipeline = AprilTagPipeline(pipeline_config)
+            self.pipeline = AprilTagPipeline(final_config)
             # Pre-calculate the 3D coordinates of the tag corners
-            tag_size_m = pipeline_config.get('tag_size_m', 0.165)
+            tag_size_m = final_config.get('tag_size_m', 0.165)
             half_tag_size = tag_size_m / 2
             self.obj_pts = np.array([
                 [-half_tag_size, -half_tag_size, 0], [half_tag_size, -half_tag_size, 0],
@@ -147,8 +159,10 @@ class VisionProcessingThread(threading.Thread):
                 [-half_tag_size, -half_tag_size, -tag_size_m], [half_tag_size, -half_tag_size, -tag_size_m],
                 [half_tag_size, half_tag_size, -tag_size_m], [-half_tag_size, half_tag_size, -tag_size_m]
             ])
-        # elif self.pipeline_type == 'Coloured Shape':
-        #     self.pipeline = ColouredShapePipeline(pipeline_config)
+        elif self.pipeline_type == 'Coloured Shape':
+            self.pipeline = ColouredShapePipeline(final_config)
+        elif self.pipeline_type == 'Object Detection (ML)':
+            self.pipeline = ObjectDetectionMLPipeline(final_config)
         else:
             print(f"Warning: Unknown pipeline type '{self.pipeline_type}' for pipeline ID {self.pipeline_id}")
 
@@ -522,6 +536,39 @@ def remove_pipeline_from_camera(camera_id, pipeline_id, app):
                 proc_thread.stop()
                 thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
                 proc_thread.join(timeout=2)
+
+
+def update_pipeline_in_camera(camera_id, pipeline_id, app):
+    """Stops and restarts a pipeline processing thread to apply new settings."""
+    with app.app_context():
+        camera = db.get_camera(camera_id)
+        pipeline_info = db.get_pipeline(pipeline_id)
+    
+    if not camera or not pipeline_info:
+        print(f"Error: Could not find camera or pipeline for update.")
+        return
+
+    identifier = camera['identifier']
+    with active_camera_threads_lock:
+        if identifier in active_camera_threads:
+            thread_group = active_camera_threads[identifier]
+            
+            # 1. Stop and remove the old thread if it exists
+            if pipeline_id in thread_group['processing_threads']:
+                print(f"Stopping old pipeline thread {pipeline_id} for update.")
+                old_proc_thread = thread_group['processing_threads'].pop(pipeline_id)
+                old_proc_thread.stop()
+                thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
+                old_proc_thread.join(timeout=2) # Wait for it to terminate
+
+            # 2. Start a new thread with the updated pipeline_info
+            print(f"Starting new pipeline thread {pipeline_id} with updated config.")
+            frame_queue = queue.Queue(maxsize=2)
+            new_proc_thread = VisionProcessingThread(identifier, dict(pipeline_info), dict(camera), frame_queue)
+            
+            thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
+            thread_group['processing_threads'][pipeline_id] = new_proc_thread
+            new_proc_thread.start()
 
 
 def start_all_camera_threads(app):
