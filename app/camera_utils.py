@@ -197,30 +197,39 @@ class VisionProcessingThread(threading.Thread):
                 start_time = time.time()
 
                 # Delegate processing to the pipeline object
-                detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
+                annotated_frame = raw_frame.copy() # Always make a copy to draw on
+                detections = []
+                current_results = {}
+
+                if self.pipeline_type == 'AprilTag':
+                    detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
+                    ui_detections = [d['ui_data'] for d in detections]
+                    drawing_detections = [d['drawing_data'] for d in detections]
+                    current_results = {"tags_found": len(ui_detections) > 0, "detections": ui_detections}
+                    if drawing_detections:
+                        self._draw_3d_box_on_frame(annotated_frame, drawing_detections)
+
+                elif self.pipeline_type == 'Object Detection (ML)':
+                    detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
+                    for det in detections:
+                        box = det['box']
+                        label = f"{det['label']}: {det['confidence']:.2f}"
+                        cv2.rectangle(annotated_frame, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
+                        y = box[1] - 15 if box[1] - 15 > 15 else box[1] + 15
+                        cv2.putText(annotated_frame, label, (box[0], y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    current_results = {"detections": detections}
+                
+                elif self.pipeline_type == 'Coloured Shape':
+                    detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
+                    current_results = {"detections": detections}
 
                 processing_time = (time.time() - start_time) * 1000
-
-                # Separate UI data from drawing data
-                ui_detections = [d['ui_data'] for d in detections]
-                drawing_detections = [d['drawing_data'] for d in detections]
-
-                # Format results for the frontend/API
-                current_results = {
-                    "tags_found": len(ui_detections) > 0,
-                    "detections": ui_detections,
-                    "processing_time_ms": f"{processing_time:.2f}"
-                }
+                current_results["processing_time_ms"] = f"{processing_time:.2f}"
 
                 with self.results_lock:
                     self.latest_results = current_results
 
                 # --- Generate Processed Frame ---
-                annotated_frame = raw_frame.copy()
-
-                if self.pipeline_type == 'AprilTag' and drawing_detections:
-                    self._draw_3d_box_on_frame(annotated_frame, drawing_detections)
-                
                 ret, buffer = cv2.imencode('.jpg', annotated_frame)
                 if ret:
                     with self.processed_frame_lock:

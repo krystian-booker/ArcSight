@@ -3,6 +3,7 @@ from app import db, camera_utils, network_utils
 from app.calibration_utils import generate_chessboard_pdf, generate_charuco_board_pdf
 import cv2
 import io
+import json
 import numpy as np
 import os
 import shutil
@@ -374,6 +375,89 @@ def update_pipeline_config(pipeline_id):
         )
 
     return jsonify({'success': True})
+
+
+@main.route('/api/pipelines/<int:pipeline_id>/files', methods=['POST'])
+def upload_pipeline_file(pipeline_id):
+    """Uploads a file for a specific pipeline (e.g., ML model, labels)."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    file_type = request.form.get('type') # 'model' or 'labels'
+
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    if not file_type:
+        return jsonify({'error': 'File type is required'}), 400
+
+    pipeline = db.get_pipeline(pipeline_id)
+    if not pipeline:
+        return jsonify({'error': 'Pipeline not found'}), 404
+
+    if file:
+        # Save the file to the same directory as the database
+        upload_dir = os.path.dirname(db.DB_PATH)
+        filename = f"pipeline_{pipeline_id}_{file_type}_{file.filename}"
+        save_path = os.path.join(upload_dir, filename)
+        file.save(save_path)
+
+        # Update the pipeline's config with the new filename
+        config = json.loads(pipeline['config'] or '{}')
+        config[f'{file_type}_filename'] = filename
+        db.update_pipeline_config(pipeline_id, config)
+        
+        # Also update the pipeline in the running camera thread
+        if pipeline:
+            camera_utils.update_pipeline_in_camera(
+                pipeline['camera_id'], 
+                pipeline_id, 
+                current_app._get_current_object()
+            )
+
+        return jsonify({'success': True, 'filename': filename})
+
+    return jsonify({'error': 'File upload failed'}), 500
+
+
+@main.route('/api/pipelines/<int:pipeline_id>/files', methods=['DELETE'])
+def delete_pipeline_file(pipeline_id):
+    """Deletes a file associated with a specific pipeline."""
+    data = request.get_json()
+    file_type = data.get('type')
+
+    if not file_type:
+        return jsonify({'error': 'File type is required'}), 400
+
+    pipeline = db.get_pipeline(pipeline_id)
+    if not pipeline:
+        return jsonify({'error': 'Pipeline not found'}), 404
+
+    config = json.loads(pipeline['config'] or '{}')
+    filename_key = f'{file_type}_filename'
+    filename = config.get(filename_key)
+
+    if filename:
+        file_path = os.path.join(os.path.dirname(db.DB_PATH), filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+        # Remove the filename from the config
+        del config[filename_key]
+        db.update_pipeline_config(pipeline_id, config)
+        
+        # Also update the pipeline in the running camera thread
+        if pipeline:
+            camera_utils.update_pipeline_in_camera(
+                pipeline['camera_id'], 
+                pipeline_id, 
+                current_app._get_current_object()
+            )
+
+        return jsonify({'success': True})
+
+    return jsonify({'error': 'File not found in config'}), 404
 
 
 @main.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
