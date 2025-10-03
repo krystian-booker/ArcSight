@@ -28,13 +28,13 @@ def create_app():
     from .blueprints.cameras import cameras as cameras_blueprint
     from .blueprints.calibration import calibration as calibration_blueprint
     from .blueprints.settings import settings as settings_blueprint
-    from .blueprints.api import api as api_blueprint
+    from .blueprints.pipelines import pipelines as pipelines_blueprint
 
     app.register_blueprint(dashboard_blueprint)
     app.register_blueprint(cameras_blueprint)
     app.register_blueprint(calibration_blueprint)
     app.register_blueprint(settings_blueprint)
-    app.register_blueprint(api_blueprint)
+    app.register_blueprint(pipelines_blueprint)
 
     with app.app_context():
         db.init_db()

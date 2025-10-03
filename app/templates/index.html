@@ -458,7 +458,7 @@ document.addEventListener('DOMContentLoaded', function() {
             newFeedUrl = `/video_feed/${cameraId}?t=${new Date().getTime()}`;
         }
 
-        fetch(`/api/cameras/status/${cameraId}`)
+        fetch(`/cameras/status/${cameraId}`)
             .then(response => response.json())
             .then(data => {
                 const imgElement = `<img id="camera-feed" src="${newFeedUrl}" alt="Camera Feed" class="w-full h-full object-contain rounded">`;
@@ -803,7 +803,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('exposure-mode-select').disabled = false;
         document.getElementById('gain-mode-select').disabled = false;
 
-        fetch(`/api/cameras/controls/${cameraId}`)
+        fetch(`/cameras/controls/${cameraId}`)
             .then(response => response.json())
             .then(data => {
                 if (data.error) {
@@ -850,7 +850,7 @@ document.addEventListener('DOMContentLoaded', function() {
             gain_value: parseInt(document.getElementById('gain-value').value, 10),
         };
 
-        fetch(`/api/cameras/update_controls/${cameraId}`, {
+        fetch(`/cameras/update_controls/${cameraId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -880,7 +880,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!cameraId) return;
 
         resultsInterval = setInterval(() => {
-            fetch(`/api/cameras/results/${cameraId}`)
+            fetch(`/cameras/results/${cameraId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {

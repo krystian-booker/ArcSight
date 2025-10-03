@@ -160,7 +160,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Keep "Checking..." status if it's the initial load
         const isInitialLoad = statusCell.textContent.includes('Checking...');
 
-        fetch(`/api/cameras/status/${cameraId}`)
+        fetch(`/cameras/status/${cameraId}`)
             .then(response => response.json())
             .then(data => {
                 if (data.connected) {
@@ -452,7 +452,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         container.innerHTML = '<div class="p-4 text-sm text-gray-400">Loading node map...</div>';
 
-        fetch(`/api/genicam/nodes/${cameraId}`)
+        fetch(`/cameras/genicam/nodes/${cameraId}`)
             .then(async response => {
                 let payload;
                 try {
@@ -551,7 +551,7 @@ document.addEventListener('DOMContentLoaded', function() {
             submitButton.textContent = 'Saving...';
         }
 
-        fetch(`/api/genicam/nodes/${cameraId}`, {
+        fetch(`/cameras/genicam/nodes/${cameraId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -748,7 +748,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const identifier = row.cells[2].textContent.trim();
             existingIdentifiers.add(identifier);
         });
-        const url = `/api/cameras/discover?existing=${Array.from(existingIdentifiers).join(',')}`;
+        const url = `/cameras/discover?existing=${Array.from(existingIdentifiers).join(',')}`;
         
         // Show a loading state in the relevant select
         let targetSelect, targetSection;

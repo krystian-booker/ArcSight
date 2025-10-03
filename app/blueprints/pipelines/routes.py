@@ -1,19 +1,18 @@
 from flask import jsonify, request, current_app
-from app import db, camera_manager, camera_discovery
-from app.drivers.genicam_driver import GenICamDriver
+from app import db, camera_manager
 import json
 import os
-from . import api
+from . import pipelines
 
 
-@api.route('/cameras/<int:camera_id>/pipelines', methods=['GET'])
+@pipelines.route('/cameras/<int:camera_id>/pipelines', methods=['GET'])
 def get_pipelines(camera_id):
     """Returns all pipelines for a given camera."""
     pipelines = db.get_pipelines(camera_id)
     return jsonify([dict(row) for row in pipelines])
 
 
-@api.route('/cameras/<int:camera_id>/pipelines', methods=['POST'])
+@pipelines.route('/cameras/<int:camera_id>/pipelines', methods=['POST'])
 def add_pipeline(camera_id):
     """Adds a new pipeline to a camera."""
     data = request.get_json()
@@ -38,7 +37,7 @@ def add_pipeline(camera_id):
     return jsonify({'error': 'Failed to retrieve new pipeline'}), 500
 
 
-@api.route('/pipelines/<int:pipeline_id>', methods=['PUT'])
+@pipelines.route('/pipelines/<int:pipeline_id>', methods=['PUT'])
 def update_pipeline(pipeline_id):
     """Updates a pipeline's settings."""
     data = request.get_json()
@@ -62,7 +61,7 @@ def update_pipeline(pipeline_id):
     return jsonify({'success': True})
 
 
-@api.route('/pipelines/<int:pipeline_id>/config', methods=['PUT'])
+@pipelines.route('/pipelines/<int:pipeline_id>/config', methods=['PUT'])
 def update_pipeline_config(pipeline_id):
     """Updates a pipeline's configuration."""
     config = request.get_json()
@@ -83,7 +82,7 @@ def update_pipeline_config(pipeline_id):
     return jsonify({'success': True})
 
 
-@api.route('/pipelines/<int:pipeline_id>/files', methods=['POST'])
+@pipelines.route('/pipelines/<int:pipeline_id>/files', methods=['POST'])
 def upload_pipeline_file(pipeline_id):
     """Uploads a file for a specific pipeline (e.g., ML model, labels)."""
     if 'file' not in request.files:
@@ -127,7 +126,7 @@ def upload_pipeline_file(pipeline_id):
     return jsonify({'error': 'File upload failed'}), 500
 
 
-@api.route('/pipelines/<int:pipeline_id>/files', methods=['DELETE'])
+@pipelines.route('/pipelines/<int:pipeline_id>/files', methods=['DELETE'])
 def delete_pipeline_file(pipeline_id):
     """Deletes a file associated with a specific pipeline."""
     data = request.get_json()
@@ -166,7 +165,7 @@ def delete_pipeline_file(pipeline_id):
     return jsonify({'error': 'File not found in config'}), 404
 
 
-@api.route('/pipelines/<int:pipeline_id>', methods=['DELETE'])
+@pipelines.route('/pipelines/<int:pipeline_id>', methods=['DELETE'])
 def delete_pipeline(pipeline_id):
     """Deletes a pipeline."""
     pipeline = db.get_pipeline(pipeline_id)
@@ -176,118 +175,3 @@ def delete_pipeline(pipeline_id):
         db.delete_pipeline(pipeline_id)
         return jsonify({'success': True})
     return jsonify({'error': 'Pipeline not found'}), 404
-
-
-@api.route('/cameras/results/<int:camera_id>')
-def get_camera_results(camera_id):
-    """Returns the latest results from all pipelines for a given camera."""
-    camera = db.get_camera(camera_id)
-    if not camera:
-        return jsonify({'error': 'Camera not found'}), 404
-    
-    results = camera_manager.get_camera_pipeline_results(camera['identifier'])
-    if results is None:
-        return jsonify({'error': 'Camera thread not running or no results available'}), 404
-        
-    string_key_results = {str(k): v for k, v in results.items()}
-    return jsonify(string_key_results)
-
-
-@api.route('/cameras/discover')
-def discover_cameras():
-    """Discovers available USB, GenICam, and OAK-D cameras."""
-    existing_identifiers = request.args.get('existing', '').split(',')
-    
-    # Delegate discovery to the new centralized function
-    discovered = camera_discovery.discover_cameras(existing_identifiers)
-
-    return jsonify(discovered)
-
-
-@api.route('/cameras/status/<int:camera_id>')
-def camera_status(camera_id):
-    """Returns the connection status of a camera."""
-    camera = db.get_camera(camera_id)
-    if camera:
-        is_running = camera_manager.is_camera_thread_running(camera['identifier'])
-        return jsonify({'connected': is_running})
-    return jsonify({'error': 'Camera not found'}), 404
-
-
-@api.route('/cameras/controls/<int:camera_id>', methods=['GET'])
-def get_camera_controls(camera_id):
-    """Returns the control settings for a camera."""
-    camera = db.get_camera(camera_id)
-    if camera:
-        return jsonify({
-            'orientation': camera['orientation'],
-            'exposure_mode': camera['exposure_mode'],
-            'exposure_value': camera['exposure_value'],
-            'gain_mode': camera['gain_mode'],
-            'gain_value': camera['gain_value'],
-        })
-    return jsonify({'error': 'Camera not found'}), 404
-
-
-@api.route('/cameras/update_controls/<int:camera_id>', methods=['POST'])
-def update_camera_controls(camera_id):
-    """Updates the control settings for a camera."""
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'Invalid JSON'}), 400
-
-    required_fields = ['orientation', 'exposure_mode', 'exposure_value', 'gain_mode', 'gain_value']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing one or more required fields'}), 400
-
-    db.update_camera_controls(
-        camera_id,
-        data['orientation'],
-        data['exposure_mode'],
-        data['exposure_value'],
-        data['gain_mode'],
-        data['gain_value']
-    )
-    
-    return jsonify({'success': True})
-
-
-@api.route('/genicam/nodes/<int:camera_id>', methods=['GET'])
-def genicam_nodes(camera_id):
-    """Returns the node map for a GenICam camera."""
-    camera = db.get_camera(camera_id)
-    if not camera or camera['camera_type'] != 'GenICam':
-        return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
-
-    # Call the static method on the driver class
-    nodes, error = GenICamDriver.get_node_map(camera['identifier'])
-    if error:
-        return jsonify({'error': error}), 500
-
-    return jsonify({'nodes': nodes})
-
-
-@api.route('/genicam/nodes/<int:camera_id>', methods=['POST'])
-def update_genicam_node(camera_id):
-    """Updates a node on a GenICam camera."""
-    camera = db.get_camera(camera_id)
-    if not camera or camera['camera_type'] != 'GenICam':
-        return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
-
-    payload = request.get_json(silent=True) or {}
-    node_name = payload.get('name')
-    value = payload.get('value')
-
-    # Call the static method on the driver class
-    success, message, status_code, updated_node = GenICamDriver.update_node(
-        camera['identifier'], node_name, value
-    )
-    
-    if success:
-        return jsonify({
-            'success': True, 
-            'message': message or 'Node updated successfully.',
-            'node': updated_node
-        }), status_code
-    
-    return jsonify({'error': message or 'Failed to update node.'}), status_code
