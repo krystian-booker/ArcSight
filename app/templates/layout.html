@@ -16,10 +16,10 @@
             </div>
             <nav>
                 <ul>
-                    <li class="hover:bg-gray-700"><a href="{{ url_for('main.dashboard') }}" class="block p-4">Dashboard</a></li>
-                    <li class="hover:bg-gray-700"><a href="{{ url_for('main.cameras') }}" class="block p-4">Cameras</a></li>
-                    <li class="hover:bg-gray-700"><a href="{{ url_for('main.calibration') }}" class="block p-4">Calibration</a></li>
-                    <li class="hover:bg-gray-700"><a href="{{ url_for('main.settings') }}" class="block p-4">Settings</a></li>
+                    <li class="hover:bg-gray-700"><a href="{{ url_for('dashboard.dashboard_page') }}" class="block p-4">Dashboard</a></li>
+                    <li class="hover:bg-gray-700"><a href="{{ url_for('cameras.cameras_page') }}" class="block p-4">Cameras</a></li>
+                    <li class="hover:bg-gray-700"><a href="{{ url_for('calibration.calibration_page') }}" class="block p-4">Calibration</a></li>
+                    <li class="hover:bg-gray-700"><a href="{{ url_for('settings.settings_page') }}" class="block p-4">Settings</a></li>
                 </ul>
             </nav>
         </aside>

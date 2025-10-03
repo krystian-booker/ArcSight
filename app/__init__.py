@@ -23,8 +23,18 @@ def create_app():
         if db_conn is not None:
             db_conn.close()
 
-    from .blueprints.main import main as main_blueprint
-    app.register_blueprint(main_blueprint)
+    # Import and register the new blueprints
+    from .blueprints.dashboard import dashboard as dashboard_blueprint
+    from .blueprints.cameras import cameras as cameras_blueprint
+    from .blueprints.calibration import calibration as calibration_blueprint
+    from .blueprints.settings import settings as settings_blueprint
+    from .blueprints.api import api as api_blueprint
+
+    app.register_blueprint(dashboard_blueprint)
+    app.register_blueprint(cameras_blueprint)
+    app.register_blueprint(calibration_blueprint)
+    app.register_blueprint(settings_blueprint)
+    app.register_blueprint(api_blueprint)
 
     with app.app_context():
         db.init_db()
