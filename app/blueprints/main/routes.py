@@ -1,5 +1,7 @@
 from flask import render_template, request, redirect, url_for, jsonify, Response, send_file, current_app, make_response
-from app import db, camera_utils, network_utils
+from app import db, network_utils
+from app import camera_manager, camera_stream, camera_discovery
+from app.drivers.genicam_driver import GenICamDriver
 from app.calibration_utils import generate_chessboard_pdf, generate_charuco_board_pdf
 import cv2
 import io
@@ -36,11 +38,11 @@ def video_feed(camera_id):
     if not camera:
         return "Camera not found", 404
 
-    if not camera_utils.is_camera_thread_running(camera['identifier']):
+    if not camera_manager.is_camera_thread_running(camera['identifier']):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
-    return Response(camera_utils.get_camera_feed(dict(camera)),
+    return Response(camera_stream.get_camera_feed(dict(camera)),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -52,7 +54,7 @@ def processed_video_feed(pipeline_id):
         error_img = create_error_image("Pipeline not found")
         return Response(error_img, mimetype='image/jpeg', status=404)
 
-    return Response(camera_utils.get_processed_camera_feed(pipeline_id),
+    return Response(camera_stream.get_processed_camera_feed(pipeline_id),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -163,7 +165,7 @@ def calibration_capture():
     if not camera:
         return jsonify({'success': False, 'error': 'Camera not found.'}), 404
 
-    frame = camera_utils.get_latest_raw_frame(camera['identifier'])
+    frame = camera_stream.get_latest_raw_frame(camera['identifier'])
     if frame is None:
         return jsonify({'success': False, 'error': 'Could not get frame from camera.'}), 500
 
@@ -210,8 +212,8 @@ def calibration_save():
     # Restart the camera thread to apply the new calibration
     camera = db.get_camera(int(camera_id))
     if camera:
-        camera_utils.stop_camera_thread(camera['identifier'])
-        camera_utils.start_camera_thread(dict(camera), current_app._get_current_object())
+        camera_manager.stop_camera_thread(camera['identifier'])
+        camera_manager.start_camera_thread(dict(camera), current_app._get_current_object())
 
     return jsonify({'success': True})
 
@@ -223,11 +225,11 @@ def calibration_feed(camera_id):
     if not camera:
         return "Camera not found", 404
 
-    if not camera_utils.is_camera_thread_running(camera['identifier']):
+    if not camera_manager.is_camera_thread_running(camera['identifier']):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
-    return Response(camera_utils.get_camera_feed(dict(camera)),
+    return Response(camera_stream.get_camera_feed(dict(camera)),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -276,7 +278,7 @@ def add_camera():
         db.add_camera(name, camera_type, identifier)
         new_camera = db.get_camera_by_identifier(identifier)
         if new_camera:
-            camera_utils.start_camera_thread(dict(new_camera), current_app._get_current_object())
+            camera_manager.start_camera_thread(dict(new_camera), current_app._get_current_object())
 
     return redirect(url_for('main.cameras'))
 
@@ -295,7 +297,7 @@ def delete_camera(camera_id):
     """Deletes a camera."""
     camera = db.get_camera(camera_id)
     if camera:
-        camera_utils.stop_camera_thread(camera['identifier'])
+        camera_manager.stop_camera_thread(camera['identifier'])
     db.delete_camera(camera_id)
     return redirect(url_for('main.cameras'))
 
@@ -326,7 +328,7 @@ def add_pipeline(camera_id):
             break
     
     if new_pipeline:
-        camera_utils.add_pipeline_to_camera(camera_id, dict(new_pipeline), current_app._get_current_object())
+        camera_manager.add_pipeline_to_camera(camera_id, dict(new_pipeline), current_app._get_current_object())
         return jsonify({'success': True, 'pipeline_id': new_pipeline['id']})
     
     return jsonify({'error': 'Failed to retrieve new pipeline'}), 500
@@ -347,7 +349,7 @@ def update_pipeline(pipeline_id):
     # Also update the pipeline in the running camera thread
     pipeline = db.get_pipeline(pipeline_id)
     if pipeline:
-        camera_utils.update_pipeline_in_camera(
+        camera_manager.update_pipeline_in_camera(
             pipeline['camera_id'], 
             pipeline_id, 
             current_app._get_current_object()
@@ -368,7 +370,7 @@ def update_pipeline_config(pipeline_id):
     # Also update the pipeline in the running camera thread
     pipeline = db.get_pipeline(pipeline_id)
     if pipeline:
-        camera_utils.update_pipeline_in_camera(
+        camera_manager.update_pipeline_in_camera(
             pipeline['camera_id'], 
             pipeline_id, 
             current_app._get_current_object()
@@ -410,7 +412,7 @@ def upload_pipeline_file(pipeline_id):
         
         # Also update the pipeline in the running camera thread
         if pipeline:
-            camera_utils.update_pipeline_in_camera(
+            camera_manager.update_pipeline_in_camera(
                 pipeline['camera_id'], 
                 pipeline_id, 
                 current_app._get_current_object()
@@ -449,7 +451,7 @@ def delete_pipeline_file(pipeline_id):
         
         # Also update the pipeline in the running camera thread
         if pipeline:
-            camera_utils.update_pipeline_in_camera(
+            camera_manager.update_pipeline_in_camera(
                 pipeline['camera_id'], 
                 pipeline_id, 
                 current_app._get_current_object()
@@ -466,7 +468,7 @@ def delete_pipeline(pipeline_id):
     pipeline = db.get_pipeline(pipeline_id)
     if pipeline:
         camera_id = pipeline['camera_id']
-        camera_utils.remove_pipeline_from_camera(camera_id, pipeline_id, current_app._get_current_object())
+        camera_manager.remove_pipeline_from_camera(camera_id, pipeline_id, current_app._get_current_object())
         db.delete_pipeline(pipeline_id)
         return jsonify({'success': True})
     return jsonify({'error': 'Pipeline not found'}), 404
@@ -479,7 +481,7 @@ def get_camera_results(camera_id):
     if not camera:
         return jsonify({'error': 'Camera not found'}), 404
     
-    results = camera_utils.get_camera_pipeline_results(camera['identifier'])
+    results = camera_manager.get_camera_pipeline_results(camera['identifier'])
     if results is None:
         return jsonify({'error': 'Camera thread not running or no results available'}), 404
         
@@ -500,7 +502,7 @@ def update_genicam_settings():
         db.clear_setting('genicam_cti_path')
     
     # Re-initialize the driver with the new path
-    camera_utils.GenICamDriver.initialize(new_path)
+    GenICamDriver.initialize(new_path)
     return redirect(url_for('main.settings'))
 
 
@@ -509,7 +511,7 @@ def clear_genicam_settings():
     """Clears the GenICam CTI path."""
     db.clear_setting('genicam_cti_path')
     # Re-initialize the driver with no CTI file
-    camera_utils.GenICamDriver.initialize(None)
+    GenICamDriver.initialize(None)
     return redirect(url_for('main.settings'))
 
 
@@ -518,8 +520,8 @@ def discover_cameras():
     """Discovers available USB, GenICam, and OAK-D cameras."""
     existing_identifiers = request.args.get('existing', '').split(',')
     
-    # Delegate discovery to the new centralized function in camera_utils
-    discovered = camera_utils.discover_cameras(existing_identifiers)
+    # Delegate discovery to the new centralized function
+    discovered = camera_discovery.discover_cameras(existing_identifiers)
 
     return jsonify(discovered)
 
@@ -529,7 +531,7 @@ def camera_status(camera_id):
     """Returns the connection status of a camera."""
     camera = db.get_camera(camera_id)
     if camera:
-        is_running = camera_utils.is_camera_thread_running(camera['identifier'])
+        is_running = camera_manager.is_camera_thread_running(camera['identifier'])
         return jsonify({'connected': is_running})
     return jsonify({'error': 'Camera not found'}), 404
 
@@ -580,7 +582,7 @@ def genicam_nodes(camera_id):
         return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
 
     # Call the static method on the driver class
-    nodes, error = camera_utils.GenICamDriver.get_node_map(camera['identifier'])
+    nodes, error = GenICamDriver.get_node_map(camera['identifier'])
     if error:
         return jsonify({'error': error}), 500
 
@@ -599,7 +601,7 @@ def update_genicam_node(camera_id):
     value = payload.get('value')
 
     # Call the static method on the driver class
-    success, message, status_code, updated_node = camera_utils.GenICamDriver.update_node(
+    success, message, status_code, updated_node = GenICamDriver.update_node(
         camera['identifier'], node_name, value
     )
     
@@ -652,5 +654,5 @@ def import_db():
 def factory_reset():
     """Resets the application to its factory settings."""
     db.factory_reset()
-    camera_utils.reinitialize_harvester()
+    GenICamDriver.initialize(None)
     return redirect(url_for('main.settings'))

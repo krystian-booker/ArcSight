@@ -1,6 +1,7 @@
 from flask import Flask, g
 from . import db
-from . import camera_utils
+from . import camera_manager
+from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
 import atexit
 
@@ -28,9 +29,9 @@ def create_app():
     with app.app_context():
         db.init_db()
         cti_path = db.get_setting('genicam_cti_path')
-        camera_utils.GenICamDriver.initialize(cti_path)
-        camera_utils.start_all_camera_threads(app)
+        GenICamDriver.initialize(cti_path)
+        camera_manager.start_all_camera_threads(app)
 
-    atexit.register(camera_utils.stop_all_camera_threads)
+    atexit.register(camera_manager.stop_all_camera_threads)
 
     return app
