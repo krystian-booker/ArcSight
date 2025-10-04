@@ -15,3 +15,4 @@ dependencies:
       - appdirs
       - reportlab
       - depthai
+      - flask-sqlalchemy

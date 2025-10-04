@@ -5,7 +5,8 @@ import queue
 import numpy as np
 import json
 
-from . import db
+from .extensions import db
+from .models import Camera
 from .pipelines.apriltag_pipeline import AprilTagPipeline
 from .pipelines.coloured_shape_pipeline import ColouredShapePipeline
 from .pipelines.object_detection_ml_pipeline import ObjectDetectionMLPipeline
@@ -89,12 +90,12 @@ class FrameBufferPool:
 # --- Vision Processing Thread (Consumer) ---
 class VisionProcessingThread(threading.Thread):
     """A consumer thread that runs a vision pipeline on frames from a queue."""
-    def __init__(self, identifier, pipeline_info, camera_db_data, frame_queue):
+    def __init__(self, identifier, pipeline, camera, frame_queue):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
-        self.pipeline_id = pipeline_info['id']
-        self.pipeline_type = pipeline_info['pipeline_type']
+        self.pipeline_id = pipeline.id
+        self.pipeline_type = pipeline.pipeline_type
         self.frame_queue = frame_queue
         self.stop_event = threading.Event()
         self.results_lock = threading.Lock()
@@ -103,26 +104,26 @@ class VisionProcessingThread(threading.Thread):
         self.processed_frame_lock = threading.Lock()
 
         # Store camera data and initialize the pipeline object
-        self.camera_db_data = camera_db_data
-        self.pipeline = None
+        self.camera = camera
+        self.pipeline_instance = None
    
         # Pre-calculation variables for drawing
         self.cam_matrix = None
         self.obj_pts = None
 
         # Load camera calibration data
-        if self.camera_db_data.get('camera_matrix_json'):
+        if self.camera.camera_matrix_json:
             try:
-                self.cam_matrix = np.array(json.loads(self.camera_db_data['camera_matrix_json']))
+                self.cam_matrix = np.array(json.loads(self.camera.camera_matrix_json))
                 print(f"[{self.identifier}] Loaded camera matrix from DB.")
             except (json.JSONDecodeError, TypeError):
                 print(f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default.")
                 self.cam_matrix = None
         
         pipeline_config = {}
-        if pipeline_info.get('config'):
+        if pipeline.config:
             try:
-                pipeline_config = json.loads(pipeline_info['config'])
+                pipeline_config = json.loads(pipeline.config)
             except (json.JSONDecodeError, TypeError):
                 print(f"[{self.identifier}] Failed to parse pipeline config from DB. Using default.")
         
@@ -139,7 +140,7 @@ class VisionProcessingThread(threading.Thread):
         final_config = {**default_config, **pipeline_config}
 
         if self.pipeline_type == 'AprilTag':
-            self.pipeline = AprilTagPipeline(final_config)
+            self.pipeline_instance = AprilTagPipeline(final_config)
             # Pre-calculate the 3D coordinates of the tag corners
             tag_size_m = final_config.get('tag_size_m', 0.165)
             half_tag_size = tag_size_m / 2
@@ -150,15 +151,15 @@ class VisionProcessingThread(threading.Thread):
                 [half_tag_size, half_tag_size, -tag_size_m], [-half_tag_size, half_tag_size, -tag_size_m]
             ])
         elif self.pipeline_type == 'Coloured Shape':
-            self.pipeline = ColouredShapePipeline(final_config)
+            self.pipeline_instance = ColouredShapePipeline(final_config)
         elif self.pipeline_type == 'Object Detection (ML)':
-            self.pipeline = ObjectDetectionMLPipeline(final_config)
+            self.pipeline_instance = ObjectDetectionMLPipeline(final_config)
         else:
             print(f"Warning: Unknown pipeline type '{self.pipeline_type}' for pipeline ID {self.pipeline_id}")
 
     def run(self):
         """The main loop for the vision processing thread."""
-        if not self.pipeline:
+        if not self.pipeline_instance:
             print(f"Stopping processing thread for pipeline {self.pipeline_id} due to no valid pipeline object.")
             return
 
@@ -192,7 +193,7 @@ class VisionProcessingThread(threading.Thread):
                 current_results = {}
 
                 if self.pipeline_type == 'AprilTag':
-                    detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
+                    detections = self.pipeline_instance.process_frame(raw_frame, self.cam_matrix)
                     ui_detections = [d['ui_data'] for d in detections]
                     drawing_detections = [d['drawing_data'] for d in detections]
                     current_results = {"tags_found": len(ui_detections) > 0, "detections": ui_detections}
@@ -200,7 +201,7 @@ class VisionProcessingThread(threading.Thread):
                         self._draw_3d_box_on_frame(annotated_frame, drawing_detections)
 
                 elif self.pipeline_type == 'Object Detection (ML)':
-                    detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
+                    detections = self.pipeline_instance.process_frame(raw_frame, self.cam_matrix)
                     for det in detections:
                         box = det['box']
                         label = f"{det['label']}: {det['confidence']:.2f}"
@@ -210,7 +211,7 @@ class VisionProcessingThread(threading.Thread):
                     current_results = {"detections": detections}
                 
                 elif self.pipeline_type == 'Coloured Shape':
-                    detections = self.pipeline.process_frame(raw_frame, self.cam_matrix)
+                    detections = self.pipeline_instance.process_frame(raw_frame, self.cam_matrix)
                     current_results = {"detections": detections}
 
                 processing_time = (time.time() - start_time) * 1000
@@ -269,11 +270,11 @@ class CameraAcquisitionThread(threading.Thread):
     to multiple consumer queues. It handles camera connection, disconnection, 
     and reconnection automatically.
     """
-    def __init__(self, camera_db_data, app):
+    def __init__(self, camera, app):
         super().__init__()
         self.daemon = True
-        self.camera_db_data = camera_db_data
-        self.identifier = camera_db_data['identifier']
+        self.camera = camera
+        self.identifier = camera.identifier
         self.app = app
         self.driver = None
         self.frame_lock = threading.Lock()
@@ -303,7 +304,7 @@ class CameraAcquisitionThread(threading.Thread):
         while not self.stop_event.is_set():
             try:
                 # Initialize the driver inside the loop for automatic reconnection
-                self.driver = get_driver(self.camera_db_data)
+                self.driver = get_driver(self.camera)
                 self.driver.connect()
                 print(f"Camera {self.identifier} connected successfully via driver.")
                 
@@ -322,7 +323,7 @@ class CameraAcquisitionThread(threading.Thread):
 
     def _acquisition_loop(self):
         """Inner loop that processes frames once a camera is connected."""
-        orientation = int(self.camera_db_data['orientation'])
+        orientation = self.camera.orientation
         last_config_check = time.time()
         
         # Initialize buffer pool with the first frame
@@ -340,9 +341,9 @@ class CameraAcquisitionThread(threading.Thread):
             # Periodically check for orientation changes in the DB
             if time.time() - last_config_check > 2.0:
                 with self.app.app_context():
-                    refreshed_data = db.get_camera(self.camera_db_data['id'])
+                    refreshed_data = db.session.get(Camera, self.camera.id)
                 if refreshed_data:
-                    new_orientation = int(refreshed_data['orientation'])
+                    new_orientation = refreshed_data.orientation
                     if new_orientation != orientation:
                         print(f"[{self.identifier}] Orientation changed to {new_orientation}. Re-initializing resources.")
                         orientation = new_orientation

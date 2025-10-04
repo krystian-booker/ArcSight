@@ -4,7 +4,7 @@ from .camera_manager import active_camera_threads, active_camera_threads_lock
 # --- Web Streaming & Camera Utilities ---
 def get_camera_feed(camera):
     """A generator that yields JPEG frames from a camera's acquisition thread."""
-    identifier = camera['identifier']
+    identifier = camera.identifier
     
     with active_camera_threads_lock:
         thread_group = active_camera_threads.get(identifier)

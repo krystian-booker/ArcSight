@@ -1,9 +1,13 @@
-from flask import Flask, g
-from . import db
+import os
+import atexit
+from flask import Flask
+from appdirs import user_data_dir
+
+from .extensions import db
 from . import camera_manager
 from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
-import atexit
+from .models import Setting
 
 
 def create_app():
@@ -11,17 +15,16 @@ def create_app():
     app = Flask(__name__, static_folder='static', template_folder='templates')
     app.calibration_manager = CalibrationManager()
 
-    @app.before_request
-    def before_request():
-        """Creates a database connection before each request."""
-        g.db = db.get_db()
+    # Database configuration
+    APP_NAME = "VisionTools"
+    APP_AUTHOR = "User"
+    data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
+    os.makedirs(data_dir, exist_ok=True)
+    db_path = os.path.join(data_dir, "config.db")
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-    @app.teardown_appcontext
-    def teardown_db(exception):
-        """Closes the database connection after each request."""
-        db_conn = g.pop('db', None)
-        if db_conn is not None:
-            db_conn.close()
+    db.init_app(app)
 
     # Import and register the new blueprints
     from .blueprints.dashboard import dashboard as dashboard_blueprint
@@ -37,8 +40,9 @@ def create_app():
     app.register_blueprint(pipelines_blueprint)
 
     with app.app_context():
-        db.init_db()
-        cti_path = db.get_setting('genicam_cti_path')
+        db.create_all()
+        genicam_setting = db.session.get(Setting, 'genicam_cti_path')
+        cti_path = genicam_setting.value if genicam_setting else ""
         GenICamDriver.initialize(cti_path)
         camera_manager.start_all_camera_threads(app)
 

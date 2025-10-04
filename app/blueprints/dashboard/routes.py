@@ -1,5 +1,7 @@
 from flask import render_template, Response
-from app import db, camera_manager, camera_stream
+from app.extensions import db
+from app import camera_manager, camera_stream
+from app.models import Camera, Pipeline
 import cv2
 import numpy as np
 from . import dashboard
@@ -19,29 +21,29 @@ def create_error_image(message, width=640, height=480):
 @dashboard.route('/')
 def dashboard_page():
     """Renders the main dashboard."""
-    cameras = db.get_cameras()
+    cameras = Camera.query.all()
     return render_template('pages/dashboard.html', cameras=cameras)
 
 
 @dashboard.route('/video_feed/<int:camera_id>')
 def video_feed(camera_id):
     """Streams the video feed for a given camera."""
-    camera = db.get_camera(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if not camera:
         return "Camera not found", 404
 
-    if not camera_manager.is_camera_thread_running(camera['identifier']):
+    if not camera_manager.is_camera_thread_running(camera.identifier):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
-    return Response(camera_stream.get_camera_feed(dict(camera)),
+    return Response(camera_stream.get_camera_feed(camera),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @dashboard.route('/processed_video_feed/<int:pipeline_id>')
 def processed_video_feed(pipeline_id):
     """Streams the processed video feed for a given pipeline."""
-    pipeline = db.get_pipeline(pipeline_id)
+    pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
         error_img = create_error_image("Pipeline not found")
         return Response(error_img, mimetype='image/jpeg', status=404)
