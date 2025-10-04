@@ -15,14 +15,18 @@ data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
 @pipelines.route('/cameras/<int:camera_id>/pipelines', methods=['GET'])
 def get_pipelines_for_camera(camera_id):
     """Returns all pipelines for a given camera."""
-    camera = Camera.query.get_or_404(camera_id)
+    camera = db.session.get(Camera, camera_id)
+    if not camera:
+        return jsonify({'error': 'Camera not found'}), 404
     return jsonify([p.to_dict() for p in camera.pipelines])
 
 
 @pipelines.route('/cameras/<int:camera_id>/pipelines', methods=['POST'])
 def add_pipeline(camera_id):
     """Adds a new pipeline to a camera."""
-    camera = Camera.query.get_or_404(camera_id)
+    camera = db.session.get(Camera, camera_id)
+    if not camera:
+        return jsonify({'error': 'Camera not found'}), 404
     data = request.get_json()
     name = data.get('name')
     pipeline_type = data.get('pipeline_type')
@@ -46,7 +50,9 @@ def add_pipeline(camera_id):
 @pipelines.route('/pipelines/<int:pipeline_id>', methods=['PUT'])
 def update_pipeline(pipeline_id):
     """Updates a pipeline's settings."""
-    pipeline = Pipeline.query.get_or_404(pipeline_id)
+    pipeline = db.session.get(Pipeline, pipeline_id)
+    if not pipeline:
+        return jsonify({'error': 'Pipeline not found'}), 404
     data = request.get_json()
     name = data.get('name')
     pipeline_type = data.get('pipeline_type')
@@ -70,7 +76,9 @@ def update_pipeline(pipeline_id):
 @pipelines.route('/pipelines/<int:pipeline_id>/config', methods=['PUT'])
 def update_pipeline_config(pipeline_id):
     """Updates a pipeline's configuration."""
-    pipeline = Pipeline.query.get_or_404(pipeline_id)
+    pipeline = db.session.get(Pipeline, pipeline_id)
+    if not pipeline:
+        return jsonify({'error': 'Pipeline not found'}), 404
     config = request.get_json()
     if config is None:
         return jsonify({'error': 'Invalid config format'}), 400
@@ -102,7 +110,9 @@ def upload_pipeline_file(pipeline_id):
     if not file_type:
         return jsonify({'error': 'File type is required'}), 400
 
-    pipeline = Pipeline.query.get_or_404(pipeline_id)
+    pipeline = db.session.get(Pipeline, pipeline_id)
+    if not pipeline:
+        return jsonify({'error': 'Pipeline not found'}), 404
 
     if file:
         filename = f"pipeline_{pipeline_id}_{file_type}_{file.filename}"
@@ -127,7 +137,9 @@ def upload_pipeline_file(pipeline_id):
 @pipelines.route('/pipelines/<int:pipeline_id>/files', methods=['DELETE'])
 def delete_pipeline_file(pipeline_id):
     """Deletes a file associated with a specific pipeline."""
-    pipeline = Pipeline.query.get_or_404(pipeline_id)
+    pipeline = db.session.get(Pipeline, pipeline_id)
+    if not pipeline:
+        return jsonify({'error': 'Pipeline not found'}), 404
     data = request.get_json()
     file_type = data.get('type')
 
@@ -159,7 +171,9 @@ def delete_pipeline_file(pipeline_id):
 @pipelines.route('/pipelines/<int:pipeline_id>', methods=['DELETE'])
 def delete_pipeline(pipeline_id):
     """Deletes a pipeline."""
-    pipeline = Pipeline.query.get_or_404(pipeline_id)
+    pipeline = db.session.get(Pipeline, pipeline_id)
+    if not pipeline:
+        return jsonify({'error': 'Pipeline not found'}), 404
     camera_id = pipeline.camera_id
     
     camera_manager.remove_pipeline_from_camera(camera_id, pipeline_id, current_app._get_current_object())

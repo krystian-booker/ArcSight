@@ -116,7 +116,7 @@ def calibration_capture():
     if not camera_id:
         return jsonify({'success': False, 'error': 'Camera ID is required.'}), 400
 
-    camera = Camera.query.get(int(camera_id))
+    camera = db.session.get(Camera, int(camera_id))
     if not camera:
         return jsonify({'success': False, 'error': 'Camera not found.'}), 404
 
@@ -162,7 +162,9 @@ def calibration_save():
     if not all([camera_id, matrix, dist_coeffs, error is not None]):
         return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
 
-    camera = Camera.query.get_or_404(int(camera_id))
+    camera = db.session.get(Camera, int(camera_id))
+    if not camera:
+        return jsonify({'success': False, 'error': 'Camera not found.'}), 404
     camera.camera_matrix_json = json.dumps(matrix)
     camera.dist_coeffs_json = json.dumps(dist_coeffs)
     camera.reprojection_error = float(error)
@@ -178,7 +180,7 @@ def calibration_save():
 @calibration.route('/calibration_feed/<int:camera_id>')
 def calibration_feed(camera_id):
     """Streams the standard video feed for a given camera, used on the calibration page."""
-    camera = Camera.query.get(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if not camera:
         return "Camera not found", 404
 

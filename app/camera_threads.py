@@ -341,7 +341,7 @@ class CameraAcquisitionThread(threading.Thread):
             # Periodically check for orientation changes in the DB
             if time.time() - last_config_check > 2.0:
                 with self.app.app_context():
-                    refreshed_data = Camera.query.get(self.camera.id)
+                    refreshed_data = db.session.get(Camera, self.camera.id)
                 if refreshed_data:
                     new_orientation = refreshed_data.orientation
                     if new_orientation != orientation:
