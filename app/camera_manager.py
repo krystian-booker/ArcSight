@@ -1,7 +1,8 @@
 import threading
 import queue
 
-from . import db
+from .extensions import db
+from .models import Camera, Pipeline
 from .camera_threads import CameraAcquisitionThread, VisionProcessingThread
 
 # --- Globals & Threading Primitives ---
@@ -13,22 +14,23 @@ active_camera_threads_lock = threading.Lock()
 def start_camera_thread(camera, app):
     """Starts acquisition and processing threads for a single camera."""
     with active_camera_threads_lock:
-        identifier = camera['identifier']
+        identifier = camera.identifier
         if identifier not in active_camera_threads:
             print(f"Starting threads for camera {identifier}")
             
             acq_thread = CameraAcquisitionThread(camera, app)
             
-            with app.app_context():
-                pipelines = db.get_pipelines(camera['id'])
+            # Pipelines are loaded via the relationship
+            pipelines = camera.pipelines
             
             processing_threads = {}
             for pipeline in pipelines:
                 frame_queue = queue.Queue(maxsize=2)
-                proc_thread = VisionProcessingThread(identifier, dict(pipeline), camera, frame_queue)
+                # Pass the ORM objects directly
+                proc_thread = VisionProcessingThread(identifier, pipeline, camera, frame_queue)
                 
-                acq_thread.add_pipeline_queue(pipeline['id'], frame_queue)
-                processing_threads[pipeline['id']] = proc_thread
+                acq_thread.add_pipeline_queue(pipeline.id, frame_queue)
+                processing_threads[pipeline.id] = proc_thread
             
             active_camera_threads[identifier] = {
                 'acquisition': acq_thread,
@@ -56,23 +58,23 @@ def stop_camera_thread(identifier):
                 proc_thread.join(timeout=2)
 
 
-def add_pipeline_to_camera(camera_id, pipeline_info, app):
+def add_pipeline_to_camera(camera_id, pipeline, app):
     """Starts a new processing thread for a running camera."""
     with app.app_context():
-        camera = db.get_camera(camera_id)
+        camera = Camera.query.get(camera_id)
     if not camera:
         return
 
-    identifier = camera['identifier']
+    identifier = camera.identifier
     with active_camera_threads_lock:
         if identifier in active_camera_threads:
             thread_group = active_camera_threads[identifier]
-            pipeline_id = pipeline_info['id']
+            pipeline_id = pipeline.id
 
             if pipeline_id not in thread_group['processing_threads']:
                 print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
                 frame_queue = queue.Queue(maxsize=2)
-                proc_thread = VisionProcessingThread(identifier, pipeline_info, dict(camera), frame_queue)
+                proc_thread = VisionProcessingThread(identifier, pipeline, camera, frame_queue)
                 thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
                 thread_group['processing_threads'][pipeline_id] = proc_thread
                 proc_thread.start()
@@ -81,11 +83,11 @@ def add_pipeline_to_camera(camera_id, pipeline_info, app):
 def remove_pipeline_from_camera(camera_id, pipeline_id, app):
     """Stops a specific processing thread for a running camera."""
     with app.app_context():
-        camera = db.get_camera(camera_id)
+        camera = Camera.query.get(camera_id)
     if not camera:
         return
 
-    identifier = camera['identifier']
+    identifier = camera.identifier
     with active_camera_threads_lock:
         if identifier in active_camera_threads:
             thread_group = active_camera_threads[identifier]
@@ -101,14 +103,14 @@ def remove_pipeline_from_camera(camera_id, pipeline_id, app):
 def update_pipeline_in_camera(camera_id, pipeline_id, app):
     """Stops and restarts a pipeline processing thread to apply new settings."""
     with app.app_context():
-        camera = db.get_camera(camera_id)
-        pipeline_info = db.get_pipeline(pipeline_id)
+        camera = Camera.query.get(camera_id)
+        pipeline = Pipeline.query.get(pipeline_id)
     
-    if not camera or not pipeline_info:
+    if not camera or not pipeline:
         print(f"Error: Could not find camera or pipeline for update.")
         return
 
-    identifier = camera['identifier']
+    identifier = camera.identifier
     with active_camera_threads_lock:
         if identifier in active_camera_threads:
             thread_group = active_camera_threads[identifier]
@@ -124,7 +126,7 @@ def update_pipeline_in_camera(camera_id, pipeline_id, app):
             # 2. Start a new thread with the updated pipeline_info
             print(f"Starting new pipeline thread {pipeline_id} with updated config.")
             frame_queue = queue.Queue(maxsize=2)
-            new_proc_thread = VisionProcessingThread(identifier, dict(pipeline_info), dict(camera), frame_queue)
+            new_proc_thread = VisionProcessingThread(identifier, pipeline, camera, frame_queue)
             
             thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
             thread_group['processing_threads'][pipeline_id] = new_proc_thread
@@ -135,9 +137,9 @@ def start_all_camera_threads(app):
     """Initializes all configured cameras at application startup."""
     print("Starting acquisition and processing threads for all configured cameras...")
     with app.app_context():
-        cameras = db.get_cameras()
+        cameras = Camera.query.all()
     for camera in cameras:
-        start_camera_thread(dict(camera), app)
+        start_camera_thread(camera, app)
 
 
 def stop_all_camera_threads():

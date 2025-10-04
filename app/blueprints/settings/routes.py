@@ -1,18 +1,26 @@
-from flask import render_template, request, redirect, url_for, send_file
-from app import db, network_utils
+from flask import render_template, request, redirect, url_for, send_file, current_app
+from app.extensions import db
+from app import network_utils
+from app.models import Setting, Camera, Pipeline
 from app.drivers.genicam_driver import GenICamDriver
 import os
 from . import settings
 
+def get_db_path():
+    """Extracts the database file path from the SQLAlchemy URI."""
+    uri = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+    if uri and uri.startswith('sqlite:///'):
+        return uri.replace('sqlite:///', '', 1)
+    return None
 
 @settings.route('/')
 def settings_page():
     """Renders the application settings page."""
     all_settings = {
-        'genicam_cti_path': db.get_setting('genicam_cti_path'),
-        'team_number': db.get_setting('team_number'),
-        'ip_mode': db.get_setting('ip_mode'),
-        'hostname': db.get_setting('hostname'),
+        'genicam_cti_path': (Setting.query.get('genicam_cti_path') or {}).value or "",
+        'team_number': (Setting.query.get('team_number') or {}).value or "",
+        'ip_mode': (Setting.query.get('ip_mode') or {}).value or "dhcp",
+        'hostname': (Setting.query.get('hostname') or {}).value or "",
     }
     current_network_settings = network_utils.get_network_settings()
     current_hostname = network_utils.get_hostname()
@@ -21,13 +29,22 @@ def settings_page():
                            current_network_settings=current_network_settings, 
                            current_hostname=current_hostname)
 
+def _update_setting(key, value):
+    """Helper to update a setting in the database."""
+    setting = Setting.query.get(key)
+    if setting:
+        setting.value = value
+    else:
+        setting = Setting(key=key, value=value)
+        db.session.add(setting)
 
 @settings.route('/global/update', methods=['POST'])
 def update_global_settings():
     """Updates global application settings."""
-    db.update_setting('team_number', request.form.get('team_number'))
-    db.update_setting('ip_mode', request.form.get('ip_mode'))
-    db.update_setting('hostname', request.form.get('hostname'))
+    _update_setting('team_number', request.form.get('team_number', ''))
+    _update_setting('ip_mode', request.form.get('ip_mode', 'dhcp'))
+    _update_setting('hostname', request.form.get('hostname', ''))
+    db.session.commit()
     return redirect(url_for('settings.settings_page'))
 
 
@@ -38,12 +55,14 @@ def update_genicam_settings():
     new_path = None
 
     if path and path.lower().endswith('.cti') and os.path.exists(path):
-        db.update_setting('genicam_cti_path', path)
+        _update_setting('genicam_cti_path', path)
         new_path = path
     else:
-        db.clear_setting('genicam_cti_path')
+        setting = Setting.query.get('genicam_cti_path')
+        if setting:
+            db.session.delete(setting)
     
-    # Re-initialize the driver with the new path
+    db.session.commit()
     GenICamDriver.initialize(new_path)
     return redirect(url_for('settings.settings_page'))
 
@@ -51,8 +70,10 @@ def update_genicam_settings():
 @settings.route('/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     """Clears the GenICam CTI path."""
-    db.clear_setting('genicam_cti_path')
-    # Re-initialize the driver with no CTI file
+    setting = Setting.query.get('genicam_cti_path')
+    if setting:
+        db.session.delete(setting)
+        db.session.commit()
     GenICamDriver.initialize(None)
     return redirect(url_for('settings.settings_page'))
 
@@ -76,18 +97,25 @@ def reboot_device():
 @settings.route('/control/export-db')
 def export_db():
     """Exports the application database."""
-    return send_file(db.DB_PATH, as_attachment=True)
+    db_path = get_db_path()
+    if db_path and os.path.exists(db_path):
+        return send_file(db_path, as_attachment=True)
+    return "Database not found.", 404
 
 
 @settings.route('/control/import-db', methods=['POST'])
 def import_db():
     """Imports an application database."""
+    db_path = get_db_path()
+    if not db_path:
+        return "Database path not configured.", 500
+        
     if 'database' not in request.files:
         return redirect(url_for('settings.settings_page'))
     
     file = request.files['database']
     if file.filename and file.filename.endswith('.db'):
-        file.save(db.DB_PATH)
+        file.save(db_path)
         
     return redirect(url_for('settings.settings_page'))
 
@@ -95,6 +123,11 @@ def import_db():
 @settings.route('/control/factory-reset', methods=['POST'])
 def factory_reset():
     """Resets the application to its factory settings."""
-    db.factory_reset()
+    # Order matters due to foreign key constraints
+    db.session.query(Pipeline).delete()
+    db.session.query(Camera).delete()
+    db.session.query(Setting).delete()
+    db.session.commit()
+    
     GenICamDriver.initialize(None)
     return redirect(url_for('settings.settings_page'))

@@ -1,5 +1,8 @@
 from flask import render_template, request, jsonify, Response, send_file, current_app, make_response
-from app import db, camera_manager, camera_stream
+import json
+from app.extensions import db
+from app import camera_manager, camera_stream
+from app.models import Camera
 from app.calibration_utils import generate_chessboard_pdf, generate_charuco_board_pdf
 import cv2
 import io
@@ -21,7 +24,7 @@ def create_error_image(message, width=640, height=480):
 @calibration.route('/')
 def calibration_page():
     """Renders the camera calibration page."""
-    cameras = db.get_cameras()
+    cameras = Camera.query.all()
     return render_template('pages/calibration.html', cameras=cameras)
 
 
@@ -113,11 +116,11 @@ def calibration_capture():
     if not camera_id:
         return jsonify({'success': False, 'error': 'Camera ID is required.'}), 400
 
-    camera = db.get_camera(int(camera_id))
+    camera = Camera.query.get(int(camera_id))
     if not camera:
         return jsonify({'success': False, 'error': 'Camera not found.'}), 404
 
-    frame = camera_stream.get_latest_raw_frame(camera['identifier'])
+    frame = camera_stream.get_latest_raw_frame(camera.identifier)
     if frame is None:
         return jsonify({'success': False, 'error': 'Could not get frame from camera.'}), 500
 
@@ -156,16 +159,18 @@ def calibration_save():
     dist_coeffs = data.get('dist_coeffs')
     error = data.get('reprojection_error')
 
-    if not all([camera_id, matrix, dist_coeffs, error]):
+    if not all([camera_id, matrix, dist_coeffs, error is not None]):
         return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
 
-    db.update_camera_calibration(int(camera_id), matrix, dist_coeffs, float(error))
+    camera = Camera.query.get_or_404(int(camera_id))
+    camera.camera_matrix_json = json.dumps(matrix)
+    camera.dist_coeffs_json = json.dumps(dist_coeffs)
+    camera.reprojection_error = float(error)
+    db.session.commit()
     
     # Restart the camera thread to apply the new calibration
-    camera = db.get_camera(int(camera_id))
-    if camera:
-        camera_manager.stop_camera_thread(camera['identifier'])
-        camera_manager.start_camera_thread(dict(camera), current_app._get_current_object())
+    camera_manager.stop_camera_thread(camera.identifier)
+    camera_manager.start_camera_thread(camera, current_app._get_current_object())
 
     return jsonify({'success': True})
 
@@ -173,13 +178,13 @@ def calibration_save():
 @calibration.route('/calibration_feed/<int:camera_id>')
 def calibration_feed(camera_id):
     """Streams the standard video feed for a given camera, used on the calibration page."""
-    camera = db.get_camera(camera_id)
+    camera = Camera.query.get(camera_id)
     if not camera:
         return "Camera not found", 404
 
-    if not camera_manager.is_camera_thread_running(camera['identifier']):
+    if not camera_manager.is_camera_thread_running(camera.identifier):
         error_img = create_error_image("Camera not connected")
         return Response(error_img, mimetype='image/jpeg')
 
-    return Response(camera_stream.get_camera_feed(dict(camera)),
+    return Response(camera_stream.get_camera_feed(camera),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
