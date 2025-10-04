@@ -6,7 +6,7 @@ from .drivers.oakd_driver import OAKDDriver
 # --- Driver Factory ---
 def get_driver(camera_db_data):
     """Factory function to get the correct driver instance."""
-    camera_type = camera_db_data['camera_type']
+    camera_type = camera_db_data.camera_type
     if camera_type == 'USB':
         return USBDriver(camera_db_data)
     elif camera_type == 'GenICam':

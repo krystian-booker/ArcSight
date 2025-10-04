@@ -6,7 +6,7 @@ class BaseDriver(ABC):
     """
     def __init__(self, camera_db_data):
         self.camera_db_data = camera_db_data
-        self.identifier = camera_db_data['identifier']
+        self.identifier = camera_db_data.identifier
 
     @abstractmethod
     def connect(self):

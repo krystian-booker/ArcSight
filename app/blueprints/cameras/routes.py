@@ -51,7 +51,7 @@ def add_camera():
 def update_camera(camera_id):
     """Updates a camera's settings."""
     name = request.form.get('camera-name')
-    camera = Camera.query.get_or_404(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if name:
         camera.name = name
         db.session.commit()
@@ -61,7 +61,7 @@ def update_camera(camera_id):
 @cameras.route('/delete/<int:camera_id>', methods=['POST'])
 def delete_camera(camera_id):
     """Deletes a camera."""
-    camera = Camera.query.get_or_404(camera_id)
+    camera = db.session.get(Camera, camera_id)
     camera_manager.stop_camera_thread(camera.identifier)
     db.session.delete(camera)
     db.session.commit()
@@ -113,7 +113,7 @@ def get_camera_controls(camera_id):
 @cameras.route('/update_controls/<int:camera_id>', methods=['POST'])
 def update_camera_controls(camera_id):
     """Updates the control settings for a camera."""
-    camera = Camera.query.get_or_404(camera_id)
+    camera = db.session.get(Camera, camera_id)
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Invalid JSON'}), 400

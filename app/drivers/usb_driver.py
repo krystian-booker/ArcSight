@@ -13,7 +13,7 @@ class USBDriver(BaseDriver):
         except (ValueError, TypeError):
             raise ConnectionError(f"Invalid identifier for USB camera: '{self.identifier}'. Must be an integer index.")
 
-        self.cap = cv2.VideoCapture(device_index)
+        self.cap = cv2.VideoCapture(device_index, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
             self.cap = None # Ensure cap is None if connection failed
             raise ConnectionError(f"Failed to open USB camera at index {self.identifier}")
@@ -47,7 +47,7 @@ class USBDriver(BaseDriver):
         devices = []
         # Check the first 10 indices, which is a common practice.
         for i in range(10):
-            cap = cv2.VideoCapture(i)
+            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
             if cap.isOpened():
                 # For USB cameras, we use the index as the identifier.
                 # A more descriptive name could be fetched if the backend library supports it,
