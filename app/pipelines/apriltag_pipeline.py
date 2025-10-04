@@ -22,6 +22,11 @@ class AprilTagPipeline:
         # Get tag family from config, default to 'tag36h11'
         family = config.get('family', 'tag36h11')
         
+        # TODO: Remove this is a hack for now
+        # Ensure the family name has the 'tag' prefix
+        if not family.startswith('tag'):
+            family = f"tag{family}"
+            
         # Add the family to the detector. The second argument is error correction bits.
         self.detector.addFamily(family, config.get('error_correction', 3))
 
