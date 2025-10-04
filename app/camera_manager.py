@@ -1,5 +1,6 @@
 import threading
 import queue
+from sqlalchemy.orm import joinedload
 
 from .extensions import db
 from .models import Camera, Pipeline
@@ -61,7 +62,7 @@ def stop_camera_thread(identifier):
 def add_pipeline_to_camera(camera_id, pipeline, app):
     """Starts a new processing thread for a running camera."""
     with app.app_context():
-        camera = Camera.query.get(camera_id)
+        camera = db.session.get(Camera, camera_id)
     if not camera:
         return
 
@@ -83,7 +84,7 @@ def add_pipeline_to_camera(camera_id, pipeline, app):
 def remove_pipeline_from_camera(camera_id, pipeline_id, app):
     """Stops a specific processing thread for a running camera."""
     with app.app_context():
-        camera = Camera.query.get(camera_id)
+        camera = db.session.get(Camera, camera_id)
     if not camera:
         return
 
@@ -103,8 +104,8 @@ def remove_pipeline_from_camera(camera_id, pipeline_id, app):
 def update_pipeline_in_camera(camera_id, pipeline_id, app):
     """Stops and restarts a pipeline processing thread to apply new settings."""
     with app.app_context():
-        camera = Camera.query.get(camera_id)
-        pipeline = Pipeline.query.get(pipeline_id)
+        camera = db.session.get(Camera, camera_id)
+        pipeline = db.session.get(Pipeline, pipeline_id)
     
     if not camera or not pipeline:
         print(f"Error: Could not find camera or pipeline for update.")
@@ -137,7 +138,7 @@ def start_all_camera_threads(app):
     """Initializes all configured cameras at application startup."""
     print("Starting acquisition and processing threads for all configured cameras...")
     with app.app_context():
-        cameras = Camera.query.all()
+        cameras = Camera.query.options(joinedload(Camera.pipelines)).all()
     for camera in cameras:
         start_camera_thread(camera, app)
 

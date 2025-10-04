@@ -41,7 +41,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
-        genicam_setting = Setting.query.get('genicam_cti_path')
+        genicam_setting = db.session.get(Setting, 'genicam_cti_path')
         cti_path = genicam_setting.value if genicam_setting else ""
         GenICamDriver.initialize(cti_path)
         camera_manager.start_all_camera_threads(app)

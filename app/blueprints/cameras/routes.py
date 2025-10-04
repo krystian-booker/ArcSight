@@ -11,7 +11,7 @@ from . import cameras
 def cameras_page():
     """Renders the camera management page."""
     cameras_list = Camera.query.all()
-    genicam_setting = Setting.query.get('genicam_cti_path')
+    genicam_setting = db.session.get(Setting, 'genicam_cti_path')
     return render_template('pages/cameras.html', cameras=cameras_list, genicam_enabled=bool(genicam_setting and genicam_setting.value))
 
 
@@ -71,7 +71,7 @@ def delete_camera(camera_id):
 @cameras.route('/results/<int:camera_id>')
 def get_camera_results(camera_id):
     """Returns the latest results from all pipelines for a given camera."""
-    camera = Camera.query.get(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if not camera:
         return jsonify({'error': 'Camera not found'}), 404
     
@@ -94,7 +94,7 @@ def discover_cameras():
 @cameras.route('/status/<int:camera_id>')
 def camera_status(camera_id):
     """Returns the connection status of a camera."""
-    camera = Camera.query.get(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if camera:
         is_running = camera_manager.is_camera_thread_running(camera.identifier)
         return jsonify({'connected': is_running})
@@ -104,7 +104,7 @@ def camera_status(camera_id):
 @cameras.route('/controls/<int:camera_id>', methods=['GET'])
 def get_camera_controls(camera_id):
     """Returns the control settings for a camera."""
-    camera = Camera.query.get(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if camera:
         return jsonify(camera.to_dict())
     return jsonify({'error': 'Camera not found'}), 404
@@ -135,7 +135,7 @@ def update_camera_controls(camera_id):
 @cameras.route('/genicam/nodes/<int:camera_id>', methods=['GET'])
 def genicam_nodes(camera_id):
     """Returns the node map for a GenICam camera."""
-    camera = Camera.query.get(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if not camera or camera.camera_type != 'GenICam':
         return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
 
@@ -149,7 +149,7 @@ def genicam_nodes(camera_id):
 @cameras.route('/genicam/nodes/<int:camera_id>', methods=['POST'])
 def update_genicam_node(camera_id):
     """Updates a node on a GenICam camera."""
-    camera = Camera.query.get(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if not camera or camera.camera_type != 'GenICam':
         return jsonify({'error': 'Camera not found or not a GenICam device'}), 404
 

@@ -28,7 +28,7 @@ def dashboard_page():
 @dashboard.route('/video_feed/<int:camera_id>')
 def video_feed(camera_id):
     """Streams the video feed for a given camera."""
-    camera = Camera.query.get(camera_id)
+    camera = db.session.get(Camera, camera_id)
     if not camera:
         return "Camera not found", 404
 
@@ -43,7 +43,7 @@ def video_feed(camera_id):
 @dashboard.route('/processed_video_feed/<int:pipeline_id>')
 def processed_video_feed(pipeline_id):
     """Streams the processed video feed for a given pipeline."""
-    pipeline = Pipeline.query.get(pipeline_id)
+    pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
         error_img = create_error_image("Pipeline not found")
         return Response(error_img, mimetype='image/jpeg', status=404)

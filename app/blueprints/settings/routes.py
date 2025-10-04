@@ -17,10 +17,10 @@ def get_db_path():
 def settings_page():
     """Renders the application settings page."""
     all_settings = {
-        'genicam_cti_path': (Setting.query.get('genicam_cti_path') or {}).value or "",
-        'team_number': (Setting.query.get('team_number') or {}).value or "",
-        'ip_mode': (Setting.query.get('ip_mode') or {}).value or "dhcp",
-        'hostname': (Setting.query.get('hostname') or {}).value or "",
+        'genicam_cti_path': (db.session.get(Setting, 'genicam_cti_path') or {}).value or "",
+        'team_number': (db.session.get(Setting, 'team_number') or {}).value or "",
+        'ip_mode': (db.session.get(Setting, 'ip_mode') or {}).value or "dhcp",
+        'hostname': (db.session.get(Setting, 'hostname') or {}).value or "",
     }
     current_network_settings = network_utils.get_network_settings()
     current_hostname = network_utils.get_hostname()
@@ -31,7 +31,7 @@ def settings_page():
 
 def _update_setting(key, value):
     """Helper to update a setting in the database."""
-    setting = Setting.query.get(key)
+    setting = db.session.get(Setting, key)
     if setting:
         setting.value = value
     else:
@@ -58,7 +58,7 @@ def update_genicam_settings():
         _update_setting('genicam_cti_path', path)
         new_path = path
     else:
-        setting = Setting.query.get('genicam_cti_path')
+        setting = db.session.get(Setting, 'genicam_cti_path')
         if setting:
             db.session.delete(setting)
     
@@ -70,7 +70,7 @@ def update_genicam_settings():
 @settings.route('/genicam/clear', methods=['POST'])
 def clear_genicam_settings():
     """Clears the GenICam CTI path."""
-    setting = Setting.query.get('genicam_cti_path')
+    setting = db.session.get(Setting, 'genicam_cti_path')
     if setting:
         db.session.delete(setting)
         db.session.commit()
