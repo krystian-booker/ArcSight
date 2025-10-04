@@ -22,7 +22,7 @@ def create_error_image(message, width=640, height=480):
 def calibration_page():
     """Renders the camera calibration page."""
     cameras = db.get_cameras()
-    return render_template('calibration.html', cameras=cameras)
+    return render_template('pages/calibration.html', cameras=cameras)
 
 
 @calibration.route('/generate_pattern')

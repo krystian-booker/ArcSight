@@ -16,7 +16,7 @@ def settings_page():
     }
     current_network_settings = network_utils.get_network_settings()
     current_hostname = network_utils.get_hostname()
-    return render_template('settings.html', 
+    return render_template('pages/settings.html', 
                            settings=all_settings, 
                            current_network_settings=current_network_settings, 
                            current_hostname=current_hostname)

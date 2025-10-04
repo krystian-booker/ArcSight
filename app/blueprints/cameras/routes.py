@@ -9,7 +9,7 @@ def cameras_page():
     """Renders the camera management page."""
     cameras_list = db.get_cameras()
     genicam_cti_path = db.get_setting('genicam_cti_path')
-    return render_template('cameras.html', cameras=cameras_list, genicam_enabled=bool(genicam_cti_path))
+    return render_template('pages/cameras.html', cameras=cameras_list, genicam_enabled=bool(genicam_cti_path))
 
 
 @cameras.route('/add', methods=['POST'])

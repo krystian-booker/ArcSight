@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "layouts/base.html" %}
 
 {% block title %}Camera Calibration{% endblock %}
 
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) {
                 setupStep.classList.add('hidden');
                 captureStep.classList.remove('hidden');
-                calibrationFeed.src = `/calibration_feed/${state.cameraId}`;
+                calibrationFeed.src = `/calibration/calibration_feed/${state.cameraId}`;
                 showStatus('Calibration session started. Begin capturing frames.');
             } else {
                 showStatus(data.error || 'An unknown error occurred.', true);
