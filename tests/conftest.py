@@ -16,8 +16,13 @@ def app():
 
     with app.app_context():
         db.create_all()
-        yield app
-        db.drop_all()
+        engine = db.engine
+        try:
+            yield app
+        finally:
+            db.session.remove()
+            db.drop_all()
+            engine.dispose()
 
 @pytest.fixture()
 def client(app):
