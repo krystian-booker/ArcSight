@@ -7,7 +7,7 @@ try:
     # While cv2 is already imported in this file, the critical part is the
     # initial application load order. This import is for functionality.
     import depthai as dai
-except ImportError:
+except ImportError:  # pragma: no cover
     dai = None
 
 class OAKDDriver(BaseDriver):

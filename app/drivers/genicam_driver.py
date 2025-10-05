@@ -7,7 +7,7 @@ from .base_driver import BaseDriver
 try:
     from harvesters.core import Harvester
     from genicam import genapi
-except ImportError:
+except ImportError:  # pragma: no cover
     Harvester = None
     genapi = None
 

@@ -201,3 +201,58 @@ def test_get_latest_raw_frame_is_none(mock_camera, mock_active_threads):
     
     frame = camera_stream.get_latest_raw_frame(mock_camera.identifier)
     assert frame is None
+
+def test_get_camera_feed_waits_for_frame(mock_camera, mock_active_threads):
+    """
+    Test the camera feed generator when it has to wait for a frame to become available.
+    This ensures the time.sleep line is covered.
+    """
+    # The thread is alive for two loops, then dies.
+    mock_active_threads['acq'].is_alive.side_effect = [True, True, False]
+    
+    # The frame is not available on the first loop.
+    mock_active_threads['acq'].latest_frame_for_display = None
+
+    feed_generator = camera_stream.get_camera_feed(mock_camera)
+    
+    with patch('time.sleep') as mock_sleep:
+        # This side effect runs when time.sleep is called after the first empty loop.
+        def make_frame_available(duration):
+            mock_active_threads['acq'].latest_frame_for_display = b"new_frame_data"
+        
+        mock_sleep.side_effect = make_frame_available
+
+        # The generator should loop once, find no frame, sleep (and trigger the side effect),
+        # then loop again, find the new frame, and yield it.
+        frame = next(feed_generator)
+
+        assert b"new_frame_data" in frame
+        mock_sleep.assert_called_once_with(0.01)
+
+def test_get_processed_camera_feed_waits_for_frame(mock_active_threads):
+    """
+    Test the processed feed generator when it has to wait for a frame.
+    This ensures the time.sleep line is covered.
+    """
+    pipeline_id = 101
+    # The thread is alive for two loops, then dies.
+    mock_active_threads['proc'].is_alive.side_effect = [True, True, False]
+    
+    # The frame is not available on the first loop.
+    mock_active_threads['proc'].latest_processed_frame = None
+
+    feed_generator = camera_stream.get_processed_camera_feed(pipeline_id)
+    
+    with patch('time.sleep') as mock_sleep:
+        # This side effect runs when time.sleep is called after the first empty loop.
+        def make_frame_available(duration):
+            mock_active_threads['proc'].latest_processed_frame = b"new_processed_frame"
+        
+        mock_sleep.side_effect = make_frame_available
+
+        # The generator should loop once, find no frame, sleep (and trigger the side effect),
+        # then loop again, find the new frame, and yield it.
+        frame = next(feed_generator)
+
+        assert b"new_processed_frame" in frame
+        mock_sleep.assert_called_once_with(0.01)

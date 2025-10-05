@@ -9,22 +9,22 @@ class BaseDriver(ABC):
         self.identifier = camera_db_data.identifier
 
     @abstractmethod
-    def connect(self):
+    def connect(self):  # pragma: no cover
         """Establishes a connection to the camera."""
         pass
 
     @abstractmethod
-    def disconnect(self):
+    def disconnect(self):  # pragma: no cover
         """Closes the connection to the camera."""
         pass
 
     @abstractmethod
-    def get_frame(self):
+    def get_frame(self):  # pragma: no cover
         """Retrieves a single frame from the camera."""
         pass
 
     @staticmethod
     @abstractmethod
-    def list_devices():
+    def list_devices():  # pragma: no cover
         """Returns a list of available devices for this driver type."""
         pass
