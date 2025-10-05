@@ -151,9 +151,11 @@ def test_charuco_calibration_flow(manager, mocker):
         list_of_fake_corners.append(img_pts_subset.reshape(-1, 1, 2).astype(np.float32))
         list_of_fake_ids.append(visible_indices.reshape(-1, 1))
 
-    mocker.patch('cv2.aruco.CharucoDetector.detectBoard', side_effect=[
+    mock_detector_instance = mocker.MagicMock()
+    mock_detector_instance.detectBoard.side_effect = [
         (c, i, None, None) for c, i in zip(list_of_fake_corners, list_of_fake_ids)
-    ])
+    ]
+    mocker.patch('cv2.aruco.CharucoDetector', return_value=mock_detector_instance)
 
     dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
