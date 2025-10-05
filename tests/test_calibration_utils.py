@@ -191,3 +191,78 @@ def test_capture_fails_if_pattern_not_found(manager, mocker):
 
     assert not success
     assert "pattern not found" in msg.lower()
+
+def test_get_non_existent_session(manager):
+    """Test that getting a non-existent session returns None."""
+    assert manager.get_session(999) is None
+
+def test_capture_fails_if_not_enough_charuco_corners(manager, mocker):
+    """Test that ChAruco capture fails if too few corners are visible."""
+    camera_id = 6
+    params = {
+        'squares_x': 5, 'squares_y': 7, 'square_size': 30,
+        'marker_size': 15, 'dictionary_name': 'DICT_4X4_50'
+    }
+    manager.start_session(camera_id, 'ChAruco', params)
+
+    # Mock detector to return only 3 corners (less than the minimum of 4)
+    mock_detector_instance = mocker.MagicMock()
+    mock_detector_instance.detectBoard.return_value = (
+        np.array([[[1,1]],[[2,2]],[[3,3]]]), # corners
+        np.array([[1],[2],[3]]), # ids
+        None, None
+    )
+    mocker.patch('cv2.aruco.CharucoDetector', return_value=mock_detector_instance)
+
+    blank_image = np.zeros((480, 640, 3), dtype=np.uint8)
+    success, msg, _ = manager.capture_points(camera_id, blank_image)
+
+    assert not success
+    assert "Not enough ChAruco corners found" in msg
+
+def test_calculate_calibration_handles_cv2_exception(manager, mocker):
+    """Test that a cv2 exception during calculation is caught and handled."""
+    camera_id = 7
+    params = {'rows': 6, 'cols': 9, 'square_size': 25}
+    manager.start_session(camera_id, 'Chessboard', params)
+
+    # Add enough dummy data to pass the initial checks
+    session = manager.get_session(camera_id)
+    dummy_points = np.zeros((54, 3), np.float32)
+    session['obj_points'] = [dummy_points] * 5
+    session['img_points'] = [dummy_points[:, :2]] * 5
+    session['frame_shape'] = (480, 640)
+
+    # Mock the calibration function to throw an exception
+    mocker.patch('cv2.calibrateCamera', side_effect=cv2.error("Test CV2 Error"))
+
+    results = manager.calculate_calibration(camera_id)
+    assert not results['success']
+    assert "Test CV2 Error" in results['error']
+
+def test_generate_charuco_pdf_handles_imencode_failure(mocker):
+    """Test that an exception during PDF generation is handled."""
+    mocker.patch('cv2.imencode', return_value=(False, None))
+    with pytest.raises(ValueError, match="Could not encode ChAruco board image."):
+        buffer = io.BytesIO()
+        params = {
+            'squares_x': 5, 'squares_y': 7, 'square_size': 30,
+            'marker_size': 15, 'dictionary_name': 'DICT_4X4_50'
+        }
+        generate_charuco_board_pdf(buffer, params)
+
+def test_capture_unsupported_pattern_type(manager):
+    """Test capture with an unsupported pattern type returns an error."""
+    camera_id = 8
+    manager.start_session(camera_id, 'UnsupportedPattern', {})
+    blank_image = np.zeros((480, 640, 3), dtype=np.uint8)
+    success, msg, _ = manager.capture_points(camera_id, blank_image)
+    assert not success
+    assert "Unsupported pattern type" in msg
+
+def test_capture_points_with_no_session(manager):
+    """Test that capturing points fails if no session has been started."""
+    dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    success, msg, _ = manager.capture_points(999, dummy_frame) # Non-existent camera_id
+    assert not success
+    assert "No active session for this camera" in msg
