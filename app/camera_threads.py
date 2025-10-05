@@ -316,8 +316,9 @@ class CameraAcquisitionThread(threading.Thread):
             finally:
                 if self.driver:
                     self.driver.disconnect()
-                # Wait before retrying connection
-                self.stop_event.wait(5.0) 
+                # Wait before retrying connection, but only if we're not stopping.
+                if not self.stop_event.is_set():
+                    self.stop_event.wait(5.0)
 
         print(f"Acquisition thread for {self.identifier} has stopped.")
 

@@ -173,4 +173,4 @@ def is_camera_thread_running(identifier):
     """Checks if a camera's acquisition thread is active."""
     with active_camera_threads_lock:
         thread_group = active_camera_threads.get(identifier)
-        return thread_group and thread_group['acquisition'].is_alive()
+        return bool(thread_group and thread_group['acquisition'].is_alive())
