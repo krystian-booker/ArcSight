@@ -171,7 +171,7 @@ class GenICamDriver(BaseDriver):
             nodes = []
             for node_wrapper in node_map.nodes:
                 try:
-                    interface_type = genapi.EInterfaceType(node_wrapper.node.principal_interface_type)
+                    interface_type = node_wrapper.node.principal_interface_type
                 except Exception:
                     continue
                 if interface_type not in SUPPORTED_INTERFACE_TYPES:
