@@ -16,3 +16,7 @@ dependencies:
       - reportlab
       - depthai
       - flask-sqlalchemy
+      - pytest
+      - pytest-flask
+      - pytest-cov
+      - pytest-mock

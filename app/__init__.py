@@ -10,10 +10,19 @@ from .calibration_utils import CalibrationManager
 from .models import Setting
 
 
-def create_app():
+def create_app(config_overrides=None):
     """Creates and configures the Flask application."""
     app = Flask(__name__, static_folder='static', template_folder='templates')
     app.calibration_manager = CalibrationManager()
+
+    # Default configuration
+    app.config.from_mapping(
+        CAMERA_THREADS_ENABLED=True,
+    )
+
+    # Load instance-specific config
+    if config_overrides:
+        app.config.from_mapping(config_overrides)
 
     # Database configuration
     APP_NAME = "VisionTools"
@@ -21,7 +30,10 @@ def create_app():
     data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
     os.makedirs(data_dir, exist_ok=True)
     db_path = os.path.join(data_dir, "config.db")
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    
+    # Use provided DB URI or default
+    if 'SQLALCHEMY_DATABASE_URI' not in app.config:
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
@@ -41,11 +53,14 @@ def create_app():
 
     with app.app_context():
         db.create_all()
-        genicam_setting = db.session.get(Setting, 'genicam_cti_path')
-        cti_path = genicam_setting.value if genicam_setting else ""
-        GenICamDriver.initialize(cti_path)
-        camera_manager.start_all_camera_threads(app)
+        # Only initialize cameras and threads if not disabled
+        if app.config.get("CAMERA_THREADS_ENABLED", True):
+            genicam_setting = db.session.get(Setting, 'genicam_cti_path')
+            cti_path = genicam_setting.value if genicam_setting else ""
+            GenICamDriver.initialize(cti_path)
+            camera_manager.start_all_camera_threads(app)
 
-    atexit.register(camera_manager.stop_all_camera_threads)
+    if app.config.get("CAMERA_THREADS_ENABLED", True):
+        atexit.register(camera_manager.stop_all_camera_threads)
 
     return app
