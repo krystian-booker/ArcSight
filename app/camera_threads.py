@@ -326,13 +326,13 @@ class CameraAcquisitionThread(threading.Thread):
         """Inner loop that processes frames once a camera is connected."""
         orientation = self.camera.orientation
         last_config_check = time.time()
-        
+
         # Initialize buffer pool with the first frame
         first_frame = self.driver.get_frame()
         if first_frame is None:
             print(f"[{self.identifier}] Failed to get first frame, cannot initialize buffer pool.")
             return # Exit to trigger reconnection
-        
+
         oriented_first_frame = self._apply_orientation(first_frame, orientation)
         self.buffer_pool.initialize(oriented_first_frame)
 
@@ -342,15 +342,23 @@ class CameraAcquisitionThread(threading.Thread):
             # Periodically check for orientation changes in the DB
             if time.time() - last_config_check > 2.0:
                 with self.app.app_context():
-                    refreshed_data = db.session.get(Camera, self.camera.id)
-                if refreshed_data:
-                    new_orientation = refreshed_data.orientation
-                    if new_orientation != orientation:
-                        print(f"[{self.identifier}] Orientation changed to {new_orientation}. Re-initializing resources.")
-                        orientation = new_orientation
-                        # Re-initialize buffer pool if orientation changes frame size
-                        test_frame = self._apply_orientation(first_frame.copy(), orientation)
-                        self.buffer_pool.initialize(test_frame)
+                    # Create a new session for thread-safe database access
+                    # Using sessionmaker to create an independent session
+                    from sqlalchemy.orm import sessionmaker
+                    Session = sessionmaker(bind=db.engine)
+                    session = Session()
+                    try:
+                        refreshed_data = session.get(Camera, self.camera.id)
+                        if refreshed_data:
+                            new_orientation = refreshed_data.orientation
+                            if new_orientation != orientation:
+                                print(f"[{self.identifier}] Orientation changed to {new_orientation}. Re-initializing resources.")
+                                orientation = new_orientation
+                                # Re-initialize buffer pool if orientation changes frame size
+                                test_frame = self._apply_orientation(first_frame.copy(), orientation)
+                                self.buffer_pool.initialize(test_frame)
+                    finally:
+                        session.close()
                 last_config_check = time.time()
 
             raw_frame_from_cam = self.driver.get_frame()

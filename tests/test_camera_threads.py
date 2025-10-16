@@ -612,23 +612,29 @@ def test_apply_orientation_none():
 def test_acquisition_loop_orientation_change(mock_get_driver, mock_driver, mock_camera, mock_app):
     """Test that the acquisition loop detects orientation changes and reconfigures."""
     mock_get_driver.return_value = mock_driver
-    
+
     thread = CameraAcquisitionThread(mock_camera, mock_app)
     thread.driver = mock_driver # Manually set driver since we're not calling run()
-    
+
     # Mock the DB call to simulate the orientation changing mid-run
     refreshed_camera_mock = MagicMock(spec=Camera)
     refreshed_camera_mock.orientation = 90
-    
-    with patch('app.camera_threads.db.session.get', return_value=refreshed_camera_mock) as mock_db_get, \
+
+    # Create a mock session that will be returned by sessionmaker
+    mock_session = MagicMock()
+    mock_session.get.return_value = refreshed_camera_mock
+    mock_session_class = MagicMock(return_value=mock_session)
+
+    with patch('sqlalchemy.orm.sessionmaker', return_value=mock_session_class) as mock_sessionmaker, \
          patch.object(thread.buffer_pool, 'initialize') as mock_pool_init:
-        
+
         # Provide a long list of time values to prevent StopIteration
         time_side_effects = [0, 0.1, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0]
-        with patch('time.time', side_effect=time_side_effects): 
+        with patch('time.time', side_effect=time_side_effects):
              thread._acquisition_loop()
 
-        mock_db_get.assert_called()
+        mock_session.get.assert_called()
+        mock_session.close.assert_called()
         # The pool should be initialized once at the start, and once after the config change
         assert mock_pool_init.call_count == 2
 
