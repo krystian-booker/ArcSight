@@ -1,4 +1,5 @@
 from flask import jsonify, request, current_app
+from werkzeug.utils import secure_filename
 from app.extensions import db
 from app import camera_manager
 from app.models import Camera, Pipeline
@@ -115,7 +116,8 @@ def upload_pipeline_file(pipeline_id):
         return jsonify({'error': 'Pipeline not found'}), 404
 
     if file:
-        filename = f"pipeline_{pipeline_id}_{file_type}_{file.filename}"
+        safe_filename = secure_filename(file.filename)
+        filename = f"pipeline_{pipeline_id}_{file_type}_{safe_filename}"
         save_path = os.path.join(data_dir, filename)
         file.save(save_path)
 
