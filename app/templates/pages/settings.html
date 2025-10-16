@@ -7,6 +7,7 @@
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
     <h2 class="text-2xl font-bold mb-4">Global Settings</h2>
     <form action="{{ url_for('settings.update_global_settings') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         <div class="space-y-4">
             <div>
                 <label for="team-number" class="block text-sm font-medium text-gray-300">Team Number</label>
@@ -42,6 +43,7 @@
 <div class="bg-gray-800 rounded-lg p-4 mb-8">
     <h2 class="text-2xl font-bold mb-4">GenICam Settings</h2>
     <form action="{{ url_for('settings.update_genicam_settings') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         <div class="mb-4">
             <label for="genicam-cti-path" class="block text-sm font-medium text-gray-300">GenTL Producer Path (.cti file):</label>
             <span class="text-sm text-gray-400">Current: {{ settings.genicam_cti_path or 'Not set' }}</span>
@@ -71,6 +73,7 @@
         </div>
     </div>
     <form id="import-db-form" action="{{ url_for('settings.import_db') }}" method="POST" enctype="multipart/form-data" class="hidden">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         <input type="file" name="database" id="import-db-input" onchange="document.getElementById('import-db-form').submit()">
     </form>
 </div>
@@ -90,6 +93,11 @@
 
 
 <script>
+function getCSRFToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+}
+
 function postToAction(url, confirmMsg) {
     if (confirmMsg && !confirm(confirmMsg)) {
         return;
@@ -97,6 +105,11 @@ function postToAction(url, confirmMsg) {
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = url;
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = getCSRFToken();
+    form.appendChild(csrfInput);
     document.body.appendChild(form);
     form.submit();
 }

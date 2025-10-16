@@ -1,9 +1,10 @@
 import os
 import atexit
+import secrets
 from flask import Flask
 from appdirs import user_data_dir
 
-from .extensions import db
+from .extensions import db, csrf
 from . import camera_manager
 from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
@@ -24,19 +25,24 @@ def create_app(config_overrides=None):
     if config_overrides:
         app.config.from_mapping(config_overrides)
 
+    # Security configuration - Generate a secret key for CSRF protection
+    if 'SECRET_KEY' not in app.config:
+        app.config['SECRET_KEY'] = secrets.token_hex(32)
+
     # Database configuration
     APP_NAME = "VisionTools"
     APP_AUTHOR = "User"
     data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
     os.makedirs(data_dir, exist_ok=True)
     db_path = os.path.join(data_dir, "config.db")
-    
+
     # Use provided DB URI or default
     if 'SQLALCHEMY_DATABASE_URI' not in app.config:
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
+    csrf.init_app(app)
 
     # Import and register the new blueprints
     from .blueprints.dashboard import dashboard as dashboard_blueprint

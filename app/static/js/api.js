@@ -1,4 +1,17 @@
+function getCSRFToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+}
+
 async function fetchJson(url, options = {}) {
+    // Add CSRF token to all requests that modify data
+    if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+        options.headers = {
+            ...options.headers,
+            'X-CSRFToken': getCSRFToken()
+        };
+    }
+
     try {
         const response = await fetch(url, options);
         if (!response.ok) {
@@ -74,6 +87,9 @@ export async function uploadFileToPipeline(pipelineId, file, type) {
     // fetchJson is not used here because we are not sending JSON
     const response = await fetch(`/api/pipelines/${pipelineId}/files`, {
         method: 'POST',
+        headers: {
+            'X-CSRFToken': getCSRFToken()
+        },
         body: formData
     });
     if (!response.ok) {

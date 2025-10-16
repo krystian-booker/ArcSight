@@ -41,6 +41,7 @@
                     {% endif %}
                     <button class="text-indigo-500 hover:text-indigo-700 mr-4" onclick="openEditModal({{ camera.id }}, '{{ camera.name }}')">Edit</button>
                     <form action="{{ url_for('cameras.delete_camera', camera_id=camera.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this camera?');" class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                         <button type="submit" class="text-red-500 hover:text-red-700">Delete</button>
                     </form>
                 </td>
@@ -93,9 +94,10 @@
         <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
         <div class="inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
             <form id="camera-form" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                     <h3 class="text-lg leading-6 font-medium text-white" id="modal-title">Modal Title</h3>
-                    
+
                     <div class="mt-4">
                         <label for="camera-name-modal" class="block text-sm font-medium text-gray-300">Name</label>
                         <input type="text" name="camera-name" id="camera-name-modal" required class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
@@ -151,6 +153,12 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // --- CSRF Token Helper ---
+    function getCSRFToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.content : '';
+    }
+
     // --- Camera Status Checking ---
     let statusInterval;
 
@@ -554,7 +562,8 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(`/cameras/genicam/nodes/${cameraId}`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
             },
             body: JSON.stringify({ name: nodeName, value: value })
         })

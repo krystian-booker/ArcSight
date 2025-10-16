@@ -9,6 +9,7 @@ dependencies:
   - pip
   - pip:
       - flask
+      - flask-wtf
       - harvesters
       - genicam
       - robotpy-apriltag
