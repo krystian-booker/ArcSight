@@ -47,20 +47,22 @@ class RefCountedFrame:
 
 class FrameBufferPool:
     """Manages a pool of pre-allocated numpy arrays to avoid repeated memory allocation."""
-    def __init__(self, name="DefaultPool"):
+    def __init__(self, name="DefaultPool", max_buffers=10):
         self._pool = queue.Queue()
         self._buffer_shape = None
         self._buffer_dtype = None
         self._allocated = 0
         self._name = name
+        self._max_buffers = max_buffers
+        self._lock = threading.Lock()
 
     def initialize(self, frame, num_buffers=5):
         """Initializes the pool with buffers matching the shape and type of a sample frame."""
-        
+
         # Already initialized with correct shape
         if self._buffer_shape is not None and self._buffer_shape == frame.shape:
             return
-        
+
         # If shape is different, we need to re-initialize.
         print(f"[{self._name}] Initializing buffer pool for shape {frame.shape}...")
         self._pool = queue.Queue()
@@ -69,17 +71,24 @@ class FrameBufferPool:
         for _ in range(num_buffers):
             self._pool.put(np.empty(self._buffer_shape, dtype=self._buffer_dtype))
         self._allocated = num_buffers
-        print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers.")
+        print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers (max: {self._max_buffers}).")
 
     def get_buffer(self):
-        """Retrieves a buffer from the pool, allocating a new one if the pool is empty."""
+        """Retrieves a buffer from the pool, allocating a new one if the pool is empty.
+        Returns None if the maximum buffer limit is reached to prevent memory leaks."""
         try:
             return self._pool.get_nowait()
         except queue.Empty:
             if self._buffer_shape is not None:
-                print(f"[{self._name}] Pool empty, allocating new buffer. Total allocated: {self._allocated + 1}")
-                self._allocated += 1
-                return np.empty(self._buffer_shape, dtype=self._buffer_dtype)
+                with self._lock:
+                    if self._allocated < self._max_buffers:
+                        self._allocated += 1
+                        print(f"[{self._name}] Pool empty, allocating new buffer. Total allocated: {self._allocated}")
+                        return np.empty(self._buffer_shape, dtype=self._buffer_dtype)
+                    else:
+                        # Max buffers reached - drop frame to prevent memory leak
+                        print(f"[{self._name}] Max buffer limit ({self._max_buffers}) reached. Dropping frame.")
+                        return None
             return None
 
     def release_buffer(self, buffer):
