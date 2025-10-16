@@ -136,13 +136,21 @@ def update_camera_controls(camera_id):
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Missing one or more required fields'}), 400
 
-    camera.orientation = data['orientation']
+    # Track if orientation changed
+    old_orientation = camera.orientation
+    new_orientation = data['orientation']
+
+    camera.orientation = new_orientation
     camera.exposure_mode = data['exposure_mode']
     camera.exposure_value = data['exposure_value']
     camera.gain_mode = data['gain_mode']
     camera.gain_value = data['gain_value']
     db.session.commit()
-    
+
+    # Notify the camera thread of orientation change via event
+    if old_orientation != new_orientation:
+        camera_manager.notify_camera_config_update(camera.identifier, new_orientation)
+
     return jsonify({'success': True})
 
 

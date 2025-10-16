@@ -174,3 +174,13 @@ def is_camera_thread_running(identifier):
     with active_camera_threads_lock:
         thread_group = active_camera_threads.get(identifier)
         return bool(thread_group and thread_group['acquisition'].is_alive())
+
+
+def notify_camera_config_update(identifier, new_orientation):
+    """Notifies a camera thread of configuration changes via event signaling."""
+    with active_camera_threads_lock:
+        thread_group = active_camera_threads.get(identifier)
+        if thread_group:
+            acq_thread = thread_group['acquisition']
+            acq_thread.update_orientation(new_orientation)
+            print(f"Notified camera {identifier} of orientation change to {new_orientation}")
