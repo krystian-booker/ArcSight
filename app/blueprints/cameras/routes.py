@@ -37,12 +37,26 @@ def add_camera():
             # Add a default pipeline
             default_pipeline = Pipeline(name='default', pipeline_type='AprilTag', config=json.dumps({}))
             new_camera.pipelines.append(default_pipeline)
-            
+
             db.session.add(new_camera)
-            db.session.commit()
-            
-            # Use the committed object
-            camera_manager.start_camera_thread(new_camera, current_app._get_current_object())
+
+            try:
+                db.session.commit()
+
+                # Try to start the camera thread - if this fails, delete the camera from DB
+                try:
+                    camera_manager.start_camera_thread(new_camera, current_app._get_current_object())
+                except Exception as thread_error:
+                    print(f"Error starting camera thread: {thread_error}")
+                    # Thread failed to start, remove the orphaned database entry
+                    db.session.delete(new_camera)
+                    db.session.commit()
+                    raise
+
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error adding camera: {e}")
+                # Camera and pipeline will be removed from database due to rollback
 
     return redirect(url_for('cameras.cameras_page'))
 
