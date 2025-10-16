@@ -387,12 +387,15 @@ class CameraAcquisitionThread(threading.Thread):
 
             pooled_buffer = self.buffer_pool.get_buffer()
             if pooled_buffer is None:
+                # Buffer pool exhausted - drain queues to prevent buildup and memory leaks
+                print(f"[{self.identifier}] Buffer pool exhausted, draining queues to prevent memory buildup")
+                self._drain_processing_queues()
                 continue
 
             # Copy the oriented frame into the buffer for pipelines.
             np.copyto(pooled_buffer, oriented_frame)
             ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
-            
+
             with self.queues_lock:
                 for q in self.processing_queues.values():
                     ref_counted_frame.acquire()
@@ -418,6 +421,23 @@ class CameraAcquisitionThread(threading.Thread):
                 self.fps = frame_count / elapsed_time
                 frame_count = 0
                 start_time = time.time()
+
+    def _drain_processing_queues(self):
+        """Drains old frames from processing queues when buffer pool is exhausted.
+        This prevents queue buildup and releases buffer pool resources."""
+        with self.queues_lock:
+            for q in self.processing_queues.values():
+                drained_count = 0
+                # Drain up to 2 frames from each queue (non-blocking)
+                while drained_count < 2:
+                    try:
+                        old_frame = q.get_nowait()
+                        old_frame.release()  # Release the ref-counted frame
+                        drained_count += 1
+                    except queue.Empty:
+                        break
+                if drained_count > 0:
+                    print(f"[{self.identifier}] Drained {drained_count} old frames from queue")
 
     def _apply_orientation(self, frame, orientation):
         if orientation == 90:
