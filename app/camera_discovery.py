@@ -4,15 +4,26 @@ from .drivers.oakd_driver import OAKDDriver
 
 
 # --- Driver Factory ---
-def get_driver(camera_db_data):
-    """Factory function to get the correct driver instance."""
-    camera_type = camera_db_data.camera_type
+def get_driver(camera_data):
+    """
+    Factory function to get the correct driver instance.
+
+    Args:
+        camera_data: Either a Camera ORM object or a dict with keys 'camera_type' and 'identifier'
+    """
+    # Support both ORM objects and dicts for backwards compatibility
+    if isinstance(camera_data, dict):
+        camera_type = camera_data['camera_type']
+    else:
+        # ORM object
+        camera_type = camera_data.camera_type
+
     if camera_type == 'USB':
-        return USBDriver(camera_db_data)
+        return USBDriver(camera_data)
     elif camera_type == 'GenICam':
-        return GenICamDriver(camera_db_data)
+        return GenICamDriver(camera_data)
     elif camera_type == 'OAK-D':
-        return OAKDDriver(camera_db_data)
+        return OAKDDriver(camera_data)
     else:
         raise ValueError(f"Unknown camera type: {camera_type}")
 

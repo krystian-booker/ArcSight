@@ -32,8 +32,8 @@ def test_base_driver_initialization(mock_camera_data):
     Tests that the BaseDriver's __init__ method correctly sets attributes.
     """
     # When
-    driver = ConcreteDriver(camera_db_data=mock_camera_data)
-    
+    driver = ConcreteDriver(mock_camera_data)
+
     # Then
     assert driver.camera_db_data == mock_camera_data
     assert driver.identifier == "test_concrete_cam"

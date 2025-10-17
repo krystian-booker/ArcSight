@@ -18,26 +18,39 @@ def start_camera_thread(camera, app):
         identifier = camera.identifier
         if identifier not in active_camera_threads:
             print(f"Starting threads for camera {identifier}")
-            
-            acq_thread = CameraAcquisitionThread(camera, app)
-            
+
+            # Extract primitive values from ORM object
+            acq_thread = CameraAcquisitionThread(
+                identifier=camera.identifier,
+                camera_type=camera.camera_type,
+                orientation=camera.orientation,
+                app=app
+            )
+
             # Pipelines are loaded via the relationship
             pipelines = camera.pipelines
-            
+
             processing_threads = {}
             for pipeline in pipelines:
                 frame_queue = queue.Queue(maxsize=2)
-                # Pass the ORM objects directly
-                proc_thread = VisionProcessingThread(identifier, pipeline, camera, frame_queue)
-                
+                # Pass primitive values instead of ORM objects
+                proc_thread = VisionProcessingThread(
+                    identifier=identifier,
+                    pipeline_id=pipeline.id,
+                    pipeline_type=pipeline.pipeline_type,
+                    pipeline_config_json=pipeline.config,
+                    camera_matrix_json=camera.camera_matrix_json,
+                    frame_queue=frame_queue
+                )
+
                 acq_thread.add_pipeline_queue(pipeline.id, frame_queue)
                 processing_threads[pipeline.id] = proc_thread
-            
+
             active_camera_threads[identifier] = {
                 'acquisition': acq_thread,
                 'processing_threads': processing_threads
             }
-            
+
             acq_thread.start()
             for proc_thread in processing_threads.values():
                 proc_thread.start()
@@ -106,7 +119,15 @@ def add_pipeline_to_camera(camera_id, pipeline, app):
             if pipeline_id not in thread_group['processing_threads']:
                 print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
                 frame_queue = queue.Queue(maxsize=2)
-                proc_thread = VisionProcessingThread(identifier, pipeline, camera, frame_queue)
+                # Pass primitive values instead of ORM objects
+                proc_thread = VisionProcessingThread(
+                    identifier=identifier,
+                    pipeline_id=pipeline.id,
+                    pipeline_type=pipeline.pipeline_type,
+                    pipeline_config_json=pipeline.config,
+                    camera_matrix_json=camera.camera_matrix_json,
+                    frame_queue=frame_queue
+                )
                 thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
                 thread_group['processing_threads'][pipeline_id] = proc_thread
                 proc_thread.start()
@@ -160,10 +181,18 @@ def update_pipeline_in_camera(camera_id, pipeline_id, app):
                 thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
                 old_proc_thread.join(timeout=2) # Wait for it to terminate
 
-            # 2. Start a new thread with the updated pipeline_info
+            # 2. Start a new thread with the updated pipeline config
             print(f"Starting new pipeline thread {pipeline_id} with updated config.")
             frame_queue = queue.Queue(maxsize=2)
-            new_proc_thread = VisionProcessingThread(identifier, pipeline, camera, frame_queue)
+            # Pass primitive values instead of ORM objects
+            new_proc_thread = VisionProcessingThread(
+                identifier=identifier,
+                pipeline_id=pipeline.id,
+                pipeline_type=pipeline.pipeline_type,
+                pipeline_config_json=pipeline.config,
+                camera_matrix_json=camera.camera_matrix_json,
+                frame_queue=frame_queue
+            )
 
             thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
             thread_group['processing_threads'][pipeline_id] = new_proc_thread

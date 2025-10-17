@@ -17,14 +17,21 @@ def mock_camera(mock_app):
         camera = MagicMock(spec=Camera)
         camera.id = 1
         camera.identifier = "test_cam_123"
-        
+        camera.camera_type = "USB"
+        camera.orientation = 0
+        camera.camera_matrix_json = None
+
         # Simulate the joinedload of pipelines
         p1 = MagicMock(spec=Pipeline)
         p1.id = 101
+        p1.pipeline_type = "AprilTag"
+        p1.config = "{}"
         p2 = MagicMock(spec=Pipeline)
         p2.id = 102
+        p2.pipeline_type = "AprilTag"
+        p2.config = "{}"
         camera.pipelines = [p1, p2]
-    
+
     return camera
 
 @pytest.fixture
@@ -66,11 +73,16 @@ def mock_threads():
 def test_start_camera_thread(mock_camera, mock_app, mock_threads):
     """Test starting threads for a single camera."""
     camera_manager.start_camera_thread(mock_camera, mock_app)
-    
-    # Check that threads were created and started
-    mock_threads['acquisition'].assert_called_once_with(mock_camera, mock_app)
+
+    # Check that acquisition thread was created with primitives
+    mock_threads['acquisition'].assert_called_once_with(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
     mock_threads['acquisition'].return_value.start.assert_called_once()
-    
+
     assert mock_threads['processing'].call_count == 2 # For the two pipelines
     for p_thread in mock_threads['processing'].return_value, :
         p_thread.start.assert_called()

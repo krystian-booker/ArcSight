@@ -99,12 +99,12 @@ class FrameBufferPool:
 # --- Vision Processing Thread (Consumer) ---
 class VisionProcessingThread(threading.Thread):
     """A consumer thread that runs a vision pipeline on frames from a queue."""
-    def __init__(self, identifier, pipeline, camera, frame_queue):
+    def __init__(self, identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, frame_queue):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
-        self.pipeline_id = pipeline.id
-        self.pipeline_type = pipeline.pipeline_type
+        self.pipeline_id = pipeline_id
+        self.pipeline_type = pipeline_type
         self.frame_queue = frame_queue
         self.stop_event = threading.Event()
         self.results_lock = threading.Lock()
@@ -112,27 +112,26 @@ class VisionProcessingThread(threading.Thread):
         self.latest_processed_frame = None
         self.processed_frame_lock = threading.Lock()
 
-        # Store camera data and initialize the pipeline object
-        self.camera = camera
+        # Initialize the pipeline object
         self.pipeline_instance = None
-   
+
         # Pre-calculation variables for drawing
         self.cam_matrix = None
         self.obj_pts = None
 
-        # Load camera calibration data
-        if self.camera.camera_matrix_json:
+        # Load camera calibration data from primitive values
+        if camera_matrix_json:
             try:
-                self.cam_matrix = np.array(json.loads(self.camera.camera_matrix_json))
+                self.cam_matrix = np.array(json.loads(camera_matrix_json))
                 print(f"[{self.identifier}] Loaded camera matrix from DB.")
             except (json.JSONDecodeError, TypeError):
                 print(f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default.")
                 self.cam_matrix = None
-        
+
         pipeline_config = {}
-        if pipeline.config:
+        if pipeline_config_json:
             try:
-                pipeline_config = json.loads(pipeline.config)
+                pipeline_config = json.loads(pipeline_config_json)
             except (json.JSONDecodeError, TypeError):
                 print(f"[{self.identifier}] Failed to parse pipeline config from DB. Using default.")
         
@@ -279,11 +278,11 @@ class CameraAcquisitionThread(threading.Thread):
     to multiple consumer queues. It handles camera connection, disconnection,
     and reconnection automatically.
     """
-    def __init__(self, camera, app):
+    def __init__(self, identifier, camera_type, orientation, app):
         super().__init__()
         self.daemon = True
-        self.camera = camera
-        self.identifier = camera.identifier
+        self.identifier = identifier
+        self.camera_type = camera_type
         self.app = app
         self.driver = None
         self.frame_lock = threading.Lock()
@@ -298,7 +297,7 @@ class CameraAcquisitionThread(threading.Thread):
 
         # Event-based configuration update
         self.config_update_event = threading.Event()
-        self._orientation = camera.orientation
+        self._orientation = orientation
         self._orientation_lock = threading.Lock()
 
     def add_pipeline_queue(self, pipeline_id, frame_queue):
@@ -322,14 +321,16 @@ class CameraAcquisitionThread(threading.Thread):
     def run(self):
         """The main loop for the camera acquisition thread."""
         print(f"Starting acquisition thread for {self.identifier}")
-        
+
         while not self.stop_event.is_set():
             try:
                 # Initialize the driver inside the loop for automatic reconnection
-                self.driver = get_driver(self.camera)
+                # Pass camera data as a dict to avoid ORM session issues
+                camera_data = {'camera_type': self.camera_type, 'identifier': self.identifier}
+                self.driver = get_driver(camera_data)
                 self.driver.connect()
                 print(f"Camera {self.identifier} connected successfully via driver.")
-                
+
                 # The acquisition loop now uses the driver interface
                 self._acquisition_loop()
 

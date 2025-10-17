@@ -215,11 +215,13 @@ def test_vision_processing_thread_initialization(mock_camera, mock_pipeline, moc
     """Test the thread's constructor and initialization of pipeline instances."""
     thread = VisionProcessingThread(
         identifier=mock_camera.identifier,
-        pipeline=mock_pipeline,
-        camera=mock_camera,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
         frame_queue=queue.Queue()
     )
-    
+
     assert thread.pipeline_type == 'AprilTag'
     mock_pipeline_instances['AprilTag'].assert_called_once()
     assert thread.latest_results == {"status": "Starting..."}
@@ -234,8 +236,15 @@ def test_vision_processing_thread_initialization(mock_camera, mock_pipeline, moc
 def test_vision_processing_thread_initialization_all_types(pipeline_type, mock_camera, mock_pipeline, mock_pipeline_instances):
     """Test that the correct pipeline class is instantiated based on pipeline_type."""
     mock_pipeline.pipeline_type = pipeline_type
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=queue.Queue()
+    )
+
     assert thread.pipeline_instance is not None
     mock_pipeline_instances[pipeline_type].assert_called_once()
 
@@ -243,15 +252,29 @@ def test_vision_processing_thread_initialization_all_types(pipeline_type, mock_c
 def test_vision_processing_thread_init_invalid_pipeline_type(mock_camera, mock_pipeline, mock_pipeline_instances):
     """Test initialization with an unknown pipeline type."""
     mock_pipeline.pipeline_type = "Unknown Type"
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=queue.Queue()
+    )
     assert thread.pipeline_instance is None
 
 
 def test_vision_processing_thread_init_bad_json_config(mock_camera, mock_pipeline, mock_pipeline_instances):
     """Test that initialization falls back to defaults with invalid JSON in pipeline config."""
     mock_pipeline.config = "{'bad json"
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=queue.Queue()
+    )
+
     # It should still initialize with the default config
     mock_pipeline_instances['AprilTag'].assert_called_once()
     # The config passed to the constructor should be the default merged with the (empty) parsed one
@@ -262,14 +285,21 @@ def test_vision_processing_thread_init_bad_json_config(mock_camera, mock_pipelin
 def test_vision_processing_thread_init_no_camera_matrix(mock_camera, mock_pipeline, mock_pipeline_instances):
     """Test that a default camera matrix is created if none is in the DB."""
     mock_camera.camera_matrix_json = None
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=queue.Queue()
+    )
+
     # The run method will create the default matrix
     thread.start()
     time.sleep(0.1) # Give thread time to start and check for matrix
     thread.stop()
     thread.join()
-    
+
     assert thread.cam_matrix is not None
     assert thread.cam_matrix[0, 0] == 600.0 # Check a default value
 
@@ -277,27 +307,34 @@ def test_vision_processing_thread_init_no_camera_matrix(mock_camera, mock_pipeli
 def test_vision_processing_thread_run_loop(mock_camera, mock_pipeline, mock_pipeline_instances):
     """Test the main run loop: processing a frame from the queue."""
     frame_queue = queue.Queue()
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, frame_queue)
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=frame_queue
+    )
+
     # Mock the frame
     frame_data = np.zeros((100, 100, 3), dtype=np.uint8)
     mock_rc_frame = MagicMock(spec=RefCountedFrame)
     mock_rc_frame.data = frame_data
-    
+
     # Put frame in queue and start thread
     frame_queue.put(mock_rc_frame)
     thread.start()
     time.sleep(0.2) # Allow thread to process
-    
+
     # Check results
     results = thread.get_latest_results()
     assert results['tags_found'] is True
     assert results['detections'] == ['apriltag_data']
     assert 'processing_time_ms' in results
-    
+
     # Check that frame was released
     mock_rc_frame.release.assert_called_once()
-    
+
     # Check that processed frame was generated
     with thread.processed_frame_lock:
         assert thread.latest_processed_frame is not None
@@ -311,11 +348,18 @@ def test_vision_processing_thread_run_loop(mock_camera, mock_pipeline, mock_pipe
 def test_vision_processing_thread_run_loop_empty_queue(mock_camera, mock_pipeline):
     """Test that the run loop handles an empty queue without crashing."""
     frame_queue = queue.Queue()
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, frame_queue)
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=frame_queue
+    )
+
     thread.start()
     time.sleep(0.1) # Let it run on an empty queue
-    
+
     thread.stop()
     thread.join(timeout=1)
     assert not thread.is_alive()
@@ -325,14 +369,21 @@ def test_vision_processing_thread_run_loop_empty_queue(mock_camera, mock_pipelin
 
 def test_vision_processing_thread_stop_method(mock_camera, mock_pipeline):
     """Verify the stop event terminates the run loop."""
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=queue.Queue()
+    )
     thread.start()
     assert thread.is_alive()
-    
+
     thread.stop()
     # Increase timeout to account for the queue.get(timeout=1) in the loop
     thread.join(timeout=2)
-    
+
     assert not thread.is_alive()
     assert thread.stop_event.is_set()
 
@@ -342,19 +393,26 @@ def test_vision_processing_thread_draw_3d_box(mock_camera, mock_pipeline):
          patch('cv2.drawContours'), \
          patch('cv2.line'), \
          patch('cv2.putText'):
-        
+
         # Mock projectPoints to return predictable screen coordinates
         mock_project.return_value = (np.zeros((8, 1, 2)), None)
-        
-        thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
+
+        thread = VisionProcessingThread(
+            identifier=mock_camera.identifier,
+            pipeline_id=mock_pipeline.id,
+            pipeline_type=mock_pipeline.pipeline_type,
+            pipeline_config_json=mock_pipeline.config,
+            camera_matrix_json=mock_camera.camera_matrix_json,
+            frame_queue=queue.Queue()
+        )
         # Manually set a valid camera matrix
         thread.cam_matrix = np.eye(3)
-        
+
         frame = np.zeros((100, 100, 3))
         detections = [{'rvec': 1, 'tvec': 2, 'corners': [[0,0]], 'id': 1}]
-        
+
         thread._draw_3d_box_on_frame(frame, detections)
-        
+
         mock_project.assert_called_once()
 
 
@@ -365,8 +423,15 @@ def test_vision_processing_thread_run_loop_ml_pipeline(mock_camera, mock_pipelin
         {'box': [10, 20, 30, 40], 'label': 'test', 'confidence': 0.99}
     ]
     frame_queue = queue.Queue()
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, frame_queue)
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=frame_queue
+    )
+
     frame_data = np.zeros((100, 100, 3), dtype=np.uint8)
     mock_rc_frame = MagicMock(spec=RefCountedFrame)
     mock_rc_frame.data = frame_data
@@ -375,7 +440,7 @@ def test_vision_processing_thread_run_loop_ml_pipeline(mock_camera, mock_pipelin
     with patch('cv2.rectangle'), patch('cv2.putText'):
         thread.start()
         time.sleep(0.2)
-        
+
         results = thread.get_latest_results()
         assert 'detections' in results
         assert len(results['detections']) == 1
@@ -387,8 +452,15 @@ def test_vision_processing_thread_run_loop_coloured_shape_pipeline(mock_camera, 
     """Test the main run loop with a coloured shape pipeline."""
     mock_pipeline.pipeline_type = 'Coloured Shape'
     frame_queue = queue.Queue()
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, frame_queue)
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=frame_queue
+    )
+
     frame_data = np.zeros((100, 100, 3), dtype=np.uint8)
     mock_rc_frame = MagicMock(spec=RefCountedFrame)
     mock_rc_frame.data = frame_data
@@ -396,7 +468,7 @@ def test_vision_processing_thread_run_loop_coloured_shape_pipeline(mock_camera, 
 
     thread.start()
     time.sleep(0.2)
-    
+
     results = thread.get_latest_results()
     assert results['detections'] == "coloured_shape_data"
 
@@ -407,19 +479,33 @@ def test_vision_processing_thread_run_loop_coloured_shape_pipeline(mock_camera, 
 def test_vision_processing_thread_run_exits_if_no_pipeline(mock_camera, mock_pipeline):
     """Test that the run method exits immediately if the pipeline instance is None."""
     mock_pipeline.pipeline_type = "Invalid"
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=queue.Queue()
+    )
+
     thread.start()
     thread.join(timeout=0.5) # Should exit very quickly
-    
+
     assert not thread.is_alive()
 
 
 def test_vision_processing_thread_imencode_failure(mock_camera, mock_pipeline):
     """Test that the loop continues gracefully if cv2.imencode fails."""
     frame_queue = queue.Queue()
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, frame_queue)
-    
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=frame_queue
+    )
+
     frame_data = np.zeros((100, 100, 3), dtype=np.uint8)
     mock_rc_frame = MagicMock(spec=RefCountedFrame)
     mock_rc_frame.data = frame_data
@@ -432,7 +518,7 @@ def test_vision_processing_thread_imencode_failure(mock_camera, mock_pipeline):
         # The frame should not have been set
         with thread.processed_frame_lock:
             assert thread.latest_processed_frame is None
-        
+
         thread.stop()
         thread.join()
 
@@ -440,9 +526,16 @@ def test_vision_processing_thread_imencode_failure(mock_camera, mock_pipeline):
 def test_vision_processing_thread_init_bad_camera_matrix_json(mock_camera, mock_pipeline, mock_pipeline_instances):
     """Test that a bad camera_matrix_json from the DB is handled correctly."""
     mock_camera.camera_matrix_json = "this is not json"
-    
+
     # The thread should still initialize
-    thread = VisionProcessingThread(mock_camera.identifier, mock_pipeline, mock_camera, queue.Queue())
+    thread = VisionProcessingThread(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json,
+        frame_queue=queue.Queue()
+    )
     assert thread.cam_matrix is None
 
     # And the run loop should create a default one
@@ -474,21 +567,31 @@ def mock_app(app):
 
 def test_camera_acquisition_thread_init(mock_camera, mock_app):
     """Test the thread's constructor."""
-    thread = CameraAcquisitionThread(mock_camera, mock_app)
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
     assert thread.identifier == mock_camera.identifier
     assert thread.daemon is True
     assert not thread.stop_event.is_set()
 
 def test_camera_acquisition_thread_add_remove_queues(mock_camera, mock_app):
     """Test adding and removing pipeline queues."""
-    thread = CameraAcquisitionThread(mock_camera, mock_app)
-    
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
+
     # Add a queue
     q1 = queue.Queue()
     thread.add_pipeline_queue(101, q1)
     assert 101 in thread.processing_queues
     assert thread.processing_queues[101] == q1
-    
+
     # Remove the queue
     thread.remove_pipeline_queue(101)
     assert 101 not in thread.processing_queues
@@ -498,15 +601,20 @@ def test_camera_acquisition_thread_add_remove_queues(mock_camera, mock_app):
 def test_camera_acquisition_thread_run_connect_disconnect(mock_acq_loop, mock_get_driver, mock_driver, mock_camera, mock_app):
     """Test the main run loop's connect/disconnect and loop call logic."""
     mock_get_driver.return_value = mock_driver
-    thread = CameraAcquisitionThread(mock_camera, mock_app)
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
 
     # Make the loop run once then stop the thread
     mock_acq_loop.side_effect = lambda: thread.stop()
-    
+
     thread.start()
     thread.join(timeout=1)
-    
-    mock_get_driver.assert_called_once_with(mock_camera)
+
+    mock_get_driver.assert_called_once_with({'camera_type': mock_camera.camera_type, 'identifier': mock_camera.identifier})
     mock_driver.connect.assert_called_once()
     mock_acq_loop.assert_called_once()
     mock_driver.disconnect.assert_called_once()
@@ -517,13 +625,18 @@ def test_camera_acquisition_thread_run_reconnection_on_error(mock_get_driver, mo
     mock_successful_driver = MagicMock()
     mock_get_driver.side_effect = [Exception("Driver init failed"), mock_successful_driver]
 
-    thread = CameraAcquisitionThread(mock_camera, mock_app)
-    
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
+
     # The thread's main loop uses stop_event.wait(), which is basically time.sleep().
     # We patch the instance's event wait and the class's acquisition loop.
     with patch.object(thread.stop_event, 'wait') as mock_wait, \
          patch.object(CameraAcquisitionThread, '_acquisition_loop', side_effect=lambda: thread.stop()) as mock_acq_loop:
-        
+
         thread.start()
         thread.join(timeout=2) # Should not time out now
 
@@ -538,7 +651,12 @@ def test_camera_acquisition_thread_run_reconnection_on_error(mock_get_driver, mo
 def test_acquisition_loop(mock_get_driver, mock_driver, mock_camera, mock_app):
     """Test the inner frame acquisition loop."""
     mock_get_driver.return_value = mock_driver
-    thread = CameraAcquisitionThread(mock_camera, mock_app)
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
     thread.driver = mock_driver # Manually set driver since we're not calling run()
 
     # Add a consumer queue and mock its put method to check calls
@@ -550,13 +668,13 @@ def test_acquisition_loop(mock_get_driver, mock_driver, mock_camera, mock_app):
     time_side_effects = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
     with patch('time.time', side_effect=time_side_effects):
         thread._acquisition_loop()
-    
+
     # get_frame was called 6 times (5 good, 1 bad which breaks the loop)
     assert mock_driver.get_frame.call_count == 6
-    
+
     # The first frame is consumed by pool initialization, the next 4 are queued
     assert proc_q.put_nowait.call_count == 4
-    
+
     # Check latest frames
     with thread.raw_frame_lock:
         assert thread.latest_raw_frame is not None
@@ -571,15 +689,21 @@ def test_acquisition_loop_fails_first_frame():
     # Create a fresh driver mock for this specific test
     driver = MagicMock()
     driver.get_frame.return_value = None
-    
+
     mock_camera = MagicMock()
     mock_camera.identifier = "test_cam"
+    mock_camera.camera_type = "USB"
     mock_camera.orientation = 0
-    thread = CameraAcquisitionThread(mock_camera, MagicMock())
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=MagicMock()
+    )
     thread.driver = driver
-    
+
     thread._acquisition_loop()
-    
+
     # The loop should return immediately, and no frames should be processed
     assert thread.latest_raw_frame is None
     assert thread.latest_frame_for_display is None
@@ -593,16 +717,26 @@ def test_acquisition_loop_fails_first_frame():
 @patch('cv2.rotate')
 def test_apply_orientation(mock_rotate, orientation, cv2_rotate_code):
     """Test applying different rotation orientations."""
-    thread = CameraAcquisitionThread(MagicMock(), MagicMock())
+    thread = CameraAcquisitionThread(
+        identifier="test",
+        camera_type="USB",
+        orientation=0,
+        app=MagicMock()
+    )
     frame = np.zeros((10, 10))
     thread._apply_orientation(frame, orientation)
     mock_rotate.assert_called_once_with(frame, cv2_rotate_code)
 
 def test_apply_orientation_none():
     """Test that 0 or None orientation does not call rotate."""
-    thread = CameraAcquisitionThread(MagicMock(), MagicMock())
+    thread = CameraAcquisitionThread(
+        identifier="test",
+        camera_type="USB",
+        orientation=0,
+        app=MagicMock()
+    )
     frame = np.zeros((10, 10))
-    
+
     with patch('cv2.rotate') as mock_rotate:
         result = thread._apply_orientation(frame, 0)
         mock_rotate.assert_not_called()
@@ -613,7 +747,12 @@ def test_acquisition_loop_orientation_change(mock_get_driver, mock_driver, mock_
     """Test that the acquisition loop detects orientation changes and reconfigures."""
     mock_get_driver.return_value = mock_driver
 
-    thread = CameraAcquisitionThread(mock_camera, mock_app)
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
     thread.driver = mock_driver # Manually set driver since we're not calling run()
 
     # Mock the DB call to simulate the orientation changing mid-run
@@ -641,15 +780,20 @@ def test_acquisition_loop_orientation_change(mock_get_driver, mock_driver, mock_
 
 def test_acquisition_loop_handles_full_queue(mock_driver):
     """Test that a full consumer queue doesn't crash the acquisition thread."""
-    thread = CameraAcquisitionThread(MagicMock(), MagicMock())
+    thread = CameraAcquisitionThread(
+        identifier="test",
+        camera_type="USB",
+        orientation=0,
+        app=MagicMock()
+    )
     thread.driver = mock_driver
     thread.buffer_pool.initialize(np.zeros((10, 10, 3)))
-    
+
     # Add a full queue
     full_q = queue.Queue(maxsize=1)
     full_q.put("dummy")
     thread.add_pipeline_queue(1, full_q)
-    
+
     with patch('app.camera_threads.RefCountedFrame.release') as mock_release:
         # This should run without raising a queue.Full exception
         thread._acquisition_loop()
@@ -658,10 +802,15 @@ def test_acquisition_loop_handles_full_queue(mock_driver):
 
 def test_acquisition_loop_empty_buffer_pool(mock_driver, mock_camera, mock_app):
     """Test that the loop continues if the buffer pool is temporarily empty."""
-    thread = CameraAcquisitionThread(mock_camera, mock_app)
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app
+    )
     thread.driver = mock_driver
     thread.buffer_pool.initialize(np.zeros((10, 10, 3), dtype=np.uint8))
-    
+
     # Temporarily make the pool return None
     with patch.object(thread.buffer_pool, 'get_buffer', return_value=None):
         thread._acquisition_loop()
@@ -675,7 +824,12 @@ def test_acquisition_loop_empty_buffer_pool(mock_driver, mock_camera, mock_app):
 
 def test_prepare_display_frame():
     """Test that the FPS overlay is added to the frame."""
-    thread = CameraAcquisitionThread(MagicMock(), MagicMock())
+    thread = CameraAcquisitionThread(
+        identifier="test",
+        camera_type="USB",
+        orientation=0,
+        app=MagicMock()
+    )
     thread.fps = 30.0
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
