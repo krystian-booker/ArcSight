@@ -857,12 +857,18 @@ def test_acquisition_loop_reference_counting_correctness():
          patch.object(RefCountedFrame, 'release', tracked_release):
         thread._acquisition_loop()
 
+        # Consume and release all frames from the normal queue
+        # (simulating what a consumer thread would do)
+        while not normal_q.empty():
+            frame = normal_q.get_nowait()
+            frame.release()
+
     # Verify that all acquires have matching releases
     # Each frame should have:
     # - 1 initial acquire (acquisition thread)
-    # - 1 acquire for normal_q (succeeds)
+    # - 1 acquire for normal_q (succeeds, released after consuming)
     # - 1 acquire for full_q (fails, gets released immediately)
-    # - 1 acquire for display frame
+    # - 1 acquire for display frame (released after encoding)
     # Total: 4 acquires, 4 releases per frame (2 frames processed after init)
     assert acquire_calls[0] == release_calls[0], \
         f"Reference counting mismatch: {acquire_calls[0]} acquires vs {release_calls[0]} releases"
