@@ -783,7 +783,7 @@ def test_acquisition_loop_orientation_change(mock_get_driver, mock_driver, mock_
 
 
 def test_acquisition_loop_handles_full_queue(mock_driver):
-    """Test that a full consumer queue doesn't crash the acquisition thread."""
+    """Test that buffers are properly released when all queues are full."""
     thread = CameraAcquisitionThread(
         identifier="test",
         camera_type="USB",
@@ -793,16 +793,79 @@ def test_acquisition_loop_handles_full_queue(mock_driver):
     thread.driver = mock_driver
     thread.buffer_pool.initialize(np.zeros((10, 10, 3)))
 
-    # Add a full queue
-    full_q = queue.Queue(maxsize=1)
-    full_q.put("dummy")
-    thread.add_pipeline_queue(1, full_q)
+    # Add two full queues to test buffer release when ALL queues reject the frame
+    full_q1 = queue.Queue(maxsize=1)
+    full_q1.put("dummy")
+    full_q2 = queue.Queue(maxsize=1)
+    full_q2.put("dummy")
+    thread.add_pipeline_queue(1, full_q1)
+    thread.add_pipeline_queue(2, full_q2)
 
-    with patch('app.camera_threads.RefCountedFrame.release') as mock_release:
-        # This should run without raising a queue.Full exception
+    # Track buffer pool releases to verify buffers are returned
+    original_release = thread.buffer_pool.release_buffer
+    release_count = [0]
+    def mock_release_buffer(buffer):
+        release_count[0] += 1
+        original_release(buffer)
+
+    thread.buffer_pool.release_buffer = mock_release_buffer
+
+    # This should run without raising a queue.Full exception
+    thread._acquisition_loop()
+
+    # Verify that buffers were released back to the pool even when all queues were full
+    # We expect at least one buffer release (from frames that couldn't be queued)
+    assert release_count[0] > 0, "Buffers should be released when all queues are full"
+
+def test_acquisition_loop_reference_counting_correctness():
+    """Test that reference counting is correct in all frame distribution scenarios."""
+    # Create a driver that returns 3 frames then None
+    driver = MagicMock()
+    driver.get_frame.side_effect = [np.zeros((10, 10, 3), dtype=np.uint8) for _ in range(3)] + [None]
+
+    thread = CameraAcquisitionThread(
+        identifier="test",
+        camera_type="USB",
+        orientation=0,
+        app=MagicMock()
+    )
+    thread.driver = driver
+    thread.buffer_pool.initialize(np.zeros((10, 10, 3)))
+
+    # Add one normal queue and one full queue
+    normal_q = queue.Queue(maxsize=10)
+    full_q = queue.Queue(maxsize=1)
+    full_q.put("dummy")  # Fill it
+    thread.add_pipeline_queue(1, normal_q)
+    thread.add_pipeline_queue(2, full_q)
+
+    # Track all acquire/release calls to verify reference counting
+    acquire_calls = [0]
+    release_calls = [0]
+    original_acquire = RefCountedFrame.acquire
+    original_release = RefCountedFrame.release
+
+    def tracked_acquire(self):
+        acquire_calls[0] += 1
+        return original_acquire(self)
+
+    def tracked_release(self):
+        release_calls[0] += 1
+        return original_release(self)
+
+    with patch.object(RefCountedFrame, 'acquire', tracked_acquire), \
+         patch.object(RefCountedFrame, 'release', tracked_release):
         thread._acquisition_loop()
-        # The frame that failed to be put should have been released immediately
-        assert mock_release.call_count > 0
+
+    # Verify that all acquires have matching releases
+    # Each frame should have:
+    # - 1 initial acquire (acquisition thread)
+    # - 1 acquire for normal_q (succeeds)
+    # - 1 acquire for full_q (fails, gets released immediately)
+    # - 1 acquire for display frame
+    # Total: 4 acquires, 4 releases per frame (2 frames processed after init)
+    assert acquire_calls[0] == release_calls[0], \
+        f"Reference counting mismatch: {acquire_calls[0]} acquires vs {release_calls[0]} releases"
 
 def test_acquisition_loop_empty_buffer_pool(mock_driver, mock_camera, mock_app):
     """Test that the loop continues if the buffer pool is temporarily empty."""

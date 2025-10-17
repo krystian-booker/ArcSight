@@ -397,23 +397,34 @@ class CameraAcquisitionThread(threading.Thread):
             np.copyto(pooled_buffer, oriented_frame)
             ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
 
-            with self.queues_lock:
-                for q in self.processing_queues.values():
-                    ref_counted_frame.acquire()
-                    try:
-                        q.put_nowait(ref_counted_frame)
-                    except queue.Full:
-                        ref_counted_frame.release()
-
+            # Acquire initial reference for the acquisition thread to ensure buffer is released
+            # even if all queues are full or display frame encoding fails
             ref_counted_frame.acquire()
+
             try:
-                display_frame_copy = ref_counted_frame.get_writable_copy()
-                display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
-                ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
-                if ret:
-                    with self.frame_lock:
-                        self.latest_frame_for_display = buffer.tobytes()
+                # Distribute frame to pipeline queues
+                with self.queues_lock:
+                    for q in self.processing_queues.values():
+                        ref_counted_frame.acquire()
+                        try:
+                            q.put_nowait(ref_counted_frame)
+                        except queue.Full:
+                            ref_counted_frame.release()
+
+                # Prepare display frame
+                ref_counted_frame.acquire()
+                try:
+                    display_frame_copy = ref_counted_frame.get_writable_copy()
+                    display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
+                    ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
+                    if ret:
+                        with self.frame_lock:
+                            self.latest_frame_for_display = buffer.tobytes()
+                finally:
+                    ref_counted_frame.release()
             finally:
+                # Release initial reference - this ensures buffer is returned to pool
+                # when all consumers (pipelines + display) have finished with it
                 ref_counted_frame.release()
             
             frame_count += 1
