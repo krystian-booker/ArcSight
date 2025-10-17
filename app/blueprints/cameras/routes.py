@@ -76,9 +76,17 @@ def update_camera(camera_id):
 def delete_camera(camera_id):
     """Deletes a camera."""
     camera = db.session.get(Camera, camera_id)
-    camera_manager.stop_camera_thread(camera.identifier)
-    db.session.delete(camera)
-    db.session.commit()
+    if camera:
+        identifier = camera.identifier
+        # Stop thread and wait for confirmation
+        camera_manager.stop_camera_thread(identifier)
+
+        # Verify thread actually stopped before deleting DB record
+        if camera_manager.is_camera_thread_running(identifier):
+            return jsonify({'error': 'Failed to stop camera thread'}), 500
+
+        db.session.delete(camera)
+        db.session.commit()
     return redirect(url_for('cameras.cameras_page'))
 
 
