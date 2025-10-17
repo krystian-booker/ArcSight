@@ -13,8 +13,39 @@ except ImportError:  # pragma: no cover
 
 # --- Module-level Globals for Harvester ---
 # A single Harvester instance and a lock to manage it, shared by all GenICam drivers.
-h = Harvester() if Harvester else None
-harvester_lock = threading.Lock()
+_harvester = None
+_harvester_lock = threading.Lock()
+
+
+def _get_harvester():
+    """
+    Lazily initialize and return the global Harvester instance.
+
+    Returns:
+        Harvester: The global Harvester instance, or None if library is not available.
+    """
+    global _harvester
+    with _harvester_lock:
+        if _harvester is None and Harvester:
+            _harvester = Harvester()
+        return _harvester
+
+
+def _reset_harvester():
+    """
+    Reset the global Harvester instance, allowing reinitialization.
+
+    This is useful when the CTI path changes or for cleanup.
+    """
+    global _harvester
+    with _harvester_lock:
+        if _harvester is not None:
+            try:
+                _harvester.reset()
+            except Exception as e:
+                print(f"Error resetting Harvester: {e}")
+            finally:
+                _harvester = None
 
 # --- GenICam Constants ---
 if genapi:
@@ -42,10 +73,11 @@ class GenICamDriver(BaseDriver):
         self.ia = None # Image Acquirer instance
 
     def connect(self):
+        h = _get_harvester()
         if not h:
             raise ConnectionError("Harvesters library is not installed or failed to import.")
-        
-        with harvester_lock:
+
+        with _harvester_lock:
             try:
                 # The identifier for GenICam is the camera's serial number.
                 self.ia = h.create({'serial_number': self.identifier})
@@ -100,14 +132,28 @@ class GenICamDriver(BaseDriver):
         """
         Initializes the shared Harvester instance with a CTI file.
         This must be called once at application startup.
+
+        Args:
+            cti_path: Path to the CTI (Camera Transport Interface) file.
+
+        Note:
+            If the CTI path changes, call this method again to reinitialize
+            with the new path. The previous Harvester instance will be reset.
         """
-        if not h:
+        if not Harvester:
             print("Cannot initialize GenICam driver: Harvesters library not installed.")
             return
 
-        with harvester_lock:
-            # Reset previous configuration
-            h.reset()
+        # Reset any existing harvester to allow reinitialization
+        _reset_harvester()
+
+        # Get a fresh harvester instance
+        h = _get_harvester()
+        if not h:
+            print("Failed to create Harvester instance.")
+            return
+
+        with _harvester_lock:
             if cti_path and os.path.exists(cti_path):
                 try:
                     h.add_file(cti_path)
@@ -115,19 +161,24 @@ class GenICamDriver(BaseDriver):
                     print(f"Harvester initialized successfully with CTI: {cti_path}")
                 except Exception as e:
                     print(f"Error initializing Harvester with CTI {cti_path}: {e}")
+                    # Reset on failure to leave in clean state
+                    _reset_harvester()
             else:
                 print("GenICam CTI file not found or not configured. Harvester is uninitialized.")
+                # Reset since no valid CTI path provided
+                _reset_harvester()
 
     @staticmethod
     def list_devices():
         """
         Returns a list of available GenICam devices found by the Harvester instance.
         """
+        h = _get_harvester()
         if not h:
             return []
 
         devices = []
-        with harvester_lock:
+        with _harvester_lock:
             try:
                 h.update()
                 for device_info in h.device_info_list:
@@ -145,9 +196,10 @@ class GenICamDriver(BaseDriver):
     @staticmethod
     def _create_image_acquirer(identifier):
         """Creates and returns an image acquirer for a GenICam device."""
+        h = _get_harvester()
         if not h or not identifier:
             return None, "Harvester not initialized or identifier missing."
-        with harvester_lock:
+        with _harvester_lock:
             try:
                 # This creates a temporary connection to the camera to access the node map.
                 # It does not interfere with the main acquisition connection.

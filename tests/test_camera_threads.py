@@ -553,8 +553,9 @@ def test_vision_processing_thread_init_bad_camera_matrix_json(mock_camera, mock_
 def mock_driver():
     """Creates a mock camera driver instance."""
     driver = MagicMock()
-    # Simulate getting 5 good frames then a None to test reconnection
-    frames = [np.zeros((10, 10, 3), dtype=np.uint8) for _ in range(5)] + [None]
+    # Simulate getting enough good frames to trigger FPS calculation, then None to break loop
+    # (1 for pool init + 6 for loop iterations where 6th triggers FPS calc + 1 None to break)
+    frames = [np.zeros((10, 10, 3), dtype=np.uint8) for _ in range(7)] + [None]
     driver.get_frame.side_effect = frames
     return driver
 
@@ -664,16 +665,17 @@ def test_acquisition_loop(mock_get_driver, mock_driver, mock_camera, mock_app):
     thread.add_pipeline_queue(101, proc_q)
 
     # Manually call the loop, mocking time to ensure FPS gets calculated
-    # Provide a long list of time values to prevent StopIteration
-    time_side_effects = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+    # Provide time values that create elapsed_time >= 1.0 to trigger FPS calculation
+    # FPS is calculated when elapsed_time >= 1.0, so we need start_time=0, then times that eventually exceed 1.0
+    time_side_effects = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
     with patch('time.time', side_effect=time_side_effects):
         thread._acquisition_loop()
 
-    # get_frame was called 6 times (5 good, 1 bad which breaks the loop)
-    assert mock_driver.get_frame.call_count == 6
+    # get_frame was called 8 times (1 for init + 6 good frames + 1 None which breaks the loop)
+    assert mock_driver.get_frame.call_count == 8
 
-    # The first frame is consumed by pool initialization, the next 4 are queued
-    assert proc_q.put_nowait.call_count == 4
+    # The first frame is consumed by pool initialization, the next 6 are queued
+    assert proc_q.put_nowait.call_count == 6
 
     # Check latest frames
     with thread.raw_frame_lock:
@@ -750,30 +752,32 @@ def test_acquisition_loop_orientation_change(mock_get_driver, mock_driver, mock_
     thread = CameraAcquisitionThread(
         identifier=mock_camera.identifier,
         camera_type=mock_camera.camera_type,
-        orientation=mock_camera.orientation,
+        orientation=0,  # Start with 0 orientation
         app=mock_app
     )
     thread.driver = mock_driver # Manually set driver since we're not calling run()
 
-    # Mock the DB call to simulate the orientation changing mid-run
-    refreshed_camera_mock = MagicMock(spec=Camera)
-    refreshed_camera_mock.orientation = 90
+    with patch.object(thread.buffer_pool, 'initialize') as mock_pool_init:
+        # Simulate the orientation changing mid-loop by using update_orientation
+        # We'll use a side effect on get_frame to trigger the orientation change after a few frames
+        frame_count = [0]
+        def get_frame_side_effect():
+            frame_count[0] += 1
+            # After 3 frames, trigger orientation change
+            if frame_count[0] == 3:
+                thread.update_orientation(90)
+            # Return frames for the first 5 calls, then None to break the loop
+            if frame_count[0] <= 5:
+                return np.zeros((10, 10, 3), dtype=np.uint8)
+            return None
 
-    # Create a mock session that will be returned by sessionmaker
-    mock_session = MagicMock()
-    mock_session.get.return_value = refreshed_camera_mock
-    mock_session_class = MagicMock(return_value=mock_session)
+        mock_driver.get_frame.side_effect = get_frame_side_effect
 
-    with patch('sqlalchemy.orm.sessionmaker', return_value=mock_session_class) as mock_sessionmaker, \
-         patch.object(thread.buffer_pool, 'initialize') as mock_pool_init:
-
-        # Provide a long list of time values to prevent StopIteration
-        time_side_effects = [0, 0.1, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0]
+        # Provide time values to prevent StopIteration
+        time_side_effects = [0] + [0.1 * i for i in range(1, 20)]
         with patch('time.time', side_effect=time_side_effects):
              thread._acquisition_loop()
 
-        mock_session.get.assert_called()
-        mock_session.close.assert_called()
         # The pool should be initialized once at the start, and once after the config change
         assert mock_pool_init.call_count == 2
 

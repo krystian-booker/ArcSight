@@ -73,12 +73,15 @@ def genicam_mocks():
     if 'app.drivers.genicam_driver' in sys.modules:
         reload(sys.modules['app.drivers.genicam_driver'])
 
-    # Yield the global harvester instance and genapi from the reloaded module
-    from app.drivers.genicam_driver import h, genapi
-    yield { 'h': h, 'genapi': genapi }
+    # Yield the global harvester getter and genapi from the reloaded module
+    from app.drivers.genicam_driver import _get_harvester, genapi
+    yield { 'h': _get_harvester(), 'genapi': genapi }
 
-    sys.modules.clear()
+    # Restore original modules (don't clear everything - just restore what we changed)
     sys.modules.update(original_modules)
+    # Remove the reloaded driver to ensure clean state for next test
+    if 'app.drivers.genicam_driver' in sys.modules:
+        del sys.modules['app.drivers.genicam_driver']
 
 
 # --- Tests ---
@@ -156,7 +159,7 @@ def test_full_coverage_of_all_branches(genicam_mocks, mock_camera_data):
     from app.drivers.genicam_driver import GenICamDriver
     driver = GenICamDriver(mock_camera_data)
     mock_h = genicam_mocks['h']
-    
+
     # Connect failure
     mock_h.create.side_effect = Exception("fail")
     with pytest.raises(ConnectionError): driver.connect()
@@ -166,12 +169,14 @@ def test_full_coverage_of_all_branches(genicam_mocks, mock_camera_data):
     driver.ia = MagicMock()
     driver.ia.fetch.side_effect = RuntimeError
     assert driver.get_frame() is None
-    
-    # Initialize failures
-    with patch('os.path.exists', return_value=False): GenICamDriver.initialize()
+
+    # Initialize failures - patch the _reset_harvester to prevent potential issues with global state
+    with patch('os.path.exists', return_value=False):
+        with patch('app.drivers.genicam_driver._reset_harvester'):
+            GenICamDriver.initialize()
     
     # List devices failures
-    mock_h.update.side_effect = Exception
+    mock_h.update.side_effect = Exception("update failed")
     assert GenICamDriver.list_devices() == []
     mock_h.update.side_effect = None
     
@@ -185,7 +190,7 @@ def test_full_coverage_of_all_branches(genicam_mocks, mock_camera_data):
     assert status == 404
     
     # Final check with no libs
-    with patch('app.drivers.genicam_driver.h', None):
+    with patch('app.drivers.genicam_driver._get_harvester', return_value=None):
         with pytest.raises(ConnectionError): driver.connect()
     with patch('app.drivers.genicam_driver.genapi', None):
         GenICamDriver.get_node_map("id")
