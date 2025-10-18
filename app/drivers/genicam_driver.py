@@ -147,14 +147,15 @@ class GenICamDriver(BaseDriver):
         # Reset any existing harvester to allow reinitialization
         _reset_harvester()
 
-        # Get a fresh harvester instance
-        h = _get_harvester()
-        if not h:
-            print("Failed to create Harvester instance.")
-            return
+        # Only create a Harvester instance if we have a valid CTI path
+        if cti_path and os.path.exists(cti_path):
+            # Get a fresh harvester instance
+            h = _get_harvester()
+            if not h:
+                print("Failed to create Harvester instance.")
+                return
 
-        with _harvester_lock:
-            if cti_path and os.path.exists(cti_path):
+            with _harvester_lock:
                 try:
                     h.add_file(cti_path)
                     h.update()
@@ -163,10 +164,10 @@ class GenICamDriver(BaseDriver):
                     print(f"Error initializing Harvester with CTI {cti_path}: {e}")
                     # Reset on failure to leave in clean state
                     _reset_harvester()
-            else:
-                print("GenICam CTI file not found or not configured. Harvester is uninitialized.")
-                # Reset since no valid CTI path provided
-                _reset_harvester()
+        else:
+            print("GenICam CTI file not found or not configured. Harvester is uninitialized.")
+            # Don't create a Harvester instance if we don't have a CTI path
+            # _harvester is already None from the _reset_harvester() call above
 
     @staticmethod
     def list_devices():
