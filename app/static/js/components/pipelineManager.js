@@ -5,10 +5,111 @@ import {
     updatePipeline as apiUpdatePipeline,
     deletePipeline as apiDeletePipeline,
     uploadFileToPipeline,
-    deleteFileFromPipeline
+    deleteFileFromPipeline,
+    getMlAvailability,
+    getPipelineLabels
 } from '../api.js';
 
 let currentPipelines = [];
+let mlAvailabilityPromise = null;
+const labelsCache = new Map();
+
+function getDefaultAvailability() {
+    return {
+        onnx: { providers: ['CPUExecutionProvider'] },
+        tflite: { delegates: ['CPU'] },
+        accelerators: { rknn: false },
+        platform: {},
+    };
+}
+
+async function fetchMlAvailability() {
+    if (!mlAvailabilityPromise) {
+        mlAvailabilityPromise = getMlAvailability()
+            .then(data => data || getDefaultAvailability())
+            .catch(error => {
+                console.error('Failed to fetch ML availability:', error);
+                return getDefaultAvailability();
+            });
+    }
+    return mlAvailabilityPromise;
+}
+
+async function fetchLabels(pipelineId) {
+    if (labelsCache.has(pipelineId)) {
+        return labelsCache.get(pipelineId);
+    }
+    try {
+        const response = await getPipelineLabels(pipelineId);
+        const labels = response.labels || [];
+        labelsCache.set(pipelineId, labels);
+        return labels;
+    } catch (error) {
+        console.error('Failed to fetch pipeline labels:', error);
+        labelsCache.set(pipelineId, []);
+        return [];
+    }
+}
+
+function populateSelectOptions(selectElement, options, selectedValue) {
+    if (!selectElement) return;
+    selectElement.innerHTML = '';
+    options.forEach(optionValue => {
+        const option = new Option(optionValue, optionValue);
+        selectElement.appendChild(option);
+    });
+    if (selectedValue && options.includes(selectedValue)) {
+        selectElement.value = selectedValue;
+    } else if (options.length > 0) {
+        selectElement.value = options[0];
+    }
+}
+
+function toggleRuntimeSections(form, modelType) {
+    const onnxGroup = form.querySelector('#onnx-runtime-group');
+    const tfliteGroup = form.querySelector('#tflite-delegate-group');
+    if (modelType === 'tflite') {
+        onnxGroup?.classList.add('hidden');
+        tfliteGroup?.classList.remove('hidden');
+    } else {
+        onnxGroup?.classList.remove('hidden');
+        tfliteGroup?.classList.add('hidden');
+    }
+}
+
+function configureAccelerator(form, availability, selectedAccelerator) {
+    const group = form.querySelector('#onnx-accelerator-group');
+    const select = form.querySelector('#onnx-accelerator');
+    if (!group || !select) return;
+
+    const rknnAvailable = availability?.accelerators?.rknn;
+    if (rknnAvailable) {
+        group.classList.remove('hidden');
+        const valid = ['none', 'rknn'];
+        if (!valid.includes(selectedAccelerator)) {
+            select.value = 'none';
+        } else {
+            select.value = selectedAccelerator;
+        }
+    } else {
+        group.classList.add('hidden');
+        select.value = 'none';
+    }
+}
+
+async function populateLabelSelect(form, pipelineId, selectedClasses) {
+    const select = form.querySelector('#target-class-filter');
+    if (!select) return;
+    const labels = await fetchLabels(pipelineId);
+    select.innerHTML = '';
+    labels.forEach(label => {
+        const option = new Option(label, label);
+        if (selectedClasses && selectedClasses.includes(label)) {
+            option.selected = true;
+        }
+        select.appendChild(option);
+    });
+}
 
 function getSelectedPipeline() {
     const pipelineSelect = document.getElementById('pipeline-select');
@@ -27,7 +128,7 @@ export function updatePipelineForm(pipelineName) {
     });
 }
 
-export function loadPipelineConfig(pipelineData) {
+export async function loadPipelineConfig(pipelineData) {
     let config = {};
     try {
         config = pipelineData.config ? JSON.parse(pipelineData.config) : {};
@@ -71,9 +172,12 @@ export function loadPipelineConfig(pipelineData) {
         setSliderValue('min-fullness', config.min_fullness !== undefined ? config.min_fullness : 0.4);
     } else if (pipelineData.pipeline_type === 'Object Detection (ML)') {
         const form = document.getElementById('form-Object Detection (ML)');
+        const availability = await fetchMlAvailability();
         const setSliderValue = (baseId, value) => {
-            form.querySelector(`#${baseId}`).value = value;
-            form.querySelector(`#${baseId}-value`).value = value;
+            const slider = form.querySelector(`#${baseId}`);
+            const number = form.querySelector(`#${baseId}-value`);
+            if (slider) slider.value = value;
+            if (number) number.value = value;
         };
         const modelFilenameDiv = form.querySelector('#model-file-filename');
         const deleteModelBtn = form.querySelector('#delete-model-btn');
@@ -93,14 +197,42 @@ export function loadPipelineConfig(pipelineData) {
             labelsFilenameDiv.textContent = '';
             deleteLabelsBtn.classList.add('hidden');
         }
-        setSliderValue('confidence-threshold', config.confidence_threshold !== undefined ? config.confidence_threshold : 0.5);
-        form.querySelector('#inference-device').value = config.inference_device || 'CPU';
-        const classFilterSelect = form.querySelector('#target-class-filter');
-        if (config.target_classes && Array.isArray(config.target_classes)) {
-            Array.from(classFilterSelect.options).forEach(option => {
-                option.selected = config.target_classes.includes(option.value);
-            });
+        const modelType = (config.model_type || 'yolo').toLowerCase();
+        const modelTypeInput = form.querySelector('#ml-model-type');
+        if (modelTypeInput) modelTypeInput.value = modelType.toUpperCase();
+        toggleRuntimeSections(form, modelType);
+        if (modelType === 'tflite') {
+            const delegates = availability?.tflite?.delegates || ['CPU'];
+            populateSelectOptions(
+                form.querySelector('#tflite-delegate'),
+                delegates,
+                config.tflite_delegate || delegates[0]
+            );
+            const acceleratorSelect = form.querySelector('#onnx-accelerator');
+            if (acceleratorSelect) acceleratorSelect.value = 'none';
+            form.querySelector('#onnx-accelerator-group')?.classList.add('hidden');
+        } else {
+            const providers = availability?.onnx?.providers || ['CPUExecutionProvider'];
+            populateSelectOptions(
+                form.querySelector('#onnx-provider'),
+                providers,
+                config.onnx_provider || providers[0]
+            );
+            configureAccelerator(form, availability, config.accelerator || 'none');
         }
+        setSliderValue('confidence-threshold', config.confidence_threshold !== undefined ? config.confidence_threshold : 0.5);
+        setSliderValue('nms-iou-threshold', config.nms_iou_threshold !== undefined ? config.nms_iou_threshold : 0.45);
+        const imgSizeInput = form.querySelector('#img-size');
+        if (imgSizeInput) imgSizeInput.value = config.img_size || 640;
+        const maxDetectionsInput = form.querySelector('#max-detections');
+        if (maxDetectionsInput) maxDetectionsInput.value = config.max_detections || 100;
+        await populateLabelSelect(form, pipelineData.id, config.target_classes || []);
+    }
+
+    try {
+        pipelineData.config = JSON.stringify(config);
+    } catch (error) {
+        console.error('Failed to serialise pipeline config for caching:', error);
     }
 }
 
@@ -116,7 +248,7 @@ export async function updatePipelineDetails(updateFeedSourceCallback) {
 
         const pipelineData = currentPipelines.find(p => p.id == selectedOption.value);
         if (pipelineData) {
-            loadPipelineConfig(pipelineData);
+            await loadPipelineConfig(pipelineData);
         }
     } else {
         document.querySelectorAll('.pipeline-form').forEach(form => form.classList.add('hidden'));
@@ -161,7 +293,14 @@ export async function savePipelineConfig() {
     const pipeline = getSelectedPipeline();
     if (!pipeline) return;
 
-    let config = {};
+    let config;
+    try {
+        config = pipeline.config ? JSON.parse(pipeline.config) : {};
+    } catch (error) {
+        console.error('Failed to parse existing pipeline config, using defaults:', error);
+        config = {};
+    }
+
     if (pipeline.pipeline_type === 'AprilTag') {
         const form = document.getElementById('form-AprilTag');
         config = {
@@ -192,17 +331,42 @@ export async function savePipelineConfig() {
     } else if (pipeline.pipeline_type === 'Object Detection (ML)') {
         const form = document.getElementById('form-Object Detection (ML)');
         const selectedClasses = Array.from(form.querySelector('#target-class-filter').selectedOptions).map(opt => opt.value);
-        config = {
-            'model_filename': form.querySelector('#model-file-filename').textContent || null,
-            'labels_filename': form.querySelector('#labels-file-filename').textContent || null,
-            'confidence_threshold': parseFloat(form.querySelector('#confidence-threshold-value').value),
-            'target_classes': selectedClasses,
-            'inference_device': form.querySelector('#inference-device').value,
-        };
+
+        const modelTypeRaw = form.querySelector('#ml-model-type')?.value || 'YOLO';
+        const modelType = modelTypeRaw.toLowerCase();
+        const confidence = parseFloat(form.querySelector('#confidence-threshold-value').value);
+        const nmsIou = parseFloat(form.querySelector('#nms-iou-threshold-value').value);
+        const imgSize = parseInt(form.querySelector('#img-size').value, 10);
+        const maxDetections = parseInt(form.querySelector('#max-detections').value, 10);
+        const modelFilenameText = form.querySelector('#model-file-filename').textContent?.trim() || null;
+        const labelsFilenameText = form.querySelector('#labels-file-filename').textContent?.trim() || null;
+
+        config.model_filename = modelFilenameText || null;
+        config.labels_filename = labelsFilenameText || null;
+        config.confidence_threshold = Number.isFinite(confidence) ? confidence : 0.5;
+        config.nms_iou_threshold = Number.isFinite(nmsIou) ? nmsIou : 0.45;
+        config.target_classes = selectedClasses;
+        config.img_size = Number.isInteger(imgSize) ? imgSize : 640;
+        config.max_detections = Number.isInteger(maxDetections) ? maxDetections : 100;
+        config.model_type = modelType;
+
+        if (modelType === 'tflite') {
+            const delegateSelect = form.querySelector('#tflite-delegate');
+            config.tflite_delegate = delegateSelect && delegateSelect.value ? delegateSelect.value : 'CPU';
+            delete config.onnx_provider;
+            config.accelerator = 'none';
+        } else {
+            const providerSelect = form.querySelector('#onnx-provider');
+            config.onnx_provider = providerSelect && providerSelect.value ? providerSelect.value : 'CPUExecutionProvider';
+            const acceleratorSelect = form.querySelector('#onnx-accelerator');
+            config.accelerator = acceleratorSelect && acceleratorSelect.value ? acceleratorSelect.value : 'none';
+            delete config.tflite_delegate;
+        }
     }
 
     try {
         await updatePipelineConfig(pipeline.id, config);
+        pipeline.config = JSON.stringify(config);
         console.log(`Pipeline ${pipeline.id} config saved.`);
     } catch (error) {
         console.error('Error saving pipeline config:', error);
@@ -296,9 +460,17 @@ export async function uploadFile(event) {
         try {
             const data = await uploadFileToPipeline(pipeline.id, file, fileType);
             if (data.success) {
-                document.getElementById(`${fileType}-file-filename`).textContent = data.filename;
+                if (data.config) {
+                    pipeline.config = JSON.stringify(data.config);
+                    const index = currentPipelines.findIndex(p => p.id === pipeline.id);
+                    if (index >= 0) currentPipelines[index] = { ...currentPipelines[index], config: pipeline.config };
+                }
+                if (fileType === 'labels') {
+                    labelsCache.delete(pipeline.id);
+                }
+                await loadPipelineConfig(pipeline);
                 document.getElementById(`delete-${fileType}-btn`).classList.remove('hidden');
-                await savePipelineConfig(); // Save the new filename in the config
+                if (fileInput) fileInput.value = '';
             }
         } catch (error) {
             console.error('Error uploading file:', error);
@@ -313,11 +485,17 @@ export async function deleteFile(type) {
     try {
         const data = await deleteFileFromPipeline(pipeline.id, type);
         if (data.success) {
-            document.getElementById(`${type}-file-filename`).textContent = '';
-            document.getElementById(`delete-${type}-btn`).classList.add('hidden');
+            if (data.config) {
+                pipeline.config = JSON.stringify(data.config);
+                const index = currentPipelines.findIndex(p => p.id === pipeline.id);
+                if (index >= 0) currentPipelines[index] = { ...currentPipelines[index], config: pipeline.config };
+            }
+            if (type === 'labels') {
+                labelsCache.delete(pipeline.id);
+            }
             const fileInput = document.getElementById(`${type}-file-upload`);
             if (fileInput) fileInput.value = '';
-            await savePipelineConfig(); // Save the cleared filename in the config
+            await loadPipelineConfig(pipeline);
         }
     } catch (error) {
         console.error('Error deleting file:', error);

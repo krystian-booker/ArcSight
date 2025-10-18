@@ -20,6 +20,14 @@ export async function getPipelinesForCamera(cameraId) {
     return fetchJson(`/api/cameras/${cameraId}/pipelines`);
 }
 
+export async function getMlAvailability() {
+    return fetchJson('/api/pipelines/ml/availability');
+}
+
+export async function getPipelineLabels(pipelineId) {
+    return fetchJson(`/api/pipelines/${pipelineId}/labels`);
+}
+
 export async function updatePipelineConfig(pipelineId, config) {
     return fetchJson(`/api/pipelines/${pipelineId}/config`, {
         method: 'PUT',

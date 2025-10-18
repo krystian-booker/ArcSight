@@ -188,6 +188,66 @@ def test_ml_detection_additional_properties_rejected():
     assert "malicious_property" in error
 
 
+def test_ml_detection_yolo_rejects_tflite_delegate():
+    """YOLO configs should not accept TFLite delegate property."""
+    config = {
+        "model_type": "yolo",
+        "onnx_provider": "CPUExecutionProvider",
+        "tflite_delegate": "CPU",
+    }
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "tflite_delegate" in error
+
+
+def test_ml_detection_tflite_requires_delegate():
+    """TFLite configs require a delegate setting."""
+    config = {
+        "model_type": "tflite",
+    }
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "tflite_delegate" in error
+
+
+def test_ml_detection_tflite_accepts_delegate():
+    """TFLite configs with delegate should be valid."""
+    config = {
+        "model_type": "tflite",
+        "tflite_delegate": "CPU",
+        "confidence_threshold": 0.4,
+    }
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is True
+    assert error is None
+
+
+def test_ml_detection_rknn_requires_paths():
+    """RKNN accelerator must include model paths."""
+    config = {
+        "model_type": "yolo",
+        "onnx_provider": "CPUExecutionProvider",
+        "accelerator": "rknn",
+    }
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "rknn_path" in error
+
+
+def test_ml_detection_rknn_valid():
+    """RKNN accelerator config is valid with required paths."""
+    config = {
+        "model_type": "yolo",
+        "onnx_provider": "CPUExecutionProvider",
+        "converted_onnx_path": "/tmp/model.onnx",
+        "accelerator": "rknn",
+        "rknn_path": "/tmp/model.rknn",
+    }
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is True
+    assert error is None
+
+
 # --- Tests for Coloured Shape Pipeline ---
 
 

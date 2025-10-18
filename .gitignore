@@ -240,3 +240,6 @@ Temporary Items
 ### macOS Patch ###
 # iCloud generated files
 *.icloud
+Miniconda3-latest-Linux-x86_64.sh
+.gitignore
+AGENTS.md

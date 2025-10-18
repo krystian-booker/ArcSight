@@ -28,6 +28,26 @@
                     </div>
                 </div>
                 <div class="mb-4">
+                    <label for="ml-model-type" class="block text-sm font-medium text-gray-300 mb-2">Model Type</label>
+                    <input type="text" id="ml-model-type" class="w-full custom-select bg-gray-700 border border-gray-600 text-gray-200" value="-" readonly>
+                </div>
+                <div class="mb-4 hidden" id="onnx-runtime-group">
+                    <label for="onnx-provider" class="block text-sm font-medium text-gray-300 mb-2">ONNX Runtime Provider</label>
+                    <select id="onnx-provider" class="custom-select"></select>
+                </div>
+                <div class="mb-4 hidden" id="onnx-accelerator-group">
+                    <label for="onnx-accelerator" class="block text-sm font-medium text-gray-300 mb-2">Hardware Accelerator</label>
+                    <select id="onnx-accelerator" class="custom-select">
+                        <option value="none">None</option>
+                        <option value="rknn">Orange Pi 5 NPU (RKNN)</option>
+                    </select>
+                    <p class="text-xs text-gray-400 mt-2">RKNN is available on Orange Pi 5 devices when the toolkit is installed.</p>
+                </div>
+                <div class="mb-4 hidden" id="tflite-delegate-group">
+                    <label for="tflite-delegate" class="block text-sm font-medium text-gray-300 mb-2">TFLite Delegate</label>
+                    <select id="tflite-delegate" class="custom-select"></select>
+                </div>
+                <div class="mb-4">
                     <label for="confidence-threshold" class="block text-sm font-medium text-gray-300 mb-2">Confidence Threshold (0-1)</label>
                     <div class="flex items-center gap-4">
                         <input type="range" id="confidence-threshold" min="0" max="1" value="0.5" step="0.01" class="w-full">
@@ -35,17 +55,24 @@
                     </div>
                 </div>
                 <div class="mb-4">
+                    <label for="nms-iou-threshold" class="block text-sm font-medium text-gray-300 mb-2">NMS IoU Threshold (0-1)</label>
+                    <div class="flex items-center gap-4">
+                        <input type="range" id="nms-iou-threshold" min="0" max="1" value="0.45" step="0.01" class="w-full">
+                        <input type="number" id="nms-iou-threshold-value" min="0" max="1" value="0.45" step="0.01" class="w-24 custom-select">
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="img-size" class="block text-sm font-medium text-gray-300 mb-2">Input Image Size (pixels)</label>
+                    <input type="number" id="img-size" min="32" max="2048" step="32" value="640" class="w-full custom-select">
+                </div>
+                <div class="mb-4">
+                    <label for="max-detections" class="block text-sm font-medium text-gray-300 mb-2">Maximum Detections</label>
+                    <input type="number" id="max-detections" min="1" max="500" step="1" value="100" class="w-full custom-select">
+                </div>
+                <div class="mb-4">
                     <label for="target-class-filter" class="block text-sm font-medium text-gray-300 mb-2">Target Class Filter</label>
                     <select id="target-class-filter" class="custom-select" multiple>
                         </select>
-                </div>
-                <div class="mb-4">
-                    <label for="inference-device" class="block text-sm font-medium text-gray-300 mb-2">Inference Device</label>
-                    <select id="inference-device" class="custom-select">
-                        <option>CPU</option>
-                        <option>GPU</option>
-                        <option>EdgeTPU</option>
-                    </select>
                 </div>
             </form>
         </div>
