@@ -6,14 +6,12 @@ Configuration is loaded from environment variables with sensible defaults.
 Environment Variables:
     FLASK_ENV: Application environment (development, production, testing)
     FLASK_DEBUG: Enable Flask debug mode (0 or 1)
-    SECRET_KEY: Secret key for session/CSRF protection
     DATABASE_URL: SQLAlchemy database URI
     HOST: Server host address (default: 0.0.0.0)
     PORT: Server port (default: 8080)
 """
 
 import os
-import secrets
 
 
 class Config:
@@ -22,7 +20,6 @@ class Config:
     # Flask core settings
     DEBUG = False
     TESTING = False
-    SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
     # Server settings
     HOST = os.environ.get('HOST', '0.0.0.0')
@@ -51,19 +48,6 @@ class ProductionConfig(Config):
     DEBUG = False
     ENV = 'production'
 
-    # In production, SECRET_KEY MUST be set via environment variable
-    @classmethod
-    def init_app(cls, app):
-        """Production-specific initialization."""
-        # Verify SECRET_KEY is set in production
-        if cls.SECRET_KEY == Config.SECRET_KEY:
-            import warnings
-            warnings.warn(
-                "WARNING: Using auto-generated SECRET_KEY in production. "
-                "Set SECRET_KEY environment variable for persistent sessions.",
-                RuntimeWarning
-            )
-
 
 class TestingConfig(Config):
     """Testing configuration with in-memory database."""
@@ -74,8 +58,6 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     # Disable camera threads in tests
     CAMERA_THREADS_ENABLED = False
-    # Use a fixed secret key for testing
-    SECRET_KEY = 'test-secret-key-do-not-use-in-production'
 
 
 # Configuration dictionary

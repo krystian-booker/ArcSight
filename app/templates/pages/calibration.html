@@ -126,12 +126,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // --- CSRF Token Helper ---
-    function getCSRFToken() {
-        const meta = document.querySelector('meta[name="csrf-token"]');
-        return meta ? meta.content : '';
-    }
-
     const setupStep = document.getElementById('setup-step');
     const captureStep = document.getElementById('capture-step');
     const resultsStep = document.getElementById('results-step');
@@ -337,8 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/calibration/start', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload)
             });
@@ -368,8 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/calibration/capture', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ camera_id: state.cameraId })
             });
@@ -397,8 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/calibration/calculate', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ camera_id: state.cameraId })
             });
@@ -450,8 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/calibration/save', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload)
             });

@@ -3,7 +3,7 @@ import atexit
 from flask import Flask
 from appdirs import user_data_dir
 
-from .extensions import db, csrf
+from .extensions import db
 from . import camera_manager
 from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
@@ -46,7 +46,6 @@ def create_app(config_overrides=None):
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
     db.init_app(app)
-    csrf.init_app(app)
 
     # Import and register the new blueprints
     from .blueprints.dashboard import dashboard as dashboard_blueprint

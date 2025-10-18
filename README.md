@@ -96,7 +96,6 @@ Production mode ensures:
 | `FLASK_DEBUG` | Enable debug mode | `0` | `0` (off), `1` (on) |
 | `HOST` | Server host address | `0.0.0.0` | Any valid IP address |
 | `PORT` | Server port | `8080` | Any valid port number |
-| `SECRET_KEY` | Secret key for sessions/CSRF | Auto-generated | Any random string (32+ chars) |
 | `DATABASE_URL` | Database connection string | SQLite in user data dir | Any valid SQLAlchemy URL |
 
 See `.env.example` for more details.
