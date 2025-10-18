@@ -28,6 +28,8 @@ dependencies:
       # Utilities
       - appdirs
       - reportlab
+      - wmi ; sys_platform == 'win32'
+      - pyudev ; sys_platform == 'linux'
 
       # Testing
       - pytest

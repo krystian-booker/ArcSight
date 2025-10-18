@@ -11,7 +11,7 @@ def mock_camera_data(app):
     """Creates a mock Camera ORM object for the USB driver."""
     with app.app_context():
         camera = MagicMock(spec=Camera)
-        camera.identifier = "0"  # A valid USB camera index
+        camera.identifier = "usb:046D:0825:ABC123"  # A stable USB identifier
     return camera
 
 
@@ -21,10 +21,12 @@ def usb_driver(mock_camera_data):
     return USBDriver(mock_camera_data)
 
 
+@patch("app.drivers.usb_driver.find_camera_index_by_identifier")
 @patch("cv2.VideoCapture")
-def test_connect_success(mock_video_capture, usb_driver):
+def test_connect_success(mock_video_capture, mock_find_index, usb_driver):
     """Test successful connection to a USB camera."""
     # Arrange
+    mock_find_index.return_value = 0  # Camera found at index 0
     mock_cap_instance = MagicMock()
     mock_cap_instance.isOpened.return_value = True
     mock_video_capture.return_value = mock_cap_instance
@@ -33,14 +35,18 @@ def test_connect_success(mock_video_capture, usb_driver):
     usb_driver.connect()
 
     # Assert
+    mock_find_index.assert_called_once_with("usb:046D:0825:ABC123")
     mock_video_capture.assert_called_once_with(0)
     assert usb_driver.cap is mock_cap_instance
+    assert usb_driver.resolved_index == 0
 
 
+@patch("app.drivers.usb_driver.find_camera_index_by_identifier")
 @patch("cv2.VideoCapture")
-def test_connect_failure(mock_video_capture, usb_driver):
+def test_connect_failure(mock_video_capture, mock_find_index, usb_driver):
     """Test failed connection if camera cannot be opened."""
     # Arrange
+    mock_find_index.return_value = 0
     mock_cap_instance = MagicMock()
     mock_cap_instance.isOpened.return_value = False
     mock_video_capture.return_value = mock_cap_instance
@@ -49,19 +55,65 @@ def test_connect_failure(mock_video_capture, usb_driver):
     with pytest.raises(ConnectionError, match="Failed to open USB camera at index 0"):
         usb_driver.connect()
     assert usb_driver.cap is None
+    assert usb_driver.resolved_index is None
 
 
-def test_connect_invalid_identifier(mock_camera_data):
-    """Test connection failure with a non-integer identifier."""
+@patch("app.drivers.usb_driver.find_camera_index_by_identifier")
+def test_connect_camera_not_found(mock_find_index, mock_camera_data):
+    """Test connection failure when camera identifier is not found."""
     # Arrange
-    mock_camera_data.identifier = "not-a-number"
+    mock_camera_data.identifier = "usb:046D:0825:NOTFOUND"
     driver = USBDriver(mock_camera_data)
+    mock_find_index.return_value = None  # Camera not found
 
     # Act & Assert
     with pytest.raises(
-        ConnectionError, match="Invalid identifier for USB camera: 'not-a-number'"
+        ConnectionError,
+        match="USB camera with identifier 'usb:046D:0825:NOTFOUND' not found",
     ):
         driver.connect()
+
+
+@patch("app.drivers.usb_driver.find_camera_index_by_identifier")
+@patch("cv2.VideoCapture")
+def test_connect_with_stable_identifier_success(
+    mock_video_capture, mock_find_index, mock_camera_data
+):
+    """Test successful connection using a stable identifier."""
+    # Arrange
+    mock_camera_data.identifier = "usb:046D:0825:ABC123"
+    driver = USBDriver(mock_camera_data)
+    mock_find_index.return_value = 2  # Camera is at index 2
+
+    mock_cap_instance = MagicMock()
+    mock_cap_instance.isOpened.return_value = True
+    mock_video_capture.return_value = mock_cap_instance
+
+    # Act
+    driver.connect()
+
+    # Assert
+    mock_find_index.assert_called_once_with("usb:046D:0825:ABC123")
+    mock_video_capture.assert_called_once_with(2)
+    assert driver.cap is mock_cap_instance
+    assert driver.resolved_index == 2
+
+
+@patch("app.drivers.usb_driver.find_camera_index_by_identifier")
+def test_connect_with_stable_identifier_not_found(mock_find_index, mock_camera_data):
+    """Test connection failure when stable identifier is not found."""
+    # Arrange
+    mock_camera_data.identifier = "usb:046D:0825:NOTFOUND"
+    driver = USBDriver(mock_camera_data)
+    mock_find_index.return_value = None  # Camera not found
+
+    # Act & Assert
+    with pytest.raises(
+        ConnectionError,
+        match="USB camera with identifier 'usb:046D:0825:NOTFOUND' not found",
+    ):
+        driver.connect()
+    mock_find_index.assert_called_once_with("usb:046D:0825:NOTFOUND")
 
 
 def test_disconnect(usb_driver):
@@ -144,42 +196,72 @@ def test_get_frame_lost_connection(usb_driver):
     assert frame is None
 
 
-@patch("cv2.VideoCapture")
-def test_list_devices(mock_video_capture):
-    """Test listing available USB devices."""
+@patch("app.usb_device_info.get_usb_cameras_with_info")
+def test_list_devices(mock_get_cameras):
+    """Test listing available USB devices with stable identifiers."""
     # Arrange
-    # Simulate that cameras at index 0 and 2 are available, but 1 is not.
-    mock_caps = {
-        0: MagicMock(isOpened=MagicMock(return_value=True)),
-        1: MagicMock(isOpened=MagicMock(return_value=False)),
-        2: MagicMock(isOpened=MagicMock(return_value=True)),
-    }
-
-    def side_effect(index):
-        # Default mock for indices we don't care about
-        if index not in mock_caps:
-            return MagicMock(isOpened=MagicMock(return_value=False))
-        return mock_caps[index]
-
-    mock_video_capture.side_effect = side_effect
+    mock_get_cameras.return_value = [
+        {
+            "cv_index": "0",
+            "identifier": "usb:046D:0825:ABC123",
+            "name": "Logitech Webcam",
+            "vendor_id": "046D",
+            "product_id": "0825",
+            "serial_number": "ABC123",
+            "usb_path": "",
+        },
+        {
+            "cv_index": "2",
+            "identifier": "usb:1234:5678:XYZ789",
+            "name": "Generic USB Camera",
+            "vendor_id": "1234",
+            "product_id": "5678",
+            "serial_number": "XYZ789",
+            "usb_path": "",
+        },
+    ]
 
     # Act
     devices = USBDriver.list_devices()
 
     # Assert
     assert len(devices) == 2
-    assert devices[0] == {
-        "identifier": "0",
-        "name": "USB Camera 0",
-        "camera_type": "USB",
-    }
-    assert devices[1] == {
-        "identifier": "2",
-        "name": "USB Camera 2",
-        "camera_type": "USB",
-    }
 
-    # Check that release was called on the opened cameras
-    mock_caps[0].release.assert_called_once()
-    mock_caps[1].release.assert_not_called()  # Should not be called if not opened
-    mock_caps[2].release.assert_called_once()
+    # Check first device
+    assert devices[0]["identifier"] == "usb:046D:0825:ABC123"
+    assert devices[0]["camera_type"] == "USB"
+    assert "046D:0825" in devices[0]["name"]  # VID:PID should be in name
+    assert "ABC123" in devices[0]["name"]  # Serial should be in name
+
+    # Check second device
+    assert devices[1]["identifier"] == "usb:1234:5678:XYZ789"
+    assert devices[1]["camera_type"] == "USB"
+    assert "1234:5678" in devices[1]["name"]
+
+    mock_get_cameras.assert_called_once()
+
+
+@patch("app.usb_device_info.get_usb_cameras_with_info")
+def test_list_devices_fallback_format(mock_get_cameras):
+    """Test listing devices that use fallback identifiers (no serial)."""
+    # Arrange
+    mock_get_cameras.return_value = [
+        {
+            "cv_index": "0",
+            "identifier": "usb:index:0",
+            "name": "USB Camera 0",
+            "vendor_id": "",
+            "product_id": "",
+            "serial_number": "",
+            "usb_path": "",
+        }
+    ]
+
+    # Act
+    devices = USBDriver.list_devices()
+
+    # Assert
+    assert len(devices) == 1
+    assert devices[0]["identifier"] == "usb:index:0"
+    assert devices[0]["name"] == "USB Camera 0"
+    mock_get_cameras.assert_called_once()

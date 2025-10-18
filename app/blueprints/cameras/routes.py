@@ -27,10 +27,14 @@ def add_camera():
 
     if camera_type == "USB":
         identifier = request.form.get("usb-camera-select")
+        # Get additional device metadata from the form if available
+        device_info_json = request.form.get("device-info-json")
     elif camera_type == "GenICam":
         identifier = request.form.get("genicam-camera-select")
+        device_info_json = None
     elif camera_type == "OAK-D":
         identifier = request.form.get("oakd-camera-select")
+        device_info_json = None
     else:
         return redirect(url_for("cameras.cameras_page"))
 
@@ -38,7 +42,10 @@ def add_camera():
         existing_camera = Camera.query.filter_by(identifier=identifier).first()
         if not existing_camera:
             new_camera = Camera(
-                name=name, camera_type=camera_type, identifier=identifier
+                name=name,
+                camera_type=camera_type,
+                identifier=identifier,
+                device_info_json=device_info_json,
             )
             # Add a default pipeline
             default_pipeline = Pipeline(

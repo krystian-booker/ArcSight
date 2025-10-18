@@ -24,6 +24,9 @@ class Camera(db.Model):
     camera_matrix_json = db.Column(db.String, nullable=True)
     dist_coeffs_json = db.Column(db.String, nullable=True)
     reprojection_error = db.Column(db.Float, nullable=True)
+    device_info_json = db.Column(
+        db.String, nullable=True
+    )  # Stores USB VID/PID/Serial metadata
 
     pipelines = db.relationship(
         "Pipeline", back_populates="camera", cascade="all, delete-orphan"
@@ -43,6 +46,7 @@ class Camera(db.Model):
             "camera_matrix_json": self.camera_matrix_json,
             "dist_coeffs_json": self.dist_coeffs_json,
             "reprojection_error": self.reprojection_error,
+            "device_info_json": self.device_info_json,
         }
 
 
