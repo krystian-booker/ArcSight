@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Pixi: Install Dependencies",
+      "label": "Conda: Create Environment",
       "type": "shell",
-      "command": "pixi install",
+      "command": "conda env create -f environment.yml",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -13,9 +13,20 @@
       }
     },
     {
-      "label": "Pixi: Run Dev Server",
+      "label": "Conda: Update Environment",
       "type": "shell",
-      "command": "pixi run dev",
+      "command": "conda env update -f environment.yml --prune",
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Run Dev Server",
+      "type": "shell",
+      "command": "python run.py",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -28,21 +39,9 @@
       "isBackground": true
     },
     {
-      "label": "Pixi: Run Production Server",
+      "label": "Run All Tests",
       "type": "shell",
-      "command": "pixi run serve",
-      "problemMatcher": [],
-      "group": "build",
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
-      },
-      "isBackground": true
-    },
-    {
-      "label": "Pixi: Run All Tests",
-      "type": "shell",
-      "command": "pixi run test",
+      "command": "pytest",
       "problemMatcher": [],
       "group": {
         "kind": "test",
@@ -55,9 +54,9 @@
       }
     },
     {
-      "label": "Pixi: Run Tests (Verbose)",
+      "label": "Run Tests (Verbose)",
       "type": "shell",
-      "command": "pixi run test-verbose",
+      "command": "pytest -v",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -67,9 +66,9 @@
       }
     },
     {
-      "label": "Pixi: Run Tests (No Coverage)",
+      "label": "Run Tests (No Coverage)",
       "type": "shell",
-      "command": "pixi run test-no-cov",
+      "command": "pytest --no-cov",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -79,9 +78,9 @@
       }
     },
     {
-      "label": "Pixi: Run Current Test File",
+      "label": "Run Current Test File",
       "type": "shell",
-      "command": "pixi run test ${relativeFile}",
+      "command": "pytest ${relativeFile}",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -91,9 +90,9 @@
       }
     },
     {
-      "label": "Pixi: Generate Coverage Report",
+      "label": "Generate Coverage Report",
       "type": "shell",
-      "command": "pixi run coverage",
+      "command": "pytest --cov=app --cov-report=html --cov-report=term-missing",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -102,9 +101,9 @@
       }
     },
     {
-      "label": "Pixi: Format Code",
+      "label": "Format Code",
       "type": "shell",
-      "command": "pixi run format",
+      "command": "ruff format app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -113,9 +112,9 @@
       }
     },
     {
-      "label": "Pixi: Check Code Formatting",
+      "label": "Check Code Formatting",
       "type": "shell",
-      "command": "pixi run format-check",
+      "command": "ruff format --check app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -124,22 +123,11 @@
       }
     },
     {
-      "label": "Pixi: Lint Code",
+      "label": "Lint Code",
       "type": "shell",
-      "command": "pixi run lint",
+      "command": "ruff check app tests",
       "problemMatcher": [],
       "group": "build",
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
-      "label": "Pixi: List Available Tasks",
-      "type": "shell",
-      "command": "pixi task list",
-      "problemMatcher": [],
-      "group": "none",
       "presentation": {
         "reveal": "always",
         "panel": "dedicated"

@@ -6,40 +6,41 @@ A Flask-based web application for vision processing and camera management. Suppo
 
 ### Installation
 
-1. **Install dependencies using Pixi:**
+1. **Create and activate conda environment:**
    ```bash
-   pixi install
+   conda env create -f environment.yml
+   conda activate vision-tools
    ```
 
 2. **Run the web server (development mode):**
    ```bash
-   pixi run dev
+   python run.py
    ```
 
    The web server will be available at `http://0.0.0.0:8080`.
-
-3. **Run the web server (production mode):**
-   ```bash
-   pixi run serve
-   ```
 
 ## Development Setup
 
 ### Prerequisites
 
-- [Pixi](https://pixi.sh) - Modern package manager for Python projects ([installation instructions](https://pixi.sh/latest/#installation))
+- [Conda](https://docs.conda.io/en/latest/) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
 - Camera hardware (optional for development)
 
-Pixi will automatically install Python 3.11 and all dependencies.
+Conda will automatically install Python 3.11 and all dependencies.
 
 ### Setting Up Development Environment
 
-1. **Install project dependencies:**
+1. **Create the conda environment:**
    ```bash
-   pixi install
+   conda env create -f environment.yml
    ```
 
-2. **Configure environment variables (optional):**
+2. **Activate the environment:**
+   ```bash
+   conda activate vision-tools
+   ```
+
+3. **Configure environment variables (optional):**
 
    Copy the example environment file:
    ```bash
@@ -53,34 +54,37 @@ Pixi will automatically install Python 3.11 and all dependencies.
    FLASK_DEBUG=1
    ```
 
-3. **Run in development mode:**
+4. **Run in development mode:**
    ```bash
-   pixi run dev
+   python run.py
    ```
 
 ### Common Development Tasks
 
 ```bash
+# Activate environment (always do this first)
+conda activate vision-tools
+
 # Run development server
-pixi run dev
+python run.py
 
 # Run tests
-pixi run test
+pytest
 
 # Run tests with verbose output
-pixi run test-verbose
+pytest -v
 
 # Run tests without coverage
-pixi run test-no-cov
+pytest --no-cov
 
 # Run specific test file
-pixi run test tests/test_camera_manager.py
+pytest tests/test_camera_manager.py
 
 # Format code
-pixi run format
+ruff format app tests
 
 # Check code quality
-pixi run lint
+ruff check app tests
 ```
 
 ### Environment Variables

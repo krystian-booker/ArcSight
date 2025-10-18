@@ -15,19 +15,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential g++ cmake
-
-      - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          pixi-version: latest
-          cache: true
+          auto-update-conda: true
+          python-version: "3.11"
+          environment-file: environment.yml
+          activate-environment: vision-tools
 
       - name: Run tests with coverage
-        run: pixi run test
+        shell: bash -el {0}
+        run: pytest
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -44,21 +42,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential g++ cmake
-
-      - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          pixi-version: latest
-          cache: true
+          auto-update-conda: true
+          python-version: "3.11"
+          environment-file: environment.yml
+          activate-environment: vision-tools
 
       - name: Validate app can start
+        shell: bash -el {0}
         run: |
           # Start the app in the background
-          timeout 30s pixi run dev > startup.log 2>&1 || EXIT_CODE=$?
+          timeout 30s python run.py > startup.log 2>&1 || EXIT_CODE=$?
 
           # Check if the app started successfully by looking for Flask startup messages
           if grep -q "WARNING: This is a development server" startup.log || \
@@ -81,14 +77,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          pixi-version: latest
-          cache: true
+          auto-update-conda: true
+          python-version: "3.11"
+          environment-file: environment.yml
+          activate-environment: vision-tools
 
       - name: Check code formatting
-        run: pixi run format-check
+        shell: bash -el {0}
+        run: ruff format --check app tests
 
       - name: Run linter
-        run: pixi run lint
+        shell: bash -el {0}
+        run: ruff check app tests

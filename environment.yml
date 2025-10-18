@@ -1,0 +1,40 @@
+name: vision-tools
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python
+  - python=3.11.*
+
+  # Core dependencies
+  - numpy<2
+  - psutil
+  - opencv
+
+  # Pip dependencies
+  - pip
+  - pip:
+      # Flask
+      - flask
+      - flask-sqlalchemy
+
+      # Camera/Vision libraries
+      - harvesters
+      - genicam
+      - robotpy-apriltag
+      - depthai
+
+      # Utilities
+      - appdirs
+      - reportlab
+
+      # Testing
+      - pytest
+      - pytest-flask
+      - pytest-cov
+      - pytest-mock
+      - pytest-timeout
+
+      # Code quality
+      - ruff
