@@ -54,9 +54,7 @@ class AprilTagPipeline:
         if self.multi_tag_enabled and field_layout_json:
             try:
                 self.field_layout_data = self._load_field_layout(field_layout_json)
-                print(
-                    f"Loaded field layout with {len(self.field_layout_data)} tags"
-                )
+                print(f"Loaded field layout with {len(self.field_layout_data)} tags")
             except Exception as e:
                 print(f"Failed to load field layout: {e}")
                 self.multi_tag_enabled = False
@@ -111,7 +109,9 @@ class AprilTagPipeline:
 
             # Extract translation (tag center in field coordinates)
             trans = pose_data["translation"]
-            center_pos = np.array([trans["x"], trans["y"], trans["z"]], dtype=np.float32)
+            center_pos = np.array(
+                [trans["x"], trans["y"], trans["z"]], dtype=np.float32
+            )
 
             # Extract quaternion rotation and convert to rotation matrix
             quat = pose_data["rotation"]["quaternion"]
@@ -120,16 +120,28 @@ class AprilTagPipeline:
 
             # Convert quaternion to rotation matrix
             # https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion
-            rotation_matrix = np.array([
-                [1 - 2*(q_y**2 + q_z**2), 2*(q_x*q_y - q_w*q_z), 2*(q_x*q_z + q_w*q_y)],
-                [2*(q_x*q_y + q_w*q_z), 1 - 2*(q_x**2 + q_z**2), 2*(q_y*q_z - q_w*q_x)],
-                [2*(q_x*q_z - q_w*q_y), 2*(q_y*q_z + q_w*q_x), 1 - 2*(q_x**2 + q_y**2)]
-            ], dtype=np.float32)
+            rotation_matrix = np.array(
+                [
+                    [
+                        1 - 2 * (q_y**2 + q_z**2),
+                        2 * (q_x * q_y - q_w * q_z),
+                        2 * (q_x * q_z + q_w * q_y),
+                    ],
+                    [
+                        2 * (q_x * q_y + q_w * q_z),
+                        1 - 2 * (q_x**2 + q_z**2),
+                        2 * (q_y * q_z - q_w * q_x),
+                    ],
+                    [
+                        2 * (q_x * q_z - q_w * q_y),
+                        2 * (q_y * q_z + q_w * q_x),
+                        1 - 2 * (q_x**2 + q_y**2),
+                    ],
+                ],
+                dtype=np.float32,
+            )
 
-            field_layout[tag_id] = {
-                "center": center_pos,
-                "rotation": rotation_matrix
-            }
+            field_layout[tag_id] = {"center": center_pos, "rotation": rotation_matrix}
 
         return field_layout
 
@@ -201,9 +213,7 @@ class AprilTagPipeline:
                 self.single_tag_obj_points, rvec, tvec, cam_matrix, dist_coeffs
             )
             pose_error = np.mean(
-                np.linalg.norm(
-                    img_points - projected_points.reshape(-1, 2), axis=1
-                )
+                np.linalg.norm(img_points - projected_points.reshape(-1, 2), axis=1)
             )
 
             # Convert rvec/tvec to FRC coordinate system
@@ -217,11 +227,14 @@ class AprilTagPipeline:
 
             # Transform rotation matrix to FRC coordinates
             # Rotation matrix to swap axes: OpenCV -> FRC
-            transform_matrix = np.array([
-                [0, 0, 1],   # FRC X = OpenCV Z
-                [-1, 0, 0],  # FRC Y = -OpenCV X
-                [0, -1, 0]   # FRC Z = -OpenCV Y
-            ], dtype=np.float32)
+            transform_matrix = np.array(
+                [
+                    [0, 0, 1],  # FRC X = OpenCV Z
+                    [-1, 0, 0],  # FRC Y = -OpenCV X
+                    [0, -1, 0],  # FRC Z = -OpenCV Y
+                ],
+                dtype=np.float32,
+            )
             rmat_frc = transform_matrix @ rmat_opencv @ transform_matrix.T
 
             # Convert FRC rotation matrix to Euler angles (Roll, Pitch, Yaw)
@@ -286,23 +299,31 @@ class AprilTagPipeline:
                     # Calculate 3D positions of tag corners in field coordinates
                     # Tag corners in tag-local coordinates
                     half_size = self.tag_size_m / 2.0
-                    tag_corners_local = np.array([
-                        [-half_size, -half_size, 0],
-                        [half_size, -half_size, 0],
-                        [half_size, half_size, 0],
-                        [-half_size, half_size, 0],
-                    ], dtype=np.float32)
+                    tag_corners_local = np.array(
+                        [
+                            [-half_size, -half_size, 0],
+                            [half_size, -half_size, 0],
+                            [half_size, half_size, 0],
+                            [-half_size, half_size, 0],
+                        ],
+                        dtype=np.float32,
+                    )
 
                     # Transform to field coordinates
-                    tag_corners_field = (tag_rotation @ tag_corners_local.T).T + tag_center
+                    tag_corners_field = (
+                        tag_rotation @ tag_corners_local.T
+                    ).T + tag_center
 
                     # Get 2D image points
-                    img_corners = np.array([
-                        [tag.getCorner(0).x, tag.getCorner(0).y],
-                        [tag.getCorner(1).x, tag.getCorner(1).y],
-                        [tag.getCorner(2).x, tag.getCorner(2).y],
-                        [tag.getCorner(3).x, tag.getCorner(3).y],
-                    ], dtype=np.float32)
+                    img_corners = np.array(
+                        [
+                            [tag.getCorner(0).x, tag.getCorner(0).y],
+                            [tag.getCorner(1).x, tag.getCorner(1).y],
+                            [tag.getCorner(2).x, tag.getCorner(2).y],
+                            [tag.getCorner(3).x, tag.getCorner(3).y],
+                        ],
+                        dtype=np.float32,
+                    )
 
                     obj_points_list.append(tag_corners_field)
                     img_points_list.append(img_corners)
@@ -324,37 +345,46 @@ class AprilTagPipeline:
                     if success:
                         # Calculate reprojection error
                         projected_multi, _ = cv2.projectPoints(
-                            obj_points_multi, rvec_multi, tvec_multi, cam_matrix, dist_coeffs
+                            obj_points_multi,
+                            rvec_multi,
+                            tvec_multi,
+                            cam_matrix,
+                            dist_coeffs,
                         )
                         multi_error = np.mean(
                             np.linalg.norm(
-                                img_points_multi - projected_multi.reshape(-1, 2), axis=1
+                                img_points_multi - projected_multi.reshape(-1, 2),
+                                axis=1,
                             )
                         )
 
                         # Convert to FRC coordinate system
-                        tvec_multi_frc = np.array([
-                            tvec_multi[2, 0],
-                            -tvec_multi[0, 0],
-                            -tvec_multi[1, 0]
-                        ])
+                        tvec_multi_frc = np.array(
+                            [tvec_multi[2, 0], -tvec_multi[0, 0], -tvec_multi[1, 0]]
+                        )
 
                         # Convert rotation matrix to FRC coordinates
                         rmat_multi_opencv, _ = cv2.Rodrigues(rvec_multi)
-                        transform_matrix = np.array([
-                            [0, 0, 1],
-                            [-1, 0, 0],
-                            [0, -1, 0]
-                        ], dtype=np.float32)
-                        rmat_multi_frc = transform_matrix @ rmat_multi_opencv @ transform_matrix.T
+                        transform_matrix = np.array(
+                            [[0, 0, 1], [-1, 0, 0], [0, -1, 0]], dtype=np.float32
+                        )
+                        rmat_multi_frc = (
+                            transform_matrix @ rmat_multi_opencv @ transform_matrix.T
+                        )
 
                         # Convert to Euler angles
                         multi_pitch_rad = np.arcsin(-rmat_multi_frc[2, 0])
                         if np.cos(multi_pitch_rad) > 1e-6:
-                            multi_yaw_rad = np.arctan2(rmat_multi_frc[1, 0], rmat_multi_frc[0, 0])
-                            multi_roll_rad = np.arctan2(rmat_multi_frc[2, 1], rmat_multi_frc[2, 2])
+                            multi_yaw_rad = np.arctan2(
+                                rmat_multi_frc[1, 0], rmat_multi_frc[0, 0]
+                            )
+                            multi_roll_rad = np.arctan2(
+                                rmat_multi_frc[2, 1], rmat_multi_frc[2, 2]
+                            )
                         else:
-                            multi_yaw_rad = np.arctan2(-rmat_multi_frc[0, 1], rmat_multi_frc[1, 1])
+                            multi_yaw_rad = np.arctan2(
+                                -rmat_multi_frc[0, 1], rmat_multi_frc[1, 1]
+                            )
                             multi_roll_rad = 0
 
                         multi_tag_result = {

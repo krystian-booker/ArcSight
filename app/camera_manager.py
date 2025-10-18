@@ -109,7 +109,12 @@ def stop_camera_thread(identifier):
 
 
 def add_pipeline_to_camera(
-    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, dist_coeffs_json
+    identifier,
+    pipeline_id,
+    pipeline_type,
+    pipeline_config_json,
+    camera_matrix_json,
+    dist_coeffs_json,
 ):
     """Starts a new processing thread for a running camera.
 
@@ -188,7 +193,12 @@ def remove_pipeline_from_camera(identifier, pipeline_id):
 
 
 def update_pipeline_in_camera(
-    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, dist_coeffs_json
+    identifier,
+    pipeline_id,
+    pipeline_type,
+    pipeline_config_json,
+    camera_matrix_json,
+    dist_coeffs_json,
 ):
     """Stops and restarts a pipeline processing thread to apply new settings.
 

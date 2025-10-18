@@ -252,7 +252,9 @@ class VisionProcessingThread(threading.Thread):
         # Load distortion coefficients
         if dist_coeffs_json:
             try:
-                self.dist_coeffs = np.array(json.loads(dist_coeffs_json), dtype=np.float32).reshape(-1, 1)
+                self.dist_coeffs = np.array(
+                    json.loads(dist_coeffs_json), dtype=np.float32
+                ).reshape(-1, 1)
                 print(f"[{self.identifier}] Loaded distortion coefficients from DB.")
             except (json.JSONDecodeError, TypeError):
                 print(

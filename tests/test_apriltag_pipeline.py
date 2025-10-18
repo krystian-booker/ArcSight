@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-import math
 from unittest.mock import MagicMock, patch
 from app.pipelines.apriltag_pipeline import AprilTagPipeline
 
@@ -71,7 +70,9 @@ def test_initialization_family_hack(mock_detector):
     mock_detector_instance.addFamily.assert_called_once_with("tag16h5", 2)
 
 
-def test_process_frame_no_tags(mock_detector, default_config, default_cam_matrix, default_dist_coeffs):
+def test_process_frame_no_tags(
+    mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+):
     """Test processing a frame where no tags are detected."""
     mock_detector_instance = MagicMock()
     mock_detector_instance.detect.return_value = []
@@ -89,7 +90,12 @@ def test_process_frame_no_tags(mock_detector, default_config, default_cam_matrix
 @patch("app.pipelines.apriltag_pipeline.cv2.solvePnP")
 @patch("app.pipelines.apriltag_pipeline.cv2.projectPoints")
 def test_process_frame_with_tags(
-    mock_project, mock_solve, mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+    mock_project,
+    mock_solve,
+    mock_detector,
+    default_config,
+    default_cam_matrix,
+    default_dist_coeffs,
 ):
     """Test processing a frame with a valid AprilTag detection using OpenCV solvePnP."""
     mock_detection = create_mock_detection(tag_id=1)
@@ -101,13 +107,17 @@ def test_process_frame_with_tags(
     # Mock solvePnP to return success and some rvec/tvec in OpenCV coordinates
     # OpenCV: X=right, Y=down, Z=forward
     mock_rvec = np.array([[0.1], [0.2], [0.3]], dtype=np.float32)
-    mock_tvec = np.array([[0.5], [0.3], [2.0]], dtype=np.float32)  # X=right, Y=down, Z=forward
+    mock_tvec = np.array(
+        [[0.5], [0.3], [2.0]], dtype=np.float32
+    )  # X=right, Y=down, Z=forward
     mock_solve.return_value = (True, mock_rvec, mock_tvec)
 
     # Mock projectPoints for reprojection error calculation
     mock_project.return_value = (
-        np.array([[[100, 200]], [[110, 210]], [[120, 220]], [[130, 230]]], dtype=np.float32),
-        None
+        np.array(
+            [[[100, 200]], [[110, 210]], [[120, 220]], [[130, 230]]], dtype=np.float32
+        ),
+        None,
     )
 
     pipeline = AprilTagPipeline(default_config)
@@ -139,7 +149,9 @@ def test_process_frame_with_tags(
     assert drawing_data["id"] == 1
 
 
-def test_tag_filtering(mock_detector, default_config, default_cam_matrix, default_dist_coeffs):
+def test_tag_filtering(
+    mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+):
     """Test that tags are filtered based on hamming distance and decision margin."""
     good_tag = create_mock_detection(tag_id=1)
     bad_hamming_tag = create_mock_detection(tag_id=2, hamming=2)
@@ -161,7 +173,9 @@ def test_tag_filtering(mock_detector, default_config, default_cam_matrix, defaul
 
             pipeline = AprilTagPipeline(default_config)
             frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-            result = pipeline.process_frame(frame, default_cam_matrix, default_dist_coeffs)
+            result = pipeline.process_frame(
+                frame, default_cam_matrix, default_dist_coeffs
+            )
 
             single_tags = result["single_tags"]
             assert len(single_tags) == 1
@@ -171,7 +185,11 @@ def test_tag_filtering(mock_detector, default_config, default_cam_matrix, defaul
 
 @patch("app.pipelines.apriltag_pipeline.cv2.cvtColor")
 def test_grayscale_conversion(
-    mock_cvt_color, mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+    mock_cvt_color,
+    mock_detector,
+    default_config,
+    default_cam_matrix,
+    default_dist_coeffs,
 ):
     """Test that frames are correctly converted to grayscale only when necessary."""
     pipeline = AprilTagPipeline(default_config)
@@ -222,7 +240,7 @@ def test_multi_tag_sqpnp(
         "family": "tag36h11",
         "tag_size_m": 0.15,
         "multi_tag_enabled": True,
-        "field_layout": field_layout_json
+        "field_layout": field_layout_json,
     }
 
     mock_detection1 = create_mock_detection(tag_id=1)
@@ -264,7 +282,9 @@ def test_multi_tag_sqpnp(
 
 
 @patch("app.pipelines.apriltag_pipeline.cv2.solvePnP")
-def test_single_tag_uses_ippe(mock_solve, mock_detector, default_config, default_cam_matrix, default_dist_coeffs):
+def test_single_tag_uses_ippe(
+    mock_solve, mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+):
     """Test that single tags use SOLVEPNP_IPPE method."""
     mock_detection = create_mock_detection(tag_id=1)
     mock_detector_instance = MagicMock()
