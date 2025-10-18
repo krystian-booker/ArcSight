@@ -86,6 +86,14 @@ APRILTAG_SCHEMA = {
             "maximum": 1.0,
             "description": "Sharpening for decode stage",
         },
+        "multi_tag_enabled": {
+            "type": "boolean",
+            "description": "Enable multi-tag pose estimation for improved accuracy",
+        },
+        "field_layout": {
+            "type": "string",
+            "description": "JSON string containing AprilTag field layout with tag positions",
+        },
     },
     "additionalProperties": False,
 }
@@ -315,6 +323,8 @@ def get_default_config(pipeline_type: str) -> Dict[str, Any]:
             "decision_margin": 35.0,
             "pose_iterations": 40,
             "decode_sharpening": 0.25,
+            "multi_tag_enabled": False,
+            "field_layout": "",
         },
         "Object Detection (ML)": {"confidence_threshold": 0.5, "target_classes": []},
         "Coloured Shape": {},

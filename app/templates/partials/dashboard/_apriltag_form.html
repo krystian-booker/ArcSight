@@ -53,6 +53,16 @@
                     <input type="checkbox" id="refine-edges" class="form-checkbox h-5 w-5 text-indigo-600">
                     <label for="refine-edges" class="ml-2 block text-sm text-gray-300" title="Refine the edges of the detected tag for better pose estimation.">Refine Edges</label>
                 </div>
+                <div class="mb-4 flex items-center">
+                    <input type="checkbox" id="multi-tag-enabled" class="form-checkbox h-5 w-5 text-indigo-600">
+                    <label for="multi-tag-enabled" class="ml-2 block text-sm text-gray-300" title="Enable multi-tag pose estimation for 10-100x better accuracy. Requires field layout.">Enable Multi-Tag Estimation</label>
+                </div>
+                <div class="mb-4">
+                    <label for="field-layout" class="block text-sm font-medium text-gray-300 mb-2" title="Upload FRC field layout JSON file with AprilTag positions.">Field Layout JSON</label>
+                    <input type="file" id="field-layout" accept=".json" class="custom-select w-full">
+                    <p class="text-xs text-gray-400 mt-1">Upload FRC field layout JSON (e.g., 2025-reefscape.json)</p>
+                    <input type="hidden" id="field-layout-data" value="">
+                </div>
             </form>
         </div>
         <div class="w-full md:w-1/2">
@@ -74,6 +84,21 @@
                     <tbody id="apriltag-targets-tbody" class="bg-gray-800 divide-y divide-gray-700">
                         </tbody>
                 </table>
+            </div>
+            <div id="multi-tag-section" class="mt-6" style="display: none;">
+                <h4 class="text-md font-bold mb-2">Multi-Tag Pose</h4>
+                <div class="bg-gray-800 p-4 rounded">
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div><span class="text-gray-400">Tags Used:</span> <span id="multi-tag-count">-</span></div>
+                        <div><span class="text-gray-400">Error:</span> <span id="multi-tag-error">-</span></div>
+                        <div><span class="text-gray-400">X (m):</span> <span id="multi-tag-x">-</span></div>
+                        <div><span class="text-gray-400">Y (m):</span> <span id="multi-tag-y">-</span></div>
+                        <div><span class="text-gray-400">Z (m):</span> <span id="multi-tag-z">-</span></div>
+                        <div><span class="text-gray-400">Yaw (°):</span> <span id="multi-tag-yaw">-</span></div>
+                        <div><span class="text-gray-400">Pitch (°):</span> <span id="multi-tag-pitch">-</span></div>
+                        <div><span class="text-gray-400">Roll (°):</span> <span id="multi-tag-roll">-</span></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

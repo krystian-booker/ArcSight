@@ -114,9 +114,11 @@ def test_process_frame_no_tags(mock_libs, default_config, default_cam_matrix):
 
     pipeline = AprilTagPipeline(default_config)
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    results = pipeline.process_frame(frame, default_cam_matrix)
+    result = pipeline.process_frame(frame, default_cam_matrix)
 
-    assert results == []
+    # New format: {"single_tags": [...], "multi_tag": ...}
+    assert result["single_tags"] == []
+    assert result["multi_tag"] is None
     mock_detector_instance.detect.assert_called_once()
 
 
@@ -137,15 +139,19 @@ def test_process_frame_with_tags(mock_libs, default_config, default_cam_matrix):
 
     pipeline = AprilTagPipeline(default_config)
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    results = pipeline.process_frame(frame, default_cam_matrix)
+    result = pipeline.process_frame(frame, default_cam_matrix)
 
-    assert len(results) == 1
+    # New format: {"single_tags": [...], "multi_tag": ...}
+    single_tags = result["single_tags"]
+    assert len(single_tags) == 1
+    assert result["multi_tag"] is None  # No multi-tag by default
+
     mock_rpa.AprilTagPoseEstimator.assert_called_once()
     mock_estimator_instance.estimateOrthogonalIteration.assert_called_once_with(
         mock_detection, 40
     )
 
-    ui_data = results[0]["ui_data"]
+    ui_data = single_tags[0]["ui_data"]
     assert ui_data["id"] == 1
     assert ui_data["pose_error"] == 0.01
     assert pytest.approx(ui_data["x_m"]) == 2.0
@@ -155,7 +161,7 @@ def test_process_frame_with_tags(mock_libs, default_config, default_cam_matrix):
     assert pytest.approx(ui_data["pitch_deg"]) == math.degrees(0.2)
     assert pytest.approx(ui_data["yaw_deg"]) == math.degrees(0.3)
 
-    drawing_data = results[0]["drawing_data"]
+    drawing_data = single_tags[0]["drawing_data"]
     assert "rvec" in drawing_data
     assert "tvec" in drawing_data
     assert drawing_data["corners"].shape == (4, 2)
@@ -185,10 +191,12 @@ def test_tag_filtering(mock_libs, default_config, default_cam_matrix):
 
     pipeline = AprilTagPipeline(default_config)
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    results = pipeline.process_frame(frame, default_cam_matrix)
+    result = pipeline.process_frame(frame, default_cam_matrix)
 
-    assert len(results) == 1
-    assert results[0]["ui_data"]["id"] == 1
+    # New format: {"single_tags": [...], "multi_tag": ...}
+    single_tags = result["single_tags"]
+    assert len(single_tags) == 1
+    assert single_tags[0]["ui_data"]["id"] == 1
     mock_estimator_instance.estimateOrthogonalIteration.assert_called_once()
 
 

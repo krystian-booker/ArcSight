@@ -2,7 +2,8 @@ import robotpy_apriltag
 import cv2
 import numpy as np
 import math
-from wpimath.geometry import Transform3d
+import json
+from wpimath.geometry import Transform3d, Pose3d, Rotation3d, Quaternion
 
 
 class AprilTagPipeline:
@@ -45,6 +46,22 @@ class AprilTagPipeline:
         self.decision_margin_threshold = config.get("decision_margin", 35.0)
         self.pose_iterations = config.get("pose_iterations", 40)
 
+        # --- Multi-tag Configuration ---
+        self.multi_tag_enabled = config.get("multi_tag_enabled", False)
+        self.field_layout = None
+
+        # Load field layout if provided and multi-tag is enabled
+        field_layout_json = config.get("field_layout", "")
+        if self.multi_tag_enabled and field_layout_json:
+            try:
+                self.field_layout = self._load_field_layout(field_layout_json)
+                print(
+                    f"Loaded field layout with {len(self.field_layout.getTags())} tags"
+                )
+            except Exception as e:
+                print(f"Failed to load field layout: {e}")
+                self.multi_tag_enabled = False
+
         # --- Pose Estimator Setup ---
         # Get tag size from config, default to 6.5 inches in meters
         tag_size_m = config.get("tag_size_m", 0.1651)
@@ -68,8 +85,52 @@ class AprilTagPipeline:
             f"threads: {detector_config.numThreads}, "
             f"decimate: {detector_config.quadDecimate}, "
             f"blur: {detector_config.quadSigma}, "
-            f"refine_edges: {detector_config.refineEdges}"
+            f"refine_edges: {detector_config.refineEdges}, "
+            f"multi_tag: {self.multi_tag_enabled}"
         )
+
+    def _load_field_layout(self, field_layout_json):
+        """
+        Load AprilTag field layout from JSON string.
+
+        Args:
+            field_layout_json (str): JSON string containing field layout
+
+        Returns:
+            AprilTagFieldLayout: The loaded field layout
+        """
+        layout_data = json.loads(field_layout_json)
+
+        # Create list of AprilTag objects with their 3D poses
+        tags = []
+        for tag_data in layout_data["tags"]:
+            tag_id = tag_data["ID"]
+            pose_data = tag_data["pose"]
+
+            # Extract translation
+            trans = pose_data["translation"]
+            translation = (trans["x"], trans["y"], trans["z"])
+
+            # Extract quaternion rotation
+            quat = pose_data["rotation"]["quaternion"]
+            rotation = Rotation3d(
+                Quaternion(quat["W"], quat["X"], quat["Y"], quat["Z"])
+            )
+
+            # Create Pose3d for this tag
+            pose = Pose3d(*translation, rotation)
+
+            # Create AprilTag with ID and pose
+            tag = robotpy_apriltag.AprilTag()
+            tag.ID = tag_id
+            tag.pose = pose
+            tags.append(tag)
+
+        # Create field layout
+        field_length = layout_data["field"]["length"]
+        field_width = layout_data["field"]["width"]
+
+        return robotpy_apriltag.AprilTagFieldLayout(tags, field_length, field_width)
 
     def process_frame(self, frame, cam_matrix):
         """
@@ -113,7 +174,8 @@ class AprilTagPipeline:
         # --- Detect Tags ---
         detections = self.detector.detect(detect_frame)
 
-        results = []
+        # --- Single Tag Processing ---
+        single_tag_results = []
         for tag in detections:
             # Reject tags with high hamming distance or low decision margin
             if (
@@ -174,7 +236,7 @@ class AprilTagPipeline:
             pitch_deg = math.degrees(pitch_rad)
             yaw_deg = math.degrees(yaw_rad)
 
-            results.append(
+            single_tag_results.append(
                 {
                     "ui_data": {
                         "id": tag.getId(),
@@ -199,4 +261,48 @@ class AprilTagPipeline:
                 }
             )
 
-        return results
+        # --- Multi-Tag Processing ---
+        multi_tag_result = None
+        if (
+            self.multi_tag_enabled
+            and self.field_layout is not None
+            and len(detections) > 1
+        ):
+            try:
+                # Use multiple tags simultaneously for better pose estimation
+                multi_tag_estimate = self.pose_estimator.estimateMultiTag(
+                    detections, self.field_layout, self.pose_iterations
+                )
+
+                # Extract pose from multi-tag result
+                multi_pose = multi_tag_estimate.pose1
+                multi_error = multi_tag_estimate.error1
+
+                # Extract coordinates and rotation (FRC standard)
+                multi_x = multi_pose.X()
+                multi_y = multi_pose.Y()
+                multi_z = multi_pose.Z()
+
+                multi_rotation = multi_pose.rotation()
+                multi_roll = multi_rotation.X()
+                multi_pitch = multi_rotation.Y()
+                multi_yaw = multi_rotation.Z()
+
+                multi_tag_result = {
+                    "pose_error": multi_error,
+                    "x_m": multi_x,
+                    "y_m": multi_y,
+                    "z_m": multi_z,
+                    "roll_rad": multi_roll,
+                    "pitch_rad": multi_pitch,
+                    "yaw_rad": multi_yaw,
+                    "roll_deg": math.degrees(multi_roll),
+                    "pitch_deg": math.degrees(multi_pitch),
+                    "yaw_deg": math.degrees(multi_yaw),
+                    "num_tags": len(detections),
+                }
+            except Exception as e:
+                print(f"Multi-tag estimation failed: {e}")
+
+        # Return both single and multi-tag results
+        return {"single_tags": single_tag_results, "multi_tag": multi_tag_result}

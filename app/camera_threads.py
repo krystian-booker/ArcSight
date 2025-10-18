@@ -267,6 +267,8 @@ class VisionProcessingThread(threading.Thread):
             "decision_margin": 35.0,
             "pose_iterations": 40,
             "decode_sharpening": 0.25,
+            "multi_tag_enabled": False,
+            "field_layout": "",
         }
         # This ensures user settings override defaults, but defaults are there as a fallback
         final_config = {**default_config, **pipeline_config}
@@ -344,14 +346,19 @@ class VisionProcessingThread(threading.Thread):
                 current_results = {}
 
                 if self.pipeline_type == "AprilTag":
-                    detections = self.pipeline_instance.process_frame(
+                    result = self.pipeline_instance.process_frame(
                         raw_frame, self.cam_matrix
                     )
-                    ui_detections = [d["ui_data"] for d in detections]
-                    drawing_detections = [d["drawing_data"] for d in detections]
+                    # Handle new return format: {"single_tags": [...], "multi_tag": {...}}
+                    single_tags = result.get("single_tags", [])
+                    multi_tag = result.get("multi_tag")
+
+                    ui_detections = [d["ui_data"] for d in single_tags]
+                    drawing_detections = [d["drawing_data"] for d in single_tags]
                     current_results = {
                         "tags_found": len(ui_detections) > 0,
                         "detections": ui_detections,
+                        "multi_tag": multi_tag,
                     }
                     if drawing_detections:
                         self._draw_3d_box_on_frame(annotated_frame, drawing_detections)

@@ -393,17 +393,21 @@ def mock_pipeline_instances():
         # Provide valid numpy arrays for rvec and tvec to prevent cv2.error
         rvec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         tvec = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        mock_at.return_value.process_frame.return_value = [
-            {
-                "ui_data": "apriltag_data",
-                "drawing_data": {
-                    "rvec": rvec,
-                    "tvec": tvec,
-                    "corners": np.array([[0, 0]]),
-                    "id": 1,
-                },
-            }
-        ]
+        # AprilTag pipeline now returns {"single_tags": [...], "multi_tag": ...}
+        mock_at.return_value.process_frame.return_value = {
+            "single_tags": [
+                {
+                    "ui_data": "apriltag_data",
+                    "drawing_data": {
+                        "rvec": rvec,
+                        "tvec": tvec,
+                        "corners": np.array([[0, 0]]),
+                        "id": 1,
+                    },
+                }
+            ],
+            "multi_tag": None,
+        }
         mock_cs.return_value.process_frame.return_value = "coloured_shape_data"
         mock_ml.return_value.process_frame.return_value = "ml_data"
 
