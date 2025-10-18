@@ -140,11 +140,8 @@ def test_stop_camera_thread_not_running(mock_camera):
     assert not camera_manager.active_camera_threads
 
 
-@patch('app.camera_manager.db.session.get')
-def test_add_pipeline_to_camera(mock_db_get, mock_camera, mock_pipeline, mock_app, mock_threads):
+def test_add_pipeline_to_camera(mock_camera, mock_pipeline, mock_app, mock_threads):
     """Test dynamically adding a new pipeline to a running camera."""
-    mock_db_get.return_value = mock_camera
-    
     # Simulate a running camera with one pipeline
     mock_acq_thread = MagicMock()
     mock_proc_thread1 = MagicMock()
@@ -152,27 +149,32 @@ def test_add_pipeline_to_camera(mock_db_get, mock_camera, mock_pipeline, mock_ap
         'acquisition': mock_acq_thread,
         'processing_threads': {101: mock_proc_thread1}
     }
-    
-    camera_manager.add_pipeline_to_camera(mock_camera.id, mock_pipeline, mock_app)
-    
+
+    # Call with primitive data (no DB I/O)
+    camera_manager.add_pipeline_to_camera(
+        identifier=mock_camera.identifier,
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json
+    )
+
     # A new processing thread should be created and started
     mock_threads['processing'].assert_called_once()
     mock_threads['processing'].return_value.start.assert_called_once()
-    
+
     # The new thread should be added to the acquisition thread's queues
     mock_acq_thread.add_pipeline_queue.assert_called_once()
-    
+
     # The new thread should be in the manager's dict
     thread_group = camera_manager.active_camera_threads[mock_camera.identifier]
     assert mock_pipeline.id in thread_group['processing_threads']
 
 
-@patch('app.camera_manager.db.session.get')
-def test_remove_pipeline_from_camera(mock_db_get, mock_camera, mock_app):
+def test_remove_pipeline_from_camera(mock_camera, mock_app):
     """Test dynamically removing a pipeline from a running camera."""
-    mock_db_get.return_value = mock_camera
     pipeline_to_remove_id = 101
-    
+
     # Simulate a running camera with two pipelines
     mock_acq_thread = MagicMock()
     mock_proc_thread1 = MagicMock()
@@ -184,28 +186,30 @@ def test_remove_pipeline_from_camera(mock_db_get, mock_camera, mock_app):
             102: mock_proc_thread2
         }
     }
-    
-    camera_manager.remove_pipeline_from_camera(mock_camera.id, pipeline_to_remove_id, mock_app)
-    
+
+    # Call with primitive data (no DB I/O)
+    camera_manager.remove_pipeline_from_camera(
+        identifier=mock_camera.identifier,
+        pipeline_id=pipeline_to_remove_id
+    )
+
     # The target thread should be stopped and joined
     mock_proc_thread1.stop.assert_called_once()
     mock_proc_thread1.join.assert_called_once()
-    
+
     # Its queue should be removed from the acquisition thread
     mock_acq_thread.remove_pipeline_queue.assert_called_once_with(pipeline_to_remove_id)
-    
+
     # It should be removed from the manager's dict
     thread_group = camera_manager.active_camera_threads[mock_camera.identifier]
     assert pipeline_to_remove_id not in thread_group['processing_threads']
-    assert 102 in thread_group['processing_threads'] # The other one should remain
+    assert 102 in thread_group['processing_threads']  # The other one should remain
 
 
-@patch('app.camera_manager.db.session.get')
-def test_update_pipeline_in_camera(mock_db_get, mock_camera, mock_pipeline, mock_app, mock_threads):
+def test_update_pipeline_in_camera(mock_camera, mock_pipeline, mock_app, mock_threads):
     """Test updating a pipeline, which should stop the old and start a new thread."""
-    mock_db_get.side_effect = [mock_camera, mock_pipeline]
     pipeline_to_update_id = mock_pipeline.id
-    
+
     # Simulate a running camera
     mock_acq_thread = MagicMock()
     mock_old_proc_thread = MagicMock()
@@ -213,23 +217,30 @@ def test_update_pipeline_in_camera(mock_db_get, mock_camera, mock_pipeline, mock
         'acquisition': mock_acq_thread,
         'processing_threads': {pipeline_to_update_id: mock_old_proc_thread}
     }
-    
-    camera_manager.update_pipeline_in_camera(mock_camera.id, pipeline_to_update_id, mock_app)
-    
+
+    # Call with primitive data (no DB I/O)
+    camera_manager.update_pipeline_in_camera(
+        identifier=mock_camera.identifier,
+        pipeline_id=pipeline_to_update_id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json=mock_camera.camera_matrix_json
+    )
+
     # 1. Stop the old thread
     mock_old_proc_thread.stop.assert_called_once()
     mock_old_proc_thread.join.assert_called_once()
-    
+
     # 2. Remove its queue
     mock_acq_thread.remove_pipeline_queue.assert_called_once_with(pipeline_to_update_id)
-    
+
     # 3. Create and start a new processing thread
     mock_threads['processing'].assert_called_once()
     mock_threads['processing'].return_value.start.assert_called_once()
-    
+
     # 4. Add the new queue
     mock_acq_thread.add_pipeline_queue.assert_called_with(pipeline_to_update_id, unittest.mock.ANY)
-    
+
     # 5. The new thread should be in the dict
     thread_group = camera_manager.active_camera_threads[mock_camera.identifier]
     assert thread_group['processing_threads'][pipeline_to_update_id] == mock_threads['processing'].return_value
@@ -308,29 +319,35 @@ def test_is_camera_thread_running_not_present():
     """Test the status check for a non-existent camera."""
     assert camera_manager.is_camera_thread_running("non_existent_cam") is False
 
-@patch('app.camera_manager.db.session.get')
-def test_add_pipeline_to_camera_not_found(mock_db_get, mock_pipeline, mock_app):
-    """Test add_pipeline_to_camera when the camera doesn't exist in the DB."""
-    mock_db_get.return_value = None
-    camera_manager.add_pipeline_to_camera(999, mock_pipeline, mock_app)
+def test_add_pipeline_to_camera_not_found(mock_pipeline, mock_app):
+    """Test add_pipeline_to_camera when the camera is not running."""
+    # No threads are running
+    camera_manager.add_pipeline_to_camera(
+        identifier="non_existent_camera",
+        pipeline_id=mock_pipeline.id,
+        pipeline_type=mock_pipeline.pipeline_type,
+        pipeline_config_json=mock_pipeline.config,
+        camera_matrix_json="{}"
+    )
     assert not camera_manager.active_camera_threads  # Should not have changed
 
-@patch('app.camera_manager.db.session.get')
-def test_remove_pipeline_from_camera_not_found(mock_db_get, mock_app):
-    """Test remove_pipeline_from_camera when the camera doesn't exist in the DB."""
-    mock_db_get.return_value = None
-    camera_manager.remove_pipeline_from_camera(999, 101, mock_app)
+def test_remove_pipeline_from_camera_not_found(mock_app):
+    """Test remove_pipeline_from_camera when the camera is not running."""
+    # No threads are running
+    camera_manager.remove_pipeline_from_camera(
+        identifier="non_existent_camera",
+        pipeline_id=101
+    )
     assert not camera_manager.active_camera_threads  # Should not have changed
 
-@patch('app.camera_manager.db.session.get')
-def test_update_pipeline_in_camera_not_found(mock_db_get, mock_app):
-    """Test update_pipeline_in_camera when the camera or pipeline doesn't exist."""
-    # Camera not found
-    mock_db_get.side_effect = [None, MagicMock()]
-    camera_manager.update_pipeline_in_camera(999, 101, mock_app)
-    assert not camera_manager.active_camera_threads
-
-    # Pipeline not found
-    mock_db_get.side_effect = [MagicMock(), None]
-    camera_manager.update_pipeline_in_camera(1, 101, mock_app)
-    assert not camera_manager.active_camera_threads
+def test_update_pipeline_in_camera_not_found(mock_app):
+    """Test update_pipeline_in_camera when the camera is not running."""
+    # No threads are running
+    camera_manager.update_pipeline_in_camera(
+        identifier="non_existent_camera",
+        pipeline_id=101,
+        pipeline_type="AprilTag",
+        pipeline_config_json="{}",
+        camera_matrix_json="{}"
+    )
+    assert not camera_manager.active_camera_threads  # Should not have changed

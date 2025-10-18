@@ -48,7 +48,14 @@ def add_pipeline(camera_id):
     db.session.add(new_pipeline)
     db.session.commit()
 
-    camera_manager.add_pipeline_to_camera(camera_id, new_pipeline, current_app._get_current_object())
+    # Pass primitive data to avoid DB I/O in hot path
+    camera_manager.add_pipeline_to_camera(
+        identifier=camera.identifier,
+        pipeline_id=new_pipeline.id,
+        pipeline_type=new_pipeline.pipeline_type,
+        pipeline_config_json=new_pipeline.config,
+        camera_matrix_json=camera.camera_matrix_json
+    )
     return jsonify({'success': True, 'pipeline': new_pipeline.to_dict()})
 
 
@@ -68,12 +75,17 @@ def update_pipeline(pipeline_id):
     pipeline.name = name
     pipeline.pipeline_type = pipeline_type
     db.session.commit()
-    
-    camera_manager.update_pipeline_in_camera(
-        pipeline.camera_id, 
-        pipeline_id, 
-        current_app._get_current_object()
-    )
+
+    # Fetch camera data once for primitive parameter passing
+    camera = db.session.get(Camera, pipeline.camera_id)
+    if camera:
+        camera_manager.update_pipeline_in_camera(
+            identifier=camera.identifier,
+            pipeline_id=pipeline_id,
+            pipeline_type=pipeline.pipeline_type,
+            pipeline_config_json=pipeline.config,
+            camera_matrix_json=camera.camera_matrix_json
+        )
 
     return jsonify({'success': True})
 
@@ -99,11 +111,16 @@ def update_pipeline_config(pipeline_id):
     pipeline.config = json.dumps(config)
     db.session.commit()
 
-    camera_manager.update_pipeline_in_camera(
-        pipeline.camera_id,
-        pipeline_id,
-        current_app._get_current_object()
-    )
+    # Fetch camera data once for primitive parameter passing
+    camera = db.session.get(Camera, pipeline.camera_id)
+    if camera:
+        camera_manager.update_pipeline_in_camera(
+            identifier=camera.identifier,
+            pipeline_id=pipeline_id,
+            pipeline_type=pipeline.pipeline_type,
+            pipeline_config_json=pipeline.config,
+            camera_matrix_json=camera.camera_matrix_json
+        )
 
     return jsonify({'success': True})
 
@@ -163,11 +180,16 @@ def upload_pipeline_file(pipeline_id):
         pipeline.config = json.dumps(config)
         db.session.commit()
 
-        camera_manager.update_pipeline_in_camera(
-            pipeline.camera_id,
-            pipeline_id,
-            current_app._get_current_object()
-        )
+        # Fetch camera data once for primitive parameter passing
+        camera = db.session.get(Camera, pipeline.camera_id)
+        if camera:
+            camera_manager.update_pipeline_in_camera(
+                identifier=camera.identifier,
+                pipeline_id=pipeline_id,
+                pipeline_type=pipeline.pipeline_type,
+                pipeline_config_json=pipeline.config,
+                camera_matrix_json=camera.camera_matrix_json
+            )
         return jsonify({'success': True, 'filepath': save_path})
 
     return jsonify({'error': 'File upload failed'}), 500
@@ -196,12 +218,17 @@ def delete_pipeline_file(pipeline_id):
         del config[filepath_key]
         pipeline.config = json.dumps(config)
         db.session.commit()
-        
-        camera_manager.update_pipeline_in_camera(
-            pipeline.camera_id, 
-            pipeline_id, 
-            current_app._get_current_object()
-        )
+
+        # Fetch camera data once for primitive parameter passing
+        camera = db.session.get(Camera, pipeline.camera_id)
+        if camera:
+            camera_manager.update_pipeline_in_camera(
+                identifier=camera.identifier,
+                pipeline_id=pipeline_id,
+                pipeline_type=pipeline.pipeline_type,
+                pipeline_config_json=pipeline.config,
+                camera_matrix_json=camera.camera_matrix_json
+            )
         return jsonify({'success': True})
 
     return jsonify({'error': 'File not found in config'}), 404
@@ -213,11 +240,16 @@ def delete_pipeline(pipeline_id):
     pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
         return jsonify({'error': 'Pipeline not found'}), 404
-    camera_id = pipeline.camera_id
-    
-    camera_manager.remove_pipeline_from_camera(camera_id, pipeline_id, current_app._get_current_object())
-    
+
+    # Fetch camera identifier for primitive parameter passing
+    camera = db.session.get(Camera, pipeline.camera_id)
+    if camera:
+        camera_manager.remove_pipeline_from_camera(
+            identifier=camera.identifier,
+            pipeline_id=pipeline_id
+        )
+
     db.session.delete(pipeline)
     db.session.commit()
-    
+
     return jsonify({'success': True})

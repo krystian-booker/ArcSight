@@ -101,110 +101,129 @@ def stop_camera_thread(identifier):
             print(f"Successfully stopped and removed threads for camera {identifier}")
 
 
-def add_pipeline_to_camera(camera_id, pipeline, app):
-    """Starts a new processing thread for a running camera."""
-    with app.app_context():
-        camera = db.session.get(Camera, camera_id)
-    if not camera:
-        return
+def add_pipeline_to_camera(identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json):
+    """Starts a new processing thread for a running camera.
 
-    identifier = camera.identifier
+    Args:
+        identifier: Camera identifier string
+        pipeline_id: Pipeline database ID
+        pipeline_type: Pipeline type string (e.g., 'AprilTag')
+        pipeline_config_json: Pipeline configuration as JSON string
+        camera_matrix_json: Camera calibration matrix as JSON string
+
+    Note:
+        This function accepts primitive values to avoid database I/O in the hot path.
+        Callers should pre-fetch data from the database before calling.
+    """
     with active_camera_threads_lock:
-        if identifier in active_camera_threads:
-            thread_group = active_camera_threads[identifier]
+        if identifier not in active_camera_threads:
+            print(f"Cannot add pipeline to camera {identifier}: camera not running")
+            return
 
-            # Don't add pipelines to cameras that are stopping
-            if thread_group.get('stopping', False):
-                print(f"Cannot add pipeline to camera {identifier}: camera is stopping")
-                return
+        thread_group = active_camera_threads[identifier]
 
-            pipeline_id = pipeline.id
+        # Don't add pipelines to cameras that are stopping
+        if thread_group.get('stopping', False):
+            print(f"Cannot add pipeline to camera {identifier}: camera is stopping")
+            return
 
-            if pipeline_id not in thread_group['processing_threads']:
-                print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
-                frame_queue = queue.Queue(maxsize=2)
-                # Pass primitive values instead of ORM objects
-                # Pipeline frames use lower quality (75) to save CPU
-                proc_thread = VisionProcessingThread(
-                    identifier=identifier,
-                    pipeline_id=pipeline.id,
-                    pipeline_type=pipeline.pipeline_type,
-                    pipeline_config_json=pipeline.config,
-                    camera_matrix_json=camera.camera_matrix_json,
-                    frame_queue=frame_queue,
-                    jpeg_quality=75
-                )
-                thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
-                thread_group['processing_threads'][pipeline_id] = proc_thread
-                proc_thread.start()
-
-
-def remove_pipeline_from_camera(camera_id, pipeline_id, app):
-    """Stops a specific processing thread for a running camera."""
-    with app.app_context():
-        camera = db.session.get(Camera, camera_id)
-    if not camera:
-        return
-
-    identifier = camera.identifier
-    with active_camera_threads_lock:
-        if identifier in active_camera_threads:
-            thread_group = active_camera_threads[identifier]
-            if pipeline_id in thread_group['processing_threads']:
-                print(f"Dynamically removing pipeline {pipeline_id} from camera {identifier}")
-                proc_thread = thread_group['processing_threads'].pop(pipeline_id)
-                
-                proc_thread.stop()
-                thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
-                proc_thread.join(timeout=2)
-
-
-def update_pipeline_in_camera(camera_id, pipeline_id, app):
-    """Stops and restarts a pipeline processing thread to apply new settings."""
-    with app.app_context():
-        camera = db.session.get(Camera, camera_id)
-        pipeline = db.session.get(Pipeline, pipeline_id)
-
-    if not camera or not pipeline:
-        print(f"Error: Could not find camera or pipeline for update.")
-        return
-
-    identifier = camera.identifier
-    with active_camera_threads_lock:
-        if identifier in active_camera_threads:
-            thread_group = active_camera_threads[identifier]
-
-            # Don't update pipelines on cameras that are stopping
-            if thread_group.get('stopping', False):
-                print(f"Cannot update pipeline {pipeline_id}: camera {identifier} is stopping")
-                return
-
-            # 1. Stop and remove the old thread if it exists
-            if pipeline_id in thread_group['processing_threads']:
-                print(f"Stopping old pipeline thread {pipeline_id} for update.")
-                old_proc_thread = thread_group['processing_threads'].pop(pipeline_id)
-                old_proc_thread.stop()
-                thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
-                old_proc_thread.join(timeout=2) # Wait for it to terminate
-
-            # 2. Start a new thread with the updated pipeline config
-            print(f"Starting new pipeline thread {pipeline_id} with updated config.")
+        if pipeline_id not in thread_group['processing_threads']:
+            print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
             frame_queue = queue.Queue(maxsize=2)
             # Pass primitive values instead of ORM objects
             # Pipeline frames use lower quality (75) to save CPU
-            new_proc_thread = VisionProcessingThread(
+            proc_thread = VisionProcessingThread(
                 identifier=identifier,
-                pipeline_id=pipeline.id,
-                pipeline_type=pipeline.pipeline_type,
-                pipeline_config_json=pipeline.config,
-                camera_matrix_json=camera.camera_matrix_json,
+                pipeline_id=pipeline_id,
+                pipeline_type=pipeline_type,
+                pipeline_config_json=pipeline_config_json,
+                camera_matrix_json=camera_matrix_json,
                 frame_queue=frame_queue,
                 jpeg_quality=75
             )
-
             thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
-            thread_group['processing_threads'][pipeline_id] = new_proc_thread
-            new_proc_thread.start()
+            thread_group['processing_threads'][pipeline_id] = proc_thread
+            proc_thread.start()
+
+
+def remove_pipeline_from_camera(identifier, pipeline_id):
+    """Stops a specific processing thread for a running camera.
+
+    Args:
+        identifier: Camera identifier string
+        pipeline_id: Pipeline database ID to remove
+
+    Note:
+        This function accepts primitive values to avoid database I/O in the hot path.
+        Callers should pre-fetch the camera identifier before calling.
+    """
+    with active_camera_threads_lock:
+        if identifier not in active_camera_threads:
+            print(f"Cannot remove pipeline from camera {identifier}: camera not running")
+            return
+
+        thread_group = active_camera_threads[identifier]
+        if pipeline_id in thread_group['processing_threads']:
+            print(f"Dynamically removing pipeline {pipeline_id} from camera {identifier}")
+            proc_thread = thread_group['processing_threads'].pop(pipeline_id)
+
+            proc_thread.stop()
+            thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
+            proc_thread.join(timeout=2)
+
+
+def update_pipeline_in_camera(identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json):
+    """Stops and restarts a pipeline processing thread to apply new settings.
+
+    Args:
+        identifier: Camera identifier string
+        pipeline_id: Pipeline database ID
+        pipeline_type: Pipeline type string (e.g., 'AprilTag')
+        pipeline_config_json: Updated pipeline configuration as JSON string
+        camera_matrix_json: Camera calibration matrix as JSON string
+
+    Note:
+        This function accepts primitive values to avoid database I/O in the hot path.
+        Callers should pre-fetch data from the database before calling.
+    """
+    with active_camera_threads_lock:
+        if identifier not in active_camera_threads:
+            print(f"Cannot update pipeline for camera {identifier}: camera not running")
+            return
+
+        thread_group = active_camera_threads[identifier]
+
+        # Don't update pipelines on cameras that are stopping
+        if thread_group.get('stopping', False):
+            print(f"Cannot update pipeline {pipeline_id}: camera {identifier} is stopping")
+            return
+
+        # 1. Stop and remove the old thread if it exists
+        if pipeline_id in thread_group['processing_threads']:
+            print(f"Stopping old pipeline thread {pipeline_id} for update.")
+            old_proc_thread = thread_group['processing_threads'].pop(pipeline_id)
+            old_proc_thread.stop()
+            thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
+            old_proc_thread.join(timeout=2)  # Wait for it to terminate
+
+        # 2. Start a new thread with the updated pipeline config
+        print(f"Starting new pipeline thread {pipeline_id} with updated config.")
+        frame_queue = queue.Queue(maxsize=2)
+        # Pass primitive values instead of ORM objects
+        # Pipeline frames use lower quality (75) to save CPU
+        new_proc_thread = VisionProcessingThread(
+            identifier=identifier,
+            pipeline_id=pipeline_id,
+            pipeline_type=pipeline_type,
+            pipeline_config_json=pipeline_config_json,
+            camera_matrix_json=camera_matrix_json,
+            frame_queue=frame_queue,
+            jpeg_quality=75
+        )
+
+        thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
+        thread_group['processing_threads'][pipeline_id] = new_proc_thread
+        new_proc_thread.start()
 
 
 def start_all_camera_threads(app):
