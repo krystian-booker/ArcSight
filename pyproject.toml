@@ -38,4 +38,5 @@ addopts = [
     "--cov=app",
     "--cov-report=html",
     "--cov-report=term-missing",
+    "--cov-report=xml",
 ]

@@ -133,6 +133,7 @@ pixi.lock
 # Python coverage reports
 htmlcov/
 .pytest_cache/
+coverage.xml
 *.pyc
 *.pyo
 *.pyd

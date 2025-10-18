@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: v0.34.0
+          cache: true
+
+      - name: Run tests with coverage
+        run: pixi run test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  validate-startup:
+    name: Validate App Startup
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: v0.34.0
+          cache: true
+
+      - name: Validate app can start
+        run: |
+          # Start the app in the background
+          timeout 30s pixi run dev > startup.log 2>&1 || EXIT_CODE=$?
+
+          # Check if the app started successfully by looking for Flask startup messages
+          if grep -q "WARNING: This is a development server" startup.log || \
+             grep -q "Running on" startup.log || \
+             grep -q "Starting acquisition and processing threads" startup.log; then
+            echo "✓ App started successfully"
+            cat startup.log
+            exit 0
+          else
+            echo "✗ App failed to start or hung during startup"
+            cat startup.log
+            exit 1
+          fi
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: v0.34.0
+          cache: true
+
+      - name: Check code formatting
+        run: pixi run format-check
+
+      - name: Run linter
+        run: pixi run lint
