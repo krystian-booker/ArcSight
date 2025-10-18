@@ -26,7 +26,7 @@
     {
       "label": "Run Dev Server",
       "type": "shell",
-      "command": "python run.py",
+      "command": "conda run -n vision-tools python run.py",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -41,7 +41,7 @@
     {
       "label": "Run All Tests",
       "type": "shell",
-      "command": "pytest",
+      "command": "conda run -n vision-tools python -m pytest",
       "problemMatcher": [],
       "group": {
         "kind": "test",
@@ -56,7 +56,7 @@
     {
       "label": "Run Tests (Verbose)",
       "type": "shell",
-      "command": "pytest -v",
+      "command": "conda run -n vision-tools python -m pytest -v",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -68,7 +68,7 @@
     {
       "label": "Run Tests (No Coverage)",
       "type": "shell",
-      "command": "pytest --no-cov",
+      "command": "conda run -n vision-tools python -m pytest --no-cov",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -80,7 +80,7 @@
     {
       "label": "Run Current Test File",
       "type": "shell",
-      "command": "pytest ${relativeFile}",
+      "command": "conda run -n vision-tools python -m pytest ${relativeFile}",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -92,7 +92,7 @@
     {
       "label": "Generate Coverage Report",
       "type": "shell",
-      "command": "pytest --cov=app --cov-report=html --cov-report=term-missing",
+      "command": "conda run -n vision-tools python -m pytest --cov=app --cov-report=html --cov-report=term-missing",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -103,7 +103,7 @@
     {
       "label": "Format Code",
       "type": "shell",
-      "command": "ruff format app tests",
+      "command": "conda run -n vision-tools python -m ruff format app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -114,7 +114,7 @@
     {
       "label": "Check Code Formatting",
       "type": "shell",
-      "command": "ruff format --check app tests",
+      "command": "conda run -n vision-tools python -m ruff format --check app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -125,12 +125,61 @@
     {
       "label": "Lint Code",
       "type": "shell",
-      "command": "ruff check app tests",
+      "command": "conda run -n vision-tools python -m ruff check app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
         "reveal": "always",
         "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Lint Code (Fix)",
+      "type": "shell",
+      "command": "conda run -n vision-tools python -m ruff check app tests --fix",
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Delete SQLite Database",
+      "type": "shell",
+      "windows": {
+        "command": "$dbPath = Join-Path $env:LOCALAPPDATA 'User\\VisionTools\\config.db'; if (Test-Path $dbPath) { Remove-Item $dbPath; Write-Host 'Database deleted successfully' } else { Write-Host 'No database found' }"
+      },
+      "linux": {
+        "command": "if [ -f ~/.local/share/VisionTools/config.db ]; then rm ~/.local/share/VisionTools/config.db && echo 'Database deleted successfully'; else echo 'No database found'; fi"
+      },
+      "osx": {
+        "command": "if [ -f ~/Library/Application\\ Support/VisionTools/config.db ]; then rm ~/Library/Application\\ Support/VisionTools/config.db && echo 'Database deleted successfully'; else echo 'No database found'; fi"
+      },
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      }
+    },
+    {
+      "label": "Pre-commit: Fix All (Ruff)",
+      "dependsOn": [
+        "Format Code",
+        "Lint Code (Fix)"
+      ],
+      "dependsOrder": "sequence",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
       }
     }
   ]

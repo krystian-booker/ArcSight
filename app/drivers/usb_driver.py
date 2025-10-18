@@ -18,9 +18,7 @@ class USBDriver(BaseDriver):
                 f"Please check that the camera is connected."
             )
 
-        print(
-            f"Resolved camera identifier '{self.identifier}' to index {device_index}"
-        )
+        print(f"Resolved camera identifier '{self.identifier}' to index {device_index}")
 
         self.resolved_index = device_index
         self.cap = cv2.VideoCapture(device_index)
