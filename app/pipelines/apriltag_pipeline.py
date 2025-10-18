@@ -29,7 +29,8 @@ class AprilTagPipeline:
             family = f"tag{family}"
 
         # Add the family to the detector. The second argument is error correction bits.
-        self.detector.addFamily(family, config.get("error_correction", 3))
+        # tag36h11 typically uses 2 error correction bits
+        self.detector.addFamily(family, config.get("error_correction", 2))
 
         # --- Configure Detector Parameters ---
         detector_config = self.detector.getConfig()
@@ -148,18 +149,25 @@ class AprilTagPipeline:
                 ]
             )
 
-            # --- Data for UI Table (with coordinate system transformation) ---
-            # Transform coordinates for a more intuitive representation if needed
-            # For example, Z forward, Y left, X down
-            x_ui = pose.Z()
-            y_ui = -pose.X()
-            z_ui = -pose.Y()
+            # --- Data for UI Table (FRC standard coordinate system) ---
+            # FRC coordinate system:
+            # X: forward/back (positive = forward)
+            # Y: left/right (positive = left)
+            # Z: up/down (positive = up)
+            # WPILib's Transform3d already uses this standard, so use values directly
+            x_ui = pose.X()
+            y_ui = pose.Y()
+            z_ui = pose.Z()
 
-            # For WPILib's Rotation3d: X()=Roll, Y()=Pitch, Z()=Yaw in radians
+            # FRC rotation conventions (Roll, Pitch, Yaw):
+            # Roll: rotation around X axis (forward/back)
+            # Pitch: rotation around Y axis (left/right)
+            # Yaw: rotation around Z axis (up/down)
+            # WPILib's Rotation3d: X()=Roll, Y()=Pitch, Z()=Yaw in radians
             pose_rotation = pose.rotation()
-            roll_rad = pose_rotation.Z()
-            pitch_rad = -pose_rotation.X()
-            yaw_rad = -pose_rotation.Y()
+            roll_rad = pose_rotation.X()
+            pitch_rad = pose_rotation.Y()
+            yaw_rad = pose_rotation.Z()
 
             # Convert radians to degrees for the UI
             roll_deg = math.degrees(roll_rad)

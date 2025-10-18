@@ -306,7 +306,7 @@ def get_default_config(pipeline_type: str) -> Dict[str, Any]:
     defaults = {
         "AprilTag": {
             "family": "tag36h11",
-            "error_correction": 3,
+            "error_correction": 2,
             "tag_size_m": 0.165,
             "threads": 1,
             "decimate": 1.0,

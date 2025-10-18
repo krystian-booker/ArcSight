@@ -58,15 +58,17 @@ def create_mock_pose_estimate():
     """Helper function to create a mock AprilTagPoseEstimate object with nested mocks."""
     mock_rotation = MagicMock()
     mock_rotation.toMatrix.return_value = np.eye(3)
-    mock_rotation.X.return_value = -0.2  # pitch_rad = -(-0.2) = 0.2
-    mock_rotation.Y.return_value = -0.3  # yaw_rad   = -(-0.3) = 0.3
-    mock_rotation.Z.return_value = 0.1  # roll_rad  = 0.1
+    # FRC standard: rotation.X()=Roll, rotation.Y()=Pitch, rotation.Z()=Yaw
+    mock_rotation.X.return_value = 0.1  # roll_rad = 0.1
+    mock_rotation.Y.return_value = 0.2  # pitch_rad = 0.2
+    mock_rotation.Z.return_value = 0.3  # yaw_rad = 0.3
 
     mock_transform = MagicMock()
     mock_transform.rotation.return_value = mock_rotation
-    mock_transform.X.return_value = -0.5  # -> y_ui = -(-0.5) = 0.5
-    mock_transform.Y.return_value = -0.8  # -> z_ui = -(-0.8) = 0.8
-    mock_transform.Z.return_value = 2.0  # -> x_ui = 2.0
+    # FRC standard: X=forward, Y=left, Z=up
+    mock_transform.X.return_value = 2.0  # x_ui = 2.0
+    mock_transform.Y.return_value = 0.5  # y_ui = 0.5
+    mock_transform.Z.return_value = 0.8  # z_ui = 0.8
 
     mock_estimate = MagicMock()
     mock_estimate.pose1 = mock_transform
@@ -100,7 +102,7 @@ def test_initialization_family_hack(mock_libs):
 
     AprilTagPipeline(config)
 
-    mock_detector_instance.addFamily.assert_called_once_with("tag16h5", 3)
+    mock_detector_instance.addFamily.assert_called_once_with("tag16h5", 2)
 
 
 def test_process_frame_no_tags(mock_libs, default_config, default_cam_matrix):
