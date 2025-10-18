@@ -20,11 +20,13 @@ def start_camera_thread(camera, app):
             print(f"Starting threads for camera {identifier}")
 
             # Extract primitive values from ORM object
+            # Display frames use higher quality (85) since they're the main view
             acq_thread = CameraAcquisitionThread(
                 identifier=camera.identifier,
                 camera_type=camera.camera_type,
                 orientation=camera.orientation,
-                app=app
+                app=app,
+                jpeg_quality=85
             )
 
             # Pipelines are loaded via the relationship
@@ -34,13 +36,15 @@ def start_camera_thread(camera, app):
             for pipeline in pipelines:
                 frame_queue = queue.Queue(maxsize=2)
                 # Pass primitive values instead of ORM objects
+                # Pipeline frames use lower quality (75) to save CPU
                 proc_thread = VisionProcessingThread(
                     identifier=identifier,
                     pipeline_id=pipeline.id,
                     pipeline_type=pipeline.pipeline_type,
                     pipeline_config_json=pipeline.config,
                     camera_matrix_json=camera.camera_matrix_json,
-                    frame_queue=frame_queue
+                    frame_queue=frame_queue,
+                    jpeg_quality=75
                 )
 
                 acq_thread.add_pipeline_queue(pipeline.id, frame_queue)
@@ -120,13 +124,15 @@ def add_pipeline_to_camera(camera_id, pipeline, app):
                 print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
                 frame_queue = queue.Queue(maxsize=2)
                 # Pass primitive values instead of ORM objects
+                # Pipeline frames use lower quality (75) to save CPU
                 proc_thread = VisionProcessingThread(
                     identifier=identifier,
                     pipeline_id=pipeline.id,
                     pipeline_type=pipeline.pipeline_type,
                     pipeline_config_json=pipeline.config,
                     camera_matrix_json=camera.camera_matrix_json,
-                    frame_queue=frame_queue
+                    frame_queue=frame_queue,
+                    jpeg_quality=75
                 )
                 thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
                 thread_group['processing_threads'][pipeline_id] = proc_thread
@@ -185,13 +191,15 @@ def update_pipeline_in_camera(camera_id, pipeline_id, app):
             print(f"Starting new pipeline thread {pipeline_id} with updated config.")
             frame_queue = queue.Queue(maxsize=2)
             # Pass primitive values instead of ORM objects
+            # Pipeline frames use lower quality (75) to save CPU
             new_proc_thread = VisionProcessingThread(
                 identifier=identifier,
                 pipeline_id=pipeline.id,
                 pipeline_type=pipeline.pipeline_type,
                 pipeline_config_json=pipeline.config,
                 camera_matrix_json=camera.camera_matrix_json,
-                frame_queue=frame_queue
+                frame_queue=frame_queue,
+                jpeg_quality=75
             )
 
             thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)

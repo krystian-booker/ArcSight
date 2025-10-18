@@ -74,12 +74,13 @@ def test_start_camera_thread(mock_camera, mock_app, mock_threads):
     """Test starting threads for a single camera."""
     camera_manager.start_camera_thread(mock_camera, mock_app)
 
-    # Check that acquisition thread was created with primitives
+    # Check that acquisition thread was created with primitives and JPEG quality
     mock_threads['acquisition'].assert_called_once_with(
         identifier=mock_camera.identifier,
         camera_type=mock_camera.camera_type,
         orientation=mock_camera.orientation,
-        app=mock_app
+        app=mock_app,
+        jpeg_quality=85
     )
     mock_threads['acquisition'].return_value.start.assert_called_once()
 

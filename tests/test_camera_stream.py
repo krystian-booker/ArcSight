@@ -23,21 +23,23 @@ def mock_active_threads(mock_camera):
     """
     mock_acq_thread = MagicMock()
     mock_acq_thread.is_alive.return_value = True
-    mock_acq_thread.latest_frame_for_display = b"jpeg_frame_data"
+    # Mock the lazy encoding method to return encoded frame
+    mock_acq_thread.get_display_frame.return_value = b"jpeg_frame_data"
     # The code calls .copy() on this, so it must be a numpy array
     mock_acq_thread.latest_raw_frame = np.zeros((10, 10), dtype=np.uint8)
-    
+
     mock_proc_thread = MagicMock()
     mock_proc_thread.is_alive.return_value = True
-    mock_proc_thread.latest_processed_frame = b"processed_jpeg_frame_data"
-    
+    # Mock the lazy encoding method to return encoded frame
+    mock_proc_thread.get_processed_frame.return_value = b"processed_jpeg_frame_data"
+
     threads_dict = {
         mock_camera.identifier: {
             'acquisition': mock_acq_thread,
             'processing_threads': {101: mock_proc_thread}
         }
     }
-    
+
     with patch.dict(camera_stream.active_camera_threads, threads_dict, clear=True) as mocked_dict:
         yield {
             "dict": mocked_dict,
@@ -100,12 +102,12 @@ def test_get_camera_feed_generator_exit(mock_camera, mock_active_threads):
 
 def test_get_camera_feed_no_frame(mock_camera, mock_active_threads):
     """Test the camera feed generator when the thread is alive but there's no frame."""
-    mock_active_threads['acq'].latest_frame_for_display = None
+    mock_active_threads['acq'].get_display_frame.return_value = None
     # Let the thread die after the first check to prevent an infinite loop
     mock_active_threads['acq'].is_alive.side_effect = [True, False]
-    
+
     feed_generator = camera_stream.get_camera_feed(mock_camera)
-    
+
     # The generator should not yield anything and just exit
     with pytest.raises(StopIteration):
         next(feed_generator)
@@ -166,12 +168,12 @@ def test_get_processed_camera_feed_generator_exit(mock_active_threads):
 def test_get_processed_camera_feed_no_frame(mock_active_threads):
     """Test the processed feed generator when the thread is alive but there's no frame."""
     pipeline_id = 101
-    mock_active_threads['proc'].latest_processed_frame = None
+    mock_active_threads['proc'].get_processed_frame.return_value = None
     # Let the thread die after the first check to prevent an infinite loop
     mock_active_threads['proc'].is_alive.side_effect = [True, False]
-    
+
     feed_generator = camera_stream.get_processed_camera_feed(pipeline_id)
-    
+
     # The generator should not yield anything and just exit
     with pytest.raises(StopIteration):
         next(feed_generator)
@@ -209,17 +211,17 @@ def test_get_camera_feed_waits_for_frame(mock_camera, mock_active_threads):
     """
     # The thread is alive for two loops, then dies.
     mock_active_threads['acq'].is_alive.side_effect = [True, True, False]
-    
-    # The frame is not available on the first loop.
-    mock_active_threads['acq'].latest_frame_for_display = None
+
+    # The frame is not available on the first loop (get_display_frame returns None).
+    mock_active_threads['acq'].get_display_frame.return_value = None
 
     feed_generator = camera_stream.get_camera_feed(mock_camera)
-    
+
     with patch('time.sleep') as mock_sleep:
         # This side effect runs when time.sleep is called after the first empty loop.
         def make_frame_available(duration):
-            mock_active_threads['acq'].latest_frame_for_display = b"new_frame_data"
-        
+            mock_active_threads['acq'].get_display_frame.return_value = b"new_frame_data"
+
         mock_sleep.side_effect = make_frame_available
 
         # The generator should loop once, find no frame, sleep (and trigger the side effect),
@@ -237,17 +239,17 @@ def test_get_processed_camera_feed_waits_for_frame(mock_active_threads):
     pipeline_id = 101
     # The thread is alive for two loops, then dies.
     mock_active_threads['proc'].is_alive.side_effect = [True, True, False]
-    
-    # The frame is not available on the first loop.
-    mock_active_threads['proc'].latest_processed_frame = None
+
+    # The frame is not available on the first loop (get_processed_frame returns None).
+    mock_active_threads['proc'].get_processed_frame.return_value = None
 
     feed_generator = camera_stream.get_processed_camera_feed(pipeline_id)
-    
+
     with patch('time.sleep') as mock_sleep:
         # This side effect runs when time.sleep is called after the first empty loop.
         def make_frame_available(duration):
-            mock_active_threads['proc'].latest_processed_frame = b"new_processed_frame"
-        
+            mock_active_threads['proc'].get_processed_frame.return_value = b"new_processed_frame"
+
         mock_sleep.side_effect = make_frame_available
 
         # The generator should loop once, find no frame, sleep (and trigger the side effect),

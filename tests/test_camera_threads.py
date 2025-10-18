@@ -529,9 +529,14 @@ def test_vision_processing_thread_run_loop(mock_camera, mock_pipeline, mock_pipe
     # Check that frame was released
     mock_rc_frame.release.assert_called_once()
 
-    # Check that processed frame was generated
+    # Check that processed frame was generated (raw frame for lazy encoding)
     with thread.processed_frame_lock:
-        assert thread.latest_processed_frame is not None
+        assert thread.latest_processed_frame_raw is not None
+
+    # Test lazy encoding - get_processed_frame() should encode on demand
+    encoded_frame = thread.get_processed_frame()
+    assert encoded_frame is not None
+    assert isinstance(encoded_frame, bytes)
 
     # Stop the thread
     thread.stop()
@@ -875,7 +880,12 @@ def test_acquisition_loop(mock_get_driver, mock_driver, mock_camera, mock_app):
     with thread.raw_frame_lock:
         assert thread.latest_raw_frame is not None
     with thread.frame_lock:
-        assert thread.latest_frame_for_display is not None
+        assert thread.latest_display_frame_raw is not None
+
+    # Test lazy encoding - get_display_frame() should encode on demand
+    encoded_frame = thread.get_display_frame()
+    assert encoded_frame is not None
+    assert isinstance(encoded_frame, bytes)
 
     # Check FPS calculation
     assert thread.fps > 0
@@ -1085,8 +1095,8 @@ def test_acquisition_loop_empty_buffer_pool(mock_driver, mock_camera, mock_app):
         assert mock_driver.get_frame.call_count > 0
         # The raw frame should be set
         assert thread.latest_raw_frame is not None
-        # But the display frame and pipeline queues should not get anything
-        assert thread.latest_frame_for_display is None
+        # But the display frame should not be set (lazy encoding won't work without buffer)
+        assert thread.latest_display_frame_raw is None
 
 
 def test_prepare_display_frame():

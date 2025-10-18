@@ -170,7 +170,7 @@ class FrameBufferPool:
 # --- Vision Processing Thread (Consumer) ---
 class VisionProcessingThread(threading.Thread):
     """A consumer thread that runs a vision pipeline on frames from a queue."""
-    def __init__(self, identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, frame_queue):
+    def __init__(self, identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, frame_queue, jpeg_quality=75):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
@@ -180,8 +180,10 @@ class VisionProcessingThread(threading.Thread):
         self.stop_event = threading.Event()
         self.results_lock = threading.Lock()
         self.latest_results = {"status": "Starting..."}
-        self.latest_processed_frame = None
+        self.latest_processed_frame = None  # DEPRECATED: Will be removed, use get_processed_frame() instead
+        self.latest_processed_frame_raw = None  # Raw annotated frame for lazy encoding
         self.processed_frame_lock = threading.Lock()
+        self.jpeg_quality = jpeg_quality
 
         # Initialize the pipeline object
         self.pipeline_instance = None
@@ -299,11 +301,11 @@ class VisionProcessingThread(threading.Thread):
                 with self.results_lock:
                     self.latest_results = current_results
 
-                # --- Generate Processed Frame ---
-                ret, buffer = cv2.imencode('.jpg', annotated_frame)
-                if ret:
-                    with self.processed_frame_lock:
-                        self.latest_processed_frame = buffer.tobytes()
+                # --- Store Processed Frame (raw, for lazy encoding) ---
+                with self.processed_frame_lock:
+                    self.latest_processed_frame_raw = annotated_frame
+                    # Keep legacy behavior for backward compatibility during transition
+                    self.latest_processed_frame = None
             except queue.Empty:
                 continue
             finally:
@@ -316,6 +318,25 @@ class VisionProcessingThread(threading.Thread):
         """Safely retrieves the latest results from this pipeline."""
         with self.results_lock:
             return self.latest_results
+
+    def get_processed_frame(self):
+        """Encodes and returns the latest processed frame as JPEG bytes.
+
+        This performs lazy encoding - JPEG compression only happens when a client
+        requests the frame, avoiding wasteful encoding when no clients are connected.
+
+        Returns:
+            bytes: JPEG-encoded frame, or None if no frame is available
+        """
+        with self.processed_frame_lock:
+            if self.latest_processed_frame_raw is None:
+                return None
+
+            ret, buffer = cv2.imencode('.jpg', self.latest_processed_frame_raw,
+                                      [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            if ret:
+                return buffer.tobytes()
+            return None
 
     def _draw_3d_box_on_frame(self, frame, detections):
         """Draws a 3D bounding box around each detected AprilTag."""
@@ -349,7 +370,7 @@ class CameraAcquisitionThread(threading.Thread):
     to multiple consumer queues. It handles camera connection, disconnection,
     and reconnection automatically.
     """
-    def __init__(self, identifier, camera_type, orientation, app):
+    def __init__(self, identifier, camera_type, orientation, app, jpeg_quality=85):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
@@ -357,7 +378,8 @@ class CameraAcquisitionThread(threading.Thread):
         self.app = app
         self.driver = None
         self.frame_lock = threading.Lock()
-        self.latest_frame_for_display = None
+        self.latest_frame_for_display = None  # DEPRECATED: Will be removed, use get_display_frame() instead
+        self.latest_display_frame_raw = None  # Raw frame for lazy encoding
         self.raw_frame_lock = threading.Lock()
         self.latest_raw_frame = None
         self.processing_queues = {}
@@ -365,6 +387,7 @@ class CameraAcquisitionThread(threading.Thread):
         self.stop_event = threading.Event()
         self.fps = 0.0
         self.buffer_pool = FrameBufferPool(name=self.identifier)
+        self.jpeg_quality = jpeg_quality
 
         # Event-based configuration update
         self.config_update_event = threading.Event()
@@ -388,6 +411,25 @@ class CameraAcquisitionThread(threading.Thread):
                 self._orientation = new_orientation
                 self.config_update_event.set()
                 print(f"[{self.identifier}] Orientation update signaled: {new_orientation}")
+
+    def get_display_frame(self):
+        """Encodes and returns the latest display frame as JPEG bytes.
+
+        This performs lazy encoding - JPEG compression only happens when a client
+        requests the frame, avoiding wasteful encoding when no clients are connected.
+
+        Returns:
+            bytes: JPEG-encoded frame, or None if no frame is available
+        """
+        with self.frame_lock:
+            if self.latest_display_frame_raw is None:
+                return None
+
+            ret, buffer = cv2.imencode('.jpg', self.latest_display_frame_raw,
+                                      [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            if ret:
+                return buffer.tobytes()
+            return None
 
     def run(self):
         """The main loop for the camera acquisition thread."""
@@ -482,15 +524,17 @@ class CameraAcquisitionThread(threading.Thread):
                         except queue.Full:
                             ref_counted_frame.release()
 
-                # Prepare display frame
+                # Prepare display frame (store raw frame for lazy encoding)
                 ref_counted_frame.acquire()
                 try:
                     display_frame_copy = ref_counted_frame.get_writable_copy()
                     display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
-                    ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
-                    if ret:
-                        with self.frame_lock:
-                            self.latest_frame_for_display = buffer.tobytes()
+
+                    # Store the raw frame instead of encoding immediately (lazy encoding)
+                    with self.frame_lock:
+                        self.latest_display_frame_raw = display_frame_with_overlay
+                        # Keep legacy behavior for backward compatibility during transition
+                        self.latest_frame_for_display = None
                 finally:
                     ref_counted_frame.release()
             finally:
