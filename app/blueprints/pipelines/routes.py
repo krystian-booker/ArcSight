@@ -166,7 +166,28 @@ def get_pipeline_labels(pipeline_id: int):
         except OSError:
             labels = []
 
-    return jsonify({"labels": labels})
+    response: Dict[str, Any] = {"labels": labels}
+
+    is_valid, error_message = validate_pipeline_config(
+        pipeline.pipeline_type, config
+    )
+    if not is_valid:
+        response["error"] = "Invalid configuration"
+        response["details"] = error_message
+    elif (
+        pipeline.pipeline_type == "Object Detection (ML)"
+        and labels
+        and not config.get("model_path")
+    ):
+        response["error"] = "Invalid configuration"
+        response[
+            "details"
+        ] = (
+            "Model path missing for ML pipeline; upload a model and ensure calibration "
+            "values such as tag_size_m are set before deploying."
+        )
+
+    return jsonify(response)
 
 
 @pipelines.route("/cameras/<int:camera_id>/pipelines", methods=["GET"])

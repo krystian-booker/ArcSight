@@ -1,9 +1,50 @@
 import threading
 import queue
+from typing import List, TypedDict, Optional
 from sqlalchemy.orm import joinedload
 
 from .models import Camera
 from .camera_threads import CameraAcquisitionThread, VisionProcessingThread
+
+
+class PipelineThreadConfig(TypedDict):
+    """Primitive values needed to start a pipeline processing thread."""
+
+    id: int
+    pipeline_type: str
+    config: str
+
+
+class CameraThreadConfig(TypedDict):
+    """Primitive values needed to start camera acquisition and pipeline threads."""
+
+    identifier: str
+    camera_type: str
+    orientation: int
+    camera_matrix_json: Optional[str]
+    dist_coeffs_json: Optional[str]
+    pipelines: List[PipelineThreadConfig]
+
+
+def build_camera_thread_config(camera: Camera) -> CameraThreadConfig:
+    """Convert a Camera ORM row into immutable data for thread creation."""
+
+    return {
+        "identifier": camera.identifier,
+        "camera_type": camera.camera_type,
+        "orientation": camera.orientation or 0,
+        "camera_matrix_json": camera.camera_matrix_json,
+        "dist_coeffs_json": camera.dist_coeffs_json,
+        "pipelines": [
+            {
+                "id": pipeline.id,
+                "pipeline_type": pipeline.pipeline_type,
+                "config": pipeline.config,
+            }
+            for pipeline in camera.pipelines
+        ],
+    }
+
 
 # --- Globals & Threading Primitives ---
 active_camera_threads = {}
@@ -11,25 +52,25 @@ active_camera_threads_lock = threading.Lock()
 
 
 # --- Centralized Thread Management ---
-def start_camera_thread(camera, app):
+def start_camera_thread(camera_config: CameraThreadConfig, app):
     """Starts acquisition and processing threads for a single camera."""
     with active_camera_threads_lock:
-        identifier = camera.identifier
+        identifier = camera_config["identifier"]
         if identifier not in active_camera_threads:
             print(f"Starting threads for camera {identifier}")
 
             # Extract primitive values from ORM object
             # Display frames use higher quality (85) since they're the main view
             acq_thread = CameraAcquisitionThread(
-                identifier=camera.identifier,
-                camera_type=camera.camera_type,
-                orientation=camera.orientation,
+                identifier=camera_config["identifier"],
+                camera_type=camera_config["camera_type"],
+                orientation=camera_config["orientation"],
                 app=app,
                 jpeg_quality=85,
             )
 
             # Pipelines are loaded via the relationship
-            pipelines = camera.pipelines
+            pipelines = camera_config["pipelines"]
 
             processing_threads = {}
             for pipeline in pipelines:
@@ -38,17 +79,17 @@ def start_camera_thread(camera, app):
                 # Pipeline frames use lower quality (75) to save CPU
                 proc_thread = VisionProcessingThread(
                     identifier=identifier,
-                    pipeline_id=pipeline.id,
-                    pipeline_type=pipeline.pipeline_type,
-                    pipeline_config_json=pipeline.config,
-                    camera_matrix_json=camera.camera_matrix_json,
-                    dist_coeffs_json=camera.dist_coeffs_json,
+                    pipeline_id=pipeline["id"],
+                    pipeline_type=pipeline["pipeline_type"],
+                    pipeline_config_json=pipeline["config"],
+                    camera_matrix_json=camera_config["camera_matrix_json"],
+                    dist_coeffs_json=camera_config["dist_coeffs_json"],
                     frame_queue=frame_queue,
                     jpeg_quality=75,
                 )
 
-                acq_thread.add_pipeline_queue(pipeline.id, frame_queue)
-                processing_threads[pipeline.id] = proc_thread
+                acq_thread.add_pipeline_queue(pipeline["id"], frame_queue)
+                processing_threads[pipeline["id"]] = proc_thread
 
             active_camera_threads[identifier] = {
                 "acquisition": acq_thread,
@@ -261,9 +302,12 @@ def start_all_camera_threads(app):
     """Initializes all configured cameras at application startup."""
     print("Starting acquisition and processing threads for all configured cameras...")
     with app.app_context():
-        cameras = Camera.query.options(joinedload(Camera.pipelines)).all()
-    for camera in cameras:
-        start_camera_thread(camera, app)
+        camera_configs = [
+            build_camera_thread_config(camera)
+            for camera in Camera.query.options(joinedload(Camera.pipelines)).all()
+        ]
+    for camera_config in camera_configs:
+        start_camera_thread(camera_config, app)
 
 
 def stop_all_camera_threads():
