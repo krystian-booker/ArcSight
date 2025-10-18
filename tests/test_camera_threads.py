@@ -793,9 +793,8 @@ def test_vision_processing_thread_imencode_failure(mock_camera, mock_pipeline):
         thread.start()
         time.sleep(0.2)
 
-        # The frame should not have been set
-        with thread.processed_frame_lock:
-            assert thread.latest_processed_frame is None
+        # The legacy processed frame attribute should no longer exist
+        assert not hasattr(thread, "latest_processed_frame")
 
         thread.stop()
         thread.join()
@@ -1096,7 +1095,7 @@ def test_acquisition_loop_fails_first_frame():
 
     # The loop should return immediately, and no frames should be processed
     assert thread.latest_raw_frame is None
-    assert thread.latest_frame_for_display is None
+    assert not hasattr(thread, "latest_frame_for_display")
 
 
 @pytest.mark.parametrize(

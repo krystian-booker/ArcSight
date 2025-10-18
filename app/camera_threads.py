@@ -223,9 +223,6 @@ class VisionProcessingThread(threading.Thread):
         self.stop_event = threading.Event()
         self.results_lock = threading.Lock()
         self.latest_results = {"status": "Starting..."}
-        self.latest_processed_frame = (
-            None  # DEPRECATED: Will be removed, use get_processed_frame() instead
-        )
         self.latest_processed_frame_raw = None  # Raw annotated frame for lazy encoding
         self.processed_frame_lock = threading.Lock()
         self.jpeg_quality = jpeg_quality
@@ -411,8 +408,6 @@ class VisionProcessingThread(threading.Thread):
                 # --- Store Processed Frame (raw, for lazy encoding) ---
                 with self.processed_frame_lock:
                     self.latest_processed_frame_raw = annotated_frame
-                    # Keep legacy behavior for backward compatibility during transition
-                    self.latest_processed_frame = None
             except queue.Empty:
                 continue
             finally:
@@ -533,9 +528,6 @@ class CameraAcquisitionThread(threading.Thread):
         self.camera_db_id = camera_id
         self.driver = None
         self.frame_lock = threading.Lock()
-        self.latest_frame_for_display = (
-            None  # DEPRECATED: Will be removed, use get_display_frame() instead
-        )
         self.latest_display_frame_raw = None  # Raw frame for lazy encoding
         self.raw_frame_lock = threading.Lock()
         self.latest_raw_frame = None
@@ -731,8 +723,6 @@ class CameraAcquisitionThread(threading.Thread):
                 # Store the raw frame instead of encoding immediately (lazy encoding)
                 with self.frame_lock:
                     self.latest_display_frame_raw = display_frame_with_overlay
-                    # Keep legacy behavior for backward compatibility during transition
-                    self.latest_frame_for_display = None
             finally:
                 # Release initial reference - this ensures buffer is returned to pool
                 # when all consumers (pipelines + display) have finished with it
