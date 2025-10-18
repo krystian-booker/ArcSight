@@ -1,6 +1,6 @@
 import cv2
-import platform 
 from .base_driver import BaseDriver
+
 
 class USBDriver(BaseDriver):
     def __init__(self, camera_db_data):
@@ -12,12 +12,16 @@ class USBDriver(BaseDriver):
             # The identifier for USB cameras is expected to be a string representing an integer index.
             device_index = int(self.identifier)
         except (ValueError, TypeError):
-            raise ConnectionError(f"Invalid identifier for USB camera: '{self.identifier}'. Must be an integer index.")
+            raise ConnectionError(
+                f"Invalid identifier for USB camera: '{self.identifier}'. Must be an integer index."
+            )
 
         self.cap = cv2.VideoCapture(device_index)
         if not self.cap.isOpened():
-            self.cap = None # Ensure cap is None if connection failed
-            raise ConnectionError(f"Failed to open USB camera at index {self.identifier}")
+            self.cap = None  # Ensure cap is None if connection failed
+            raise ConnectionError(
+                f"Failed to open USB camera at index {self.identifier}"
+            )
         print(f"Successfully connected to USB camera {self.identifier}")
 
     def disconnect(self):
@@ -30,13 +34,13 @@ class USBDriver(BaseDriver):
         if not self.cap or not self.cap.isOpened():
             # This indicates a lost connection. Returning None will signal the acquisition loop to reconnect.
             return None
-        
+
         ret, frame = self.cap.read()
-        
+
         if not ret or frame is None:
             # A failed read could also mean the camera was disconnected.
             return None
-            
+
         return frame
 
     @staticmethod
@@ -53,6 +57,12 @@ class USBDriver(BaseDriver):
                 # For USB cameras, we use the index as the identifier.
                 # A more descriptive name could be fetched if the backend library supports it,
                 # but for OpenCV, this is standard.
-                devices.append({'identifier': str(i), 'name': f'USB Camera {i}', 'camera_type': 'USB'})
+                devices.append(
+                    {
+                        "identifier": str(i),
+                        "name": f"USB Camera {i}",
+                        "camera_type": "USB",
+                    }
+                )
                 cap.release()
         return devices

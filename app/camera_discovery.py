@@ -13,16 +13,16 @@ def get_driver(camera_data):
     """
     # Support both ORM objects and dicts for backwards compatibility
     if isinstance(camera_data, dict):
-        camera_type = camera_data['camera_type']
+        camera_type = camera_data["camera_type"]
     else:
         # ORM object
         camera_type = camera_data.camera_type
 
-    if camera_type == 'USB':
+    if camera_type == "USB":
         return USBDriver(camera_data)
-    elif camera_type == 'GenICam':
+    elif camera_type == "GenICam":
         return GenICamDriver(camera_data)
-    elif camera_type == 'OAK-D':
+    elif camera_type == "OAK-D":
         return OAKDDriver(camera_data)
     else:
         raise ValueError(f"Unknown camera type: {camera_type}")
@@ -32,9 +32,23 @@ def get_driver(camera_data):
 def discover_cameras(existing_identifiers):
     """Discovers all available cameras by polling the drivers."""
     print("Discovering cameras...")
-    usb_cams = [c for c in USBDriver.list_devices() if c['identifier'] not in existing_identifiers]
-    genicam_cams = [c for c in GenICamDriver.list_devices() if c['identifier'] not in existing_identifiers]
-    oakd_cams = [c for c in OAKDDriver.list_devices() if c['identifier'] not in existing_identifiers]
-    
-    print(f"Found {len(usb_cams)} new USB, {len(genicam_cams)} new GenICam, {len(oakd_cams)} new OAK-D cameras.")
-    return {'usb': usb_cams, 'genicam': genicam_cams, 'oakd': oakd_cams}
+    usb_cams = [
+        c
+        for c in USBDriver.list_devices()
+        if c["identifier"] not in existing_identifiers
+    ]
+    genicam_cams = [
+        c
+        for c in GenICamDriver.list_devices()
+        if c["identifier"] not in existing_identifiers
+    ]
+    oakd_cams = [
+        c
+        for c in OAKDDriver.list_devices()
+        if c["identifier"] not in existing_identifiers
+    ]
+
+    print(
+        f"Found {len(usb_cams)} new USB, {len(genicam_cams)} new GenICam, {len(oakd_cams)} new OAK-D cameras."
+    )
+    return {"usb": usb_cams, "genicam": genicam_cams, "oakd": oakd_cams}

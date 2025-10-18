@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 
+
 class BaseDriver(ABC):
     """
     Abstract base class for all camera drivers. Defines the common interface.
     """
+
     def __init__(self, camera_data):
         """
         Initialize the driver.
@@ -13,7 +15,7 @@ class BaseDriver(ABC):
         """
         # Support both ORM objects and dicts for backwards compatibility
         if isinstance(camera_data, dict):
-            self.identifier = camera_data['identifier']
+            self.identifier = camera_data["identifier"]
             self.camera_db_data = camera_data  # Store for potential future use
         else:
             # ORM object

@@ -47,14 +47,15 @@ def _reset_harvester():
             finally:
                 _harvester = None
 
+
 # --- GenICam Constants ---
 if genapi:
     SUPPORTED_INTERFACE_TYPES = {
-        genapi.EInterfaceType.intfIInteger: 'integer',
-        genapi.EInterfaceType.intfIFloat: 'float',
-        genapi.EInterfaceType.intfIString: 'string',
-        genapi.EInterfaceType.intfIBoolean: 'boolean',
-        genapi.EInterfaceType.intfIEnumeration: 'enumeration',
+        genapi.EInterfaceType.intfIInteger: "integer",
+        genapi.EInterfaceType.intfIFloat: "float",
+        genapi.EInterfaceType.intfIString: "string",
+        genapi.EInterfaceType.intfIBoolean: "boolean",
+        genapi.EInterfaceType.intfIEnumeration: "enumeration",
     }
     READABLE_ACCESS_MODES = {genapi.EAccessMode.RO, genapi.EAccessMode.RW}
     WRITABLE_ACCESS_MODES = {genapi.EAccessMode.WO, genapi.EAccessMode.RW}
@@ -68,19 +69,22 @@ class GenICamDriver(BaseDriver):
     """
     Driver for GenICam compliant cameras using the Harvesters library.
     """
+
     def __init__(self, camera_db_data):
         super().__init__(camera_db_data)
-        self.ia = None # Image Acquirer instance
+        self.ia = None  # Image Acquirer instance
 
     def connect(self):
         h = _get_harvester()
         if not h:
-            raise ConnectionError("Harvesters library is not installed or failed to import.")
+            raise ConnectionError(
+                "Harvesters library is not installed or failed to import."
+            )
 
         with _harvester_lock:
             try:
                 # The identifier for GenICam is the camera's serial number.
-                self.ia = h.create({'serial_number': self.identifier})
+                self.ia = h.create({"serial_number": self.identifier})
                 self.ia.start()
                 print(f"Successfully connected to GenICam camera {self.identifier}")
             except Exception as e:
@@ -88,7 +92,9 @@ class GenICamDriver(BaseDriver):
                 if self.ia:
                     self.ia.destroy()
                     self.ia = None
-                raise ConnectionError(f"Failed to create ImageAcquirer for GenICam camera {self.identifier}: {e}")
+                raise ConnectionError(
+                    f"Failed to create ImageAcquirer for GenICam camera {self.identifier}: {e}"
+                )
 
     def disconnect(self):
         if self.ia:
@@ -104,23 +110,25 @@ class GenICamDriver(BaseDriver):
     def get_frame(self):
         if not self.ia:
             return None
-        
+
         try:
             # Use a timeout to prevent blocking indefinitely if the camera stops sending frames.
             with self.ia.fetch(timeout=2.0) as buffer:
                 component = buffer.payload.components[0]
                 img = component.data.reshape(component.height, component.width)
-                
+
                 # Convert frame to BGR format for consistency with OpenCV.
-                if 'Bayer' in component.data_format:
+                if "Bayer" in component.data_format:
                     # Example for BayerRG; the specific conversion might need to be configurable.
                     return cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
-                elif len(img.shape) == 2: # Grayscale image
+                elif len(img.shape) == 2:  # Grayscale image
                     return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
                 else:
-                    return img # Assume it's already in a compatible format (e.g., BGR)
+                    return img  # Assume it's already in a compatible format (e.g., BGR)
         except (genapi.TimeoutException, genapi.LogicalErrorException) as e:
-            print(f"Frame acquisition timeout for GenICam {self.identifier}: {e}. Connection may be lost.")
+            print(
+                f"Frame acquisition timeout for GenICam {self.identifier}: {e}. Connection may be lost."
+            )
             # Returning None signals the acquisition loop to attempt reconnection.
             return None
         except Exception as e:
@@ -165,7 +173,9 @@ class GenICamDriver(BaseDriver):
                     # Reset on failure to leave in clean state
                     _reset_harvester()
         else:
-            print("GenICam CTI file not found or not configured. Harvester is uninitialized.")
+            print(
+                "GenICam CTI file not found or not configured. Harvester is uninitialized."
+            )
             # Don't create a Harvester instance if we don't have a CTI path
             # _harvester is already None from the _reset_harvester() call above
 
@@ -185,11 +195,13 @@ class GenICamDriver(BaseDriver):
                 for device_info in h.device_info_list:
                     # The unique serial number is the ideal identifier.
                     if device_info.serial_number:
-                         devices.append({
-                            'identifier': device_info.serial_number,
-                            'name': f"{device_info.model} ({device_info.serial_number})",
-                            'camera_type': 'GenICam'
-                        })
+                        devices.append(
+                            {
+                                "identifier": device_info.serial_number,
+                                "name": f"{device_info.model} ({device_info.serial_number})",
+                                "camera_type": "GenICam",
+                            }
+                        )
             except Exception as e:
                 print(f"Error listing GenICam cameras: {e}")
         return devices
@@ -204,9 +216,11 @@ class GenICamDriver(BaseDriver):
             try:
                 # This creates a temporary connection to the camera to access the node map.
                 # It does not interfere with the main acquisition connection.
-                return h.create({'serial_number': identifier}), None
+                return h.create({"serial_number": identifier}), None
             except Exception as error:
-                print(f"Error creating temporary ImageAcquirer for {identifier}: {error}")
+                print(
+                    f"Error creating temporary ImageAcquirer for {identifier}: {error}"
+                )
                 return None, f"Error creating ImageAcquirer for {identifier}: {error}"
 
     @staticmethod
@@ -214,11 +228,11 @@ class GenICamDriver(BaseDriver):
         """Retrieves the full node map for a specific GenICam device."""
         if not genapi:
             return [], "GenICam runtime (GenAPI) is not available on the server."
-        
+
         ia, error = GenICamDriver._create_image_acquirer(identifier)
         if error:
             return [], error
-        
+
         try:
             node_map = ia.remote_device.node_map
             nodes = []
@@ -229,41 +243,56 @@ class GenICamDriver(BaseDriver):
                     continue
                 if interface_type not in SUPPORTED_INTERFACE_TYPES:
                     continue
-                
+
                 try:
                     access_value = node_wrapper.node.get_access_mode()
                     access_mode = genapi.EAccessMode(access_value)
                 except (ValueError, TypeError):
                     access_mode = None
 
-                is_readable = access_mode in READABLE_ACCESS_MODES if access_mode else False
-                is_writable = access_mode in WRITABLE_ACCESS_MODES if access_mode else False
+                is_readable = (
+                    access_mode in READABLE_ACCESS_MODES if access_mode else False
+                )
+                is_writable = (
+                    access_mode in WRITABLE_ACCESS_MODES if access_mode else False
+                )
                 node = node_wrapper.node
-                display_name = str(getattr(node, 'display_name', '') or '')
-                name = str(getattr(node, 'name', '') or '')
-                description = str(getattr(node, 'tooltip', '') or getattr(node, 'description', '') or '')
+                display_name = str(getattr(node, "display_name", "") or "")
+                name = str(getattr(node, "name", "") or "")
+                description = str(
+                    getattr(node, "tooltip", "")
+                    or getattr(node, "description", "")
+                    or ""
+                )
 
                 node_info = {
-                    'name': name, 'display_name': display_name or name,
-                    'description': description.strip(),
-                    'interface_type': SUPPORTED_INTERFACE_TYPES[interface_type],
-                    'access_mode': access_mode.name if access_mode else str(access_value),
-                    'is_readable': is_readable, 'is_writable': is_writable,
-                    'value': None, 'choices': []
+                    "name": name,
+                    "display_name": display_name or name,
+                    "description": description.strip(),
+                    "interface_type": SUPPORTED_INTERFACE_TYPES[interface_type],
+                    "access_mode": access_mode.name
+                    if access_mode
+                    else str(access_value),
+                    "is_readable": is_readable,
+                    "is_writable": is_writable,
+                    "value": None,
+                    "choices": [],
                 }
 
                 if is_readable:
                     try:
-                        node_info['value'] = str(node_wrapper.to_string())
+                        node_info["value"] = str(node_wrapper.to_string())
                     except Exception as read_error:
                         print(f"Error reading node {name}: {read_error}")
                 if interface_type == genapi.EInterfaceType.intfIEnumeration:
                     try:
-                        node_info['choices'] = [str(symbol) for symbol in node_wrapper.symbolics]
+                        node_info["choices"] = [
+                            str(symbol) for symbol in node_wrapper.symbolics
+                        ]
                     except Exception as enum_error:
                         print(f"Error retrieving enum values for {name}: {enum_error}")
                 nodes.append(node_info)
-            nodes.sort(key=lambda item: item['display_name'].lower())
+            nodes.sort(key=lambda item: item["display_name"].lower())
             return nodes, None
         except Exception as e:
             return [], f"Failed to retrieve node map: {e}"
@@ -278,7 +307,7 @@ class GenICamDriver(BaseDriver):
             return False, "GenICam runtime is not available.", 500, None
         if not node_name:
             return False, "Node name is required.", 400, None
-        
+
         ia, error = GenICamDriver._create_image_acquirer(identifier)
         if error:
             return False, f"Unable to connect to the GenICam camera: {error}", 500, None
@@ -287,7 +316,7 @@ class GenICamDriver(BaseDriver):
             node = ia.remote_device.node_map.get_node(node_name)
             if node is None:
                 return False, f"Node '{node_name}' not found.", 404, None
-            
+
             access_mode = genapi.EAccessMode(node.get_access_mode())
             if access_mode not in WRITABLE_ACCESS_MODES:
                 return False, f"Node '{node_name}' is not writable.", 400, None
@@ -301,31 +330,38 @@ class GenICamDriver(BaseDriver):
                     node.set_value(float(value))
                 elif isinstance(node, genapi.IBoolean):
                     norm_val = str(value).strip().lower()
-                    if norm_val in ('true', '1', 'yes', 'on'):
+                    if norm_val in ("true", "1", "yes", "on"):
                         node.set_value(True)
-                    elif norm_val in ('false', '0', 'no', 'off'):
+                    elif norm_val in ("false", "0", "no", "off"):
                         node.set_value(False)
                     else:
                         return False, f"'{value}' is not a valid boolean.", 400, None
                 else:
                     node.from_string(str(value))
             except Exception as set_error:
-                return False, f"Failed to update node '{node_name}': {set_error}", 400, None
-            
+                return (
+                    False,
+                    f"Failed to update node '{node_name}': {set_error}",
+                    400,
+                    None,
+                )
+
             # The node value is read back after setting it to confirm the change.
             # This requires re-establishing a connection in this stateless model.
             ia.destroy()
             ia = None
-            
+
             # Re-acquire to read the value back.
             ia_read, error_read = GenICamDriver._create_image_acquirer(identifier)
             if error_read:
-                 return True, "Node updated, but failed to verify new state.", 200, None
-            
+                return True, "Node updated, but failed to verify new state.", 200, None
+
             try:
-                updated_node_wrapper = ia_read.remote_device.node_map.get_node(node_name)
+                updated_node_wrapper = ia_read.remote_device.node_map.get_node(
+                    node_name
+                )
                 updated_value = str(updated_node_wrapper.to_string())
-                updated_node_info = {'name': node_name, 'value': updated_value}
+                updated_node_info = {"name": node_name, "value": updated_value}
                 return True, "Node updated successfully.", 200, updated_node_info
             finally:
                 if ia_read:

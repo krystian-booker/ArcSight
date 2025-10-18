@@ -2,8 +2,7 @@ import threading
 import queue
 from sqlalchemy.orm import joinedload
 
-from .extensions import db
-from .models import Camera, Pipeline
+from .models import Camera
 from .camera_threads import CameraAcquisitionThread, VisionProcessingThread
 
 # --- Globals & Threading Primitives ---
@@ -26,7 +25,7 @@ def start_camera_thread(camera, app):
                 camera_type=camera.camera_type,
                 orientation=camera.orientation,
                 app=app,
-                jpeg_quality=85
+                jpeg_quality=85,
             )
 
             # Pipelines are loaded via the relationship
@@ -44,15 +43,15 @@ def start_camera_thread(camera, app):
                     pipeline_config_json=pipeline.config,
                     camera_matrix_json=camera.camera_matrix_json,
                     frame_queue=frame_queue,
-                    jpeg_quality=75
+                    jpeg_quality=75,
                 )
 
                 acq_thread.add_pipeline_queue(pipeline.id, frame_queue)
                 processing_threads[pipeline.id] = proc_thread
 
             active_camera_threads[identifier] = {
-                'acquisition': acq_thread,
-                'processing_threads': processing_threads
+                "acquisition": acq_thread,
+                "processing_threads": processing_threads,
             }
 
             acq_thread.start()
@@ -70,29 +69,33 @@ def stop_camera_thread(identifier):
         thread_group = active_camera_threads[identifier]
 
         # Mark as stopping to prevent concurrent access issues
-        if 'stopping' in thread_group and thread_group['stopping']:
+        if "stopping" in thread_group and thread_group["stopping"]:
             print(f"Camera {identifier} is already being stopped")
             return
 
-        thread_group['stopping'] = True
+        thread_group["stopping"] = True
         print(f"Stopping threads for camera {identifier}")
 
     # Step 2: Signal all threads to stop (outside lock to avoid deadlock)
-    for proc_thread in thread_group['processing_threads'].values():
+    for proc_thread in thread_group["processing_threads"].values():
         proc_thread.stop()
-    thread_group['acquisition'].stop()
+    thread_group["acquisition"].stop()
 
     # Step 3: Wait for threads to terminate with timeout
-    acq_thread = thread_group['acquisition']
+    acq_thread = thread_group["acquisition"]
     acq_thread.join(timeout=5)
 
     if acq_thread.is_alive():
-        print(f"WARNING: Acquisition thread for {identifier} did not terminate within 5 seconds")
+        print(
+            f"WARNING: Acquisition thread for {identifier} did not terminate within 5 seconds"
+        )
 
-    for pipeline_id, proc_thread in thread_group['processing_threads'].items():
+    for pipeline_id, proc_thread in thread_group["processing_threads"].items():
         proc_thread.join(timeout=5)
         if proc_thread.is_alive():
-            print(f"WARNING: Processing thread {pipeline_id} for {identifier} did not terminate within 5 seconds")
+            print(
+                f"WARNING: Processing thread {pipeline_id} for {identifier} did not terminate within 5 seconds"
+            )
 
     # Step 4: Remove from active threads (with lock)
     with active_camera_threads_lock:
@@ -101,7 +104,9 @@ def stop_camera_thread(identifier):
             print(f"Successfully stopped and removed threads for camera {identifier}")
 
 
-def add_pipeline_to_camera(identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json):
+def add_pipeline_to_camera(
+    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json
+):
     """Starts a new processing thread for a running camera.
 
     Args:
@@ -123,11 +128,11 @@ def add_pipeline_to_camera(identifier, pipeline_id, pipeline_type, pipeline_conf
         thread_group = active_camera_threads[identifier]
 
         # Don't add pipelines to cameras that are stopping
-        if thread_group.get('stopping', False):
+        if thread_group.get("stopping", False):
             print(f"Cannot add pipeline to camera {identifier}: camera is stopping")
             return
 
-        if pipeline_id not in thread_group['processing_threads']:
+        if pipeline_id not in thread_group["processing_threads"]:
             print(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
             frame_queue = queue.Queue(maxsize=2)
             # Pass primitive values instead of ORM objects
@@ -139,10 +144,10 @@ def add_pipeline_to_camera(identifier, pipeline_id, pipeline_type, pipeline_conf
                 pipeline_config_json=pipeline_config_json,
                 camera_matrix_json=camera_matrix_json,
                 frame_queue=frame_queue,
-                jpeg_quality=75
+                jpeg_quality=75,
             )
-            thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
-            thread_group['processing_threads'][pipeline_id] = proc_thread
+            thread_group["acquisition"].add_pipeline_queue(pipeline_id, frame_queue)
+            thread_group["processing_threads"][pipeline_id] = proc_thread
             proc_thread.start()
 
 
@@ -159,20 +164,26 @@ def remove_pipeline_from_camera(identifier, pipeline_id):
     """
     with active_camera_threads_lock:
         if identifier not in active_camera_threads:
-            print(f"Cannot remove pipeline from camera {identifier}: camera not running")
+            print(
+                f"Cannot remove pipeline from camera {identifier}: camera not running"
+            )
             return
 
         thread_group = active_camera_threads[identifier]
-        if pipeline_id in thread_group['processing_threads']:
-            print(f"Dynamically removing pipeline {pipeline_id} from camera {identifier}")
-            proc_thread = thread_group['processing_threads'].pop(pipeline_id)
+        if pipeline_id in thread_group["processing_threads"]:
+            print(
+                f"Dynamically removing pipeline {pipeline_id} from camera {identifier}"
+            )
+            proc_thread = thread_group["processing_threads"].pop(pipeline_id)
 
             proc_thread.stop()
-            thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
+            thread_group["acquisition"].remove_pipeline_queue(pipeline_id)
             proc_thread.join(timeout=2)
 
 
-def update_pipeline_in_camera(identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json):
+def update_pipeline_in_camera(
+    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json
+):
     """Stops and restarts a pipeline processing thread to apply new settings.
 
     Args:
@@ -194,16 +205,18 @@ def update_pipeline_in_camera(identifier, pipeline_id, pipeline_type, pipeline_c
         thread_group = active_camera_threads[identifier]
 
         # Don't update pipelines on cameras that are stopping
-        if thread_group.get('stopping', False):
-            print(f"Cannot update pipeline {pipeline_id}: camera {identifier} is stopping")
+        if thread_group.get("stopping", False):
+            print(
+                f"Cannot update pipeline {pipeline_id}: camera {identifier} is stopping"
+            )
             return
 
         # 1. Stop and remove the old thread if it exists
-        if pipeline_id in thread_group['processing_threads']:
+        if pipeline_id in thread_group["processing_threads"]:
             print(f"Stopping old pipeline thread {pipeline_id} for update.")
-            old_proc_thread = thread_group['processing_threads'].pop(pipeline_id)
+            old_proc_thread = thread_group["processing_threads"].pop(pipeline_id)
             old_proc_thread.stop()
-            thread_group['acquisition'].remove_pipeline_queue(pipeline_id)
+            thread_group["acquisition"].remove_pipeline_queue(pipeline_id)
             old_proc_thread.join(timeout=2)  # Wait for it to terminate
 
         # 2. Start a new thread with the updated pipeline config
@@ -218,11 +231,11 @@ def update_pipeline_in_camera(identifier, pipeline_id, pipeline_type, pipeline_c
             pipeline_config_json=pipeline_config_json,
             camera_matrix_json=camera_matrix_json,
             frame_queue=frame_queue,
-            jpeg_quality=75
+            jpeg_quality=75,
         )
 
-        thread_group['acquisition'].add_pipeline_queue(pipeline_id, frame_queue)
-        thread_group['processing_threads'][pipeline_id] = new_proc_thread
+        thread_group["acquisition"].add_pipeline_queue(pipeline_id, frame_queue)
+        thread_group["processing_threads"][pipeline_id] = new_proc_thread
         new_proc_thread.start()
 
 
@@ -240,10 +253,10 @@ def stop_all_camera_threads():
     print("Stopping all camera acquisition and processing threads...")
     with active_camera_threads_lock:
         identifiers_to_stop = list(active_camera_threads.keys())
-    
+
     for identifier in identifiers_to_stop:
         stop_camera_thread(identifier)
-    
+
     print("All camera threads stopped.")
 
 
@@ -253,11 +266,11 @@ def get_camera_pipeline_results(identifier):
         thread_group = active_camera_threads.get(identifier)
         if not thread_group:
             return None
-        
+
         results = {}
-        for pipeline_id, proc_thread in thread_group['processing_threads'].items():
+        for pipeline_id, proc_thread in thread_group["processing_threads"].items():
             results[pipeline_id] = proc_thread.get_latest_results()
-        
+
         return results
 
 
@@ -268,16 +281,18 @@ def is_camera_thread_running(identifier):
         if not thread_group:
             return False
         # Don't report as running if it's being stopped
-        if thread_group.get('stopping', False):
+        if thread_group.get("stopping", False):
             return False
-        return thread_group['acquisition'].is_alive()
+        return thread_group["acquisition"].is_alive()
 
 
 def notify_camera_config_update(identifier, new_orientation):
     """Notifies a camera thread of configuration changes via event signaling."""
     with active_camera_threads_lock:
         thread_group = active_camera_threads.get(identifier)
-        if thread_group and not thread_group.get('stopping', False):
-            acq_thread = thread_group['acquisition']
+        if thread_group and not thread_group.get("stopping", False):
+            acq_thread = thread_group["acquisition"]
             acq_thread.update_orientation(new_orientation)
-            print(f"Notified camera {identifier} of orientation change to {new_orientation}")
+            print(
+                f"Notified camera {identifier} of orientation change to {new_orientation}"
+            )

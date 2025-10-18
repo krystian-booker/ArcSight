@@ -1,14 +1,13 @@
 """Tests for pipeline configuration validators."""
 
-import pytest
 from app.pipeline_validators import (
     validate_pipeline_config,
     get_default_config,
-    ValidationError
 )
 
 
 # --- Tests for AprilTag Pipeline ---
+
 
 def test_apriltag_valid_config():
     """Test valid AprilTag configuration."""
@@ -19,7 +18,7 @@ def test_apriltag_valid_config():
         "threads": 2,
         "decimate": 1.0,
         "blur": 0.0,
-        "refine_edges": True
+        "refine_edges": True,
     }
     is_valid, error = validate_pipeline_config("AprilTag", config)
     assert is_valid is True
@@ -109,13 +108,14 @@ def test_apriltag_negative_blur():
 
 # --- Tests for ML Object Detection Pipeline ---
 
+
 def test_ml_detection_valid_config():
     """Test valid ML detection configuration."""
     config = {
         "model_filename": "model.pb",
         "labels_filename": "labels.txt",
         "confidence_threshold": 0.7,
-        "target_classes": ["person", "car"]
+        "target_classes": ["person", "car"],
     }
     is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
     assert is_valid is True
@@ -190,6 +190,7 @@ def test_ml_detection_additional_properties_rejected():
 
 # --- Tests for Coloured Shape Pipeline ---
 
+
 def test_coloured_shape_accepts_any_config():
     """Test that Coloured Shape pipeline accepts any config (placeholder)."""
     config = {"any_property": "any_value", "nested": {"data": 123}}
@@ -198,6 +199,7 @@ def test_coloured_shape_accepts_any_config():
 
 
 # --- Tests for General Validation ---
+
 
 def test_unknown_pipeline_type():
     """Test validation with unknown pipeline type."""
@@ -221,6 +223,7 @@ def test_non_dict_config_list():
 
 
 # --- Tests for Default Configs ---
+
 
 def test_apriltag_default_config():
     """Test AprilTag default configuration is valid."""
@@ -254,6 +257,7 @@ def test_unknown_pipeline_default_config():
 
 # --- Edge Cases ---
 
+
 def test_empty_config_all_pipelines():
     """Test that empty configs are valid for all pipeline types."""
     for pipeline_type in ["AprilTag", "Object Detection (ML)", "Coloured Shape"]:
@@ -276,8 +280,8 @@ def test_security_injection_attempt():
     malicious_configs = [
         {"family": "tag36h11'; DROP TABLE pipelines; --"},
         {"model_filename": "model.pb\x00malicious"},
-        {"tag_size_m": float('inf')},
-        {"tag_size_m": float('nan')},
+        {"tag_size_m": float("inf")},
+        {"tag_size_m": float("nan")},
     ]
 
     for config in malicious_configs:

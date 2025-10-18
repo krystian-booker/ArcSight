@@ -1,5 +1,5 @@
 from flask import Blueprint
 
-dashboard = Blueprint('dashboard', __name__)
+dashboard = Blueprint("dashboard", __name__)
 
-from . import routes
+from . import routes as routes  # noqa: E402, F401

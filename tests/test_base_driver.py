@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from app.drivers.base_driver import BaseDriver
 from app.models import Camera
 
+
 # A concrete implementation of the abstract BaseDriver for testing purposes
 class ConcreteDriver(BaseDriver):
     def connect(self):
@@ -19,6 +20,7 @@ class ConcreteDriver(BaseDriver):
     def list_devices():
         return []
 
+
 @pytest.fixture
 def mock_camera_data(app):
     """Creates a mock Camera ORM object for driver initialization."""
@@ -26,6 +28,7 @@ def mock_camera_data(app):
         camera = MagicMock(spec=Camera)
         camera.identifier = "test_concrete_cam"
     return camera
+
 
 def test_base_driver_initialization(mock_camera_data):
     """
@@ -38,6 +41,7 @@ def test_base_driver_initialization(mock_camera_data):
     assert driver.camera_db_data == mock_camera_data
     assert driver.identifier == "test_concrete_cam"
 
+
 def test_cannot_instantiate_abstract_base_driver(mock_camera_data):
     """
     Tests that the BaseDriver ABC cannot be instantiated directly
@@ -48,6 +52,7 @@ def test_cannot_instantiate_abstract_base_driver(mock_camera_data):
         # We are creating a class on the fly here that doesn't implement them.
         class IncompleteDriver(BaseDriver):
             pass
+
         IncompleteDriver(mock_camera_data)
 
     # Check that the error message contains information about the missing methods.

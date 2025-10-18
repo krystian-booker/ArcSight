@@ -1,7 +1,8 @@
 import pytest
 from app import create_app, db
 
-@pytest.fixture(scope='module')
+
+@pytest.fixture(scope="module")
 def app():
     """
     Creates a test Flask application instance with testing-specific configuration.
@@ -24,11 +25,13 @@ def app():
             db.drop_all()
             engine.dispose()
 
+
 @pytest.fixture()
 def client(app):
     """A test client for the app."""
     with app.app_context():
         yield app.test_client()
+
 
 @pytest.fixture()
 def runner(app):

@@ -1,5 +1,5 @@
 from flask import Blueprint
 
-settings = Blueprint('settings', __name__, url_prefix='/settings')
+settings = Blueprint("settings", __name__, url_prefix="/settings")
 
-from . import routes
+from . import routes as routes  # noqa: E402, F401
