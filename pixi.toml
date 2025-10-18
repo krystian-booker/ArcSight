@@ -1,0 +1,61 @@
+[project]
+name = "vision-tools"
+version = "0.1.0"
+description = "A Flask-based web application for vision processing and camera management"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
+
+[tasks]
+# Development tasks
+dev = "python run.py"
+run = "python run.py"
+
+# Testing tasks
+test = "pytest"
+test-verbose = "pytest -v"
+test-no-cov = "pytest --no-cov"
+test-file = { cmd = "pytest", depends-on = [] }  # Usage: pixi run test-file tests/test_camera_manager.py
+test-specific = { cmd = "pytest -v" }  # Usage: pixi run test-specific tests/test_camera_manager.py::test_function_name
+
+# Coverage tasks
+coverage = "pytest --cov=app --cov-report=html --cov-report=term-missing"
+coverage-report = "python -m http.server 8000 --directory htmlcov"
+
+# Code quality tasks
+lint = "ruff check app tests"
+format = "ruff format app tests"
+format-check = "ruff format --check app tests"
+
+# Database tasks
+db-init = "python -c 'from app import create_app; app = create_app(); app.app_context().push(); from app.models import db; db.create_all()'"
+
+[dependencies]
+python = "3.11.*"
+numpy = "<2"
+psutil = "*"
+opencv = "*"
+pip = "*"
+setuptools = "*"
+
+[pypi-dependencies]
+flask = "*"
+harvesters = "*"
+genicam = "*"
+robotpy-apriltag = "*"
+appdirs = "*"
+reportlab = "*"
+depthai = ">=2.24.0,<3.0.0"
+flask-sqlalchemy = "*"
+pytest = "*"
+pytest-flask = "*"
+pytest-cov = "*"
+pytest-mock = "*"
+pytest-timeout = "*"
+ruff = "*"
+
+[feature.dev.dependencies]
+# Additional development dependencies can go here
+
+[environments]
+default = { solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }

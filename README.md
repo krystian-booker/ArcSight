@@ -6,33 +6,37 @@ A Flask-based web application for vision processing and camera management. Suppo
 
 ### Installation
 
-1. **Create and activate the Conda environment:**
+1. **Install dependencies using Pixi:**
    ```bash
-   conda env create -f environment.yml
-   conda activate vision-tools
+   pixi install
    ```
 
-2. **Run the web server (production mode):**
+2. **Run the web server (development mode):**
    ```bash
-   python run.py
+   pixi run dev
    ```
 
    The web server will be available at `http://0.0.0.0:8080`.
+
+3. **Run the web server (production mode):**
+   ```bash
+   pixi run serve
+   ```
 
 ## Development Setup
 
 ### Prerequisites
 
-- Conda (miniconda or anaconda)
-- Python 3.11
+- [Pixi](https://pixi.sh) - Modern package manager for Python projects ([installation instructions](https://pixi.sh/latest/#installation))
 - Camera hardware (optional for development)
+
+Pixi will automatically install Python 3.11 and all dependencies.
 
 ### Setting Up Development Environment
 
-1. **Create and activate the Conda environment:**
+1. **Install project dependencies:**
    ```bash
-   conda env create -f environment.yml
-   conda activate vision-tools
+   pixi install
    ```
 
 2. **Configure environment variables (optional):**
@@ -50,43 +54,34 @@ A Flask-based web application for vision processing and camera management. Suppo
    ```
 
 3. **Run in development mode:**
-
-   **Option 1: Using environment variable**
    ```bash
-   # Linux/macOS
-   FLASK_ENV=development python run.py
-
-   # Windows (PowerShell)
-   $env:FLASK_ENV="development"; python run.py
-
-   # Windows (Command Prompt)
-   set FLASK_ENV=development && python run.py
+   pixi run dev
    ```
 
-   **Option 2: Using .env file**
-
-   Edit `.env` and set `FLASK_ENV=development`, then:
-   ```bash
-   python run.py
-   ```
-
-### Running for Production/Competition
-
-**IMPORTANT:** Always run in production mode on competition robots!
+### Common Development Tasks
 
 ```bash
-# Production mode (default - debug disabled)
-python run.py
+# Run development server
+pixi run dev
 
-# Or explicitly set environment
-FLASK_ENV=production python run.py
+# Run tests
+pixi run test
+
+# Run tests with verbose output
+pixi run test-verbose
+
+# Run tests without coverage
+pixi run test-no-cov
+
+# Run specific test file
+pixi run test tests/test_camera_manager.py
+
+# Format code
+pixi run format
+
+# Check code quality
+pixi run lint
 ```
-
-Production mode ensures:
-- ✅ Debug mode disabled (no security risks)
-- ✅ No auto-reload (no wasted CPU)
-- ✅ Optimized performance
-- ✅ Minimal error exposure
 
 ### Environment Variables
 

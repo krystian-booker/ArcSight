@@ -125,3 +125,17 @@ app.log
 
 # Environment variables (may contain secrets)
 .env
+
+# Pixi
+.pixi/
+pixi.lock
+
+# Python coverage reports
+htmlcov/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/settings.json.user
