@@ -78,6 +78,7 @@ def test_build_camera_thread_config(orm_camera):
     orm_camera.orientation = None  # ensure fallback logic
     config = camera_manager.build_camera_thread_config(orm_camera)
 
+    assert config["id"] == orm_camera.id
     assert config["identifier"] == orm_camera.identifier
     assert config["camera_type"] == orm_camera.camera_type
     assert config["orientation"] == 0  # default orientation
@@ -92,6 +93,7 @@ def test_start_camera_thread(camera_config, mock_app, mock_threads):
     camera_manager.start_camera_thread(camera_config, mock_app)
 
     mock_threads["acquisition"].assert_called_once_with(
+        camera_id=camera_config["id"],
         identifier=camera_config["identifier"],
         camera_type=camera_config["camera_type"],
         orientation=camera_config["orientation"],

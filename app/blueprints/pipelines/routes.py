@@ -168,9 +168,7 @@ def get_pipeline_labels(pipeline_id: int):
 
     response: Dict[str, Any] = {"labels": labels}
 
-    is_valid, error_message = validate_pipeline_config(
-        pipeline.pipeline_type, config
-    )
+    is_valid, error_message = validate_pipeline_config(pipeline.pipeline_type, config)
     if not is_valid:
         response["error"] = "Invalid configuration"
         response["details"] = error_message
@@ -180,9 +178,7 @@ def get_pipeline_labels(pipeline_id: int):
         and not config.get("model_path")
     ):
         response["error"] = "Invalid configuration"
-        response[
-            "details"
-        ] = (
+        response["details"] = (
             "Model path missing for ML pipeline; upload a model and ensure calibration "
             "values such as tag_size_m are set before deploying."
         )

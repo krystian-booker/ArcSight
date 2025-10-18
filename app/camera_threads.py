@@ -237,6 +237,8 @@ class VisionProcessingThread(threading.Thread):
         self.cam_matrix = None
         self.dist_coeffs = None
         self.obj_pts = None
+        self._using_dynamic_default_cam_matrix = False
+        self._default_cam_matrix_shape = None
 
         # Load camera calibration data from primitive values
         if camera_matrix_json:
@@ -332,22 +334,7 @@ class VisionProcessingThread(threading.Thread):
         # If no calibration data was loaded from the DB, create a default matrix.
         if self.cam_matrix is None:
             print(
-                f"[{self.identifier}] No calibration data found, using default camera matrix."
-            )
-            # IMPORTANT: These MUST be replaced with real values from camera calibration!
-            camera_params = {
-                "fx": 600.0,
-                "fy": 600.0,  # Focal length in pixels
-                "cx": 320.0,
-                "cy": 240.0,  # Principal point (image center)
-            }
-            self.cam_matrix = np.array(
-                [
-                    [camera_params["fx"], 0, camera_params["cx"]],
-                    [0, camera_params["fy"], camera_params["cy"]],
-                    [0, 0, 1],
-                ],
-                dtype=np.float32,
+                f"[{self.identifier}] No calibration data found, will estimate camera matrix from frame resolution."
             )
 
         while not self.stop_event.is_set():
@@ -355,6 +342,8 @@ class VisionProcessingThread(threading.Thread):
             try:
                 ref_counted_frame = self.frame_queue.get(timeout=1)
                 raw_frame = ref_counted_frame.data
+
+                self._ensure_default_cam_matrix(raw_frame)
 
                 start_time = time.time()
 
@@ -434,6 +423,33 @@ class VisionProcessingThread(threading.Thread):
             f"Stopping vision processing thread for pipeline {self.pipeline_id} on camera {self.identifier}"
         )
 
+    def _ensure_default_cam_matrix(self, frame):
+        """Derives a rough pinhole camera matrix from the current frame size when calibration is missing."""
+        if frame is None:
+            return
+
+        if self.cam_matrix is not None and not self._using_dynamic_default_cam_matrix:
+            return
+
+        h, w = frame.shape[:2]
+
+        if (
+            self._using_dynamic_default_cam_matrix
+            and self._default_cam_matrix_shape == (h, w)
+        ):
+            return
+
+        fx = fy = w * 0.9
+        cx, cy = w / 2.0, h / 2.0
+        self.cam_matrix = np.array(
+            [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]], dtype=np.float32
+        )
+        self._default_cam_matrix_shape = (h, w)
+        self._using_dynamic_default_cam_matrix = True
+        print(
+            f"[{self.identifier}] Using default calibration for {w}x{h}: fx={fx:.2f}, cx={cx:.2f}, cy={cy:.2f}"
+        )
+
     def get_latest_results(self):
         """Safely retrieves the latest results from this pipeline."""
         with self.results_lock:
@@ -506,12 +522,15 @@ class CameraAcquisitionThread(threading.Thread):
     and reconnection automatically.
     """
 
-    def __init__(self, identifier, camera_type, orientation, app, jpeg_quality=85):
+    def __init__(
+        self, identifier, camera_type, orientation, app, jpeg_quality=85, camera_id=None
+    ):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
         self.camera_type = camera_type
         self.app = app
+        self.camera_db_id = camera_id
         self.driver = None
         self.frame_lock = threading.Lock()
         self.latest_frame_for_display = (
@@ -551,6 +570,13 @@ class CameraAcquisitionThread(threading.Thread):
                 print(
                     f"[{self.identifier}] Orientation update signaled: {new_orientation}"
                 )
+
+    def _should_cache_raw_frame(self):
+        """Returns True when raw frames should be cached for calibration workflows."""
+        manager = getattr(self.app, "calibration_manager", None)
+        if manager is None or self.camera_db_id is None:
+            return False
+        return manager.get_session(self.camera_db_id) is not None
 
     def get_display_frame(self):
         """Encodes and returns the latest display frame as JPEG bytes.
@@ -677,13 +703,16 @@ class CameraAcquisitionThread(threading.Thread):
 
             try:
                 # Store ref-counted frame for raw frame access (eliminates copy #1)
+                should_cache_raw = self._should_cache_raw_frame()
                 with self.raw_frame_lock:
                     # Release previous frame if it exists
                     if self.latest_raw_frame is not None:
                         self.latest_raw_frame.release()
-                    # Store new frame with reference
-                    ref_counted_frame.acquire()
-                    self.latest_raw_frame = ref_counted_frame
+                        self.latest_raw_frame = None
+                    # Store new frame with reference only when calibration requires it
+                    if should_cache_raw:
+                        ref_counted_frame.acquire()
+                        self.latest_raw_frame = ref_counted_frame
 
                 # Distribute frame to pipeline queues
                 with self.queues_lock:

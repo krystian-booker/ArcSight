@@ -18,6 +18,7 @@ class PipelineThreadConfig(TypedDict):
 class CameraThreadConfig(TypedDict):
     """Primitive values needed to start camera acquisition and pipeline threads."""
 
+    id: int
     identifier: str
     camera_type: str
     orientation: int
@@ -30,6 +31,7 @@ def build_camera_thread_config(camera: Camera) -> CameraThreadConfig:
     """Convert a Camera ORM row into immutable data for thread creation."""
 
     return {
+        "id": camera.id,
         "identifier": camera.identifier,
         "camera_type": camera.camera_type,
         "orientation": camera.orientation or 0,
@@ -62,6 +64,7 @@ def start_camera_thread(camera_config: CameraThreadConfig, app):
             # Extract primitive values from ORM object
             # Display frames use higher quality (85) since they're the main view
             acq_thread = CameraAcquisitionThread(
+                camera_id=camera_config["id"],
                 identifier=camera_config["identifier"],
                 camera_type=camera_config["camera_type"],
                 orientation=camera_config["orientation"],
