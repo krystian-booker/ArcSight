@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import os
-from app import db
+from appdirs import user_data_dir
 
 class ObjectDetectionMLPipeline:
     """
@@ -19,7 +19,7 @@ class ObjectDetectionMLPipeline:
         self.config = config
         self.net = None
         self.classes = []
-        self.data_dir = os.path.dirname(db.DB_PATH)
+        self.data_dir = user_data_dir("VisionTools", "User")
 
         model_filename = self.config.get('model_filename')
         labels_filename = self.config.get('labels_filename')

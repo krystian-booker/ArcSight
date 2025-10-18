@@ -85,7 +85,8 @@ class CalibrationManager:
                 objp[:, :2] = np.mgrid[0:p['cols'], 0:p['rows']].T.reshape(-1, 2)
                 objp *= p['square_size']
 
-                ret, corners = cv2.findChessboardCorners(gray, (p['cols'], p['rows']), None)
+                flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+                ret, corners = cv2.findChessboardCorners(gray, (p['cols'], p['rows']), flags=flags)
 
                 if ret:
                     session['obj_points'].append(objp)
@@ -100,23 +101,17 @@ class CalibrationManager:
 
             elif session['pattern_type'] == 'ChAruco':
                 board = session['board']
-                parameters = aruco.DetectorParameters()
-                corners, ids, _ = aruco.detectMarkers(gray, board.getDictionary(), parameters=parameters)
+                detector = aruco.CharucoDetector(board)
+                charuco_corners, charuco_ids, marker_corners, marker_ids = detector.detectBoard(gray)
 
-                if ids is not None and len(ids) > 4: # Require at least 4 markers
-                    ret, charuco_corners, charuco_ids = aruco.interpolateCornersCharuco(
-                        corners, ids, gray, board)
+                if charuco_ids is not None and len(charuco_ids) > 4:
+                    session['all_charuco_corners'].append(charuco_corners)
+                    session['all_charuco_ids'].append(charuco_ids)
                     
-                    if ret and charuco_corners is not None and charuco_ids is not None and len(charuco_corners) > 4:
-                        session['all_charuco_corners'].append(charuco_corners)
-                        session['all_charuco_ids'].append(charuco_ids)
-                        
-                        capture_count = len(session['all_charuco_corners'])
-                        return True, f"Capture successful ({capture_count} total)", frame
-                    else:
-                        return False, "Not enough ChAruco corners found.", frame
+                    capture_count = len(session['all_charuco_corners'])
+                    return True, f"Capture successful ({capture_count} total)", frame
                 else:
-                    return False, "Not enough ArUco markers found.", frame
+                    return False, "Not enough ChAruco corners found.", frame
             
             return False, "Unsupported pattern type.", frame
 
@@ -145,32 +140,36 @@ class CalibrationManager:
                 return {'success': False, 'error': f'Not enough captures for calibration (need at least {min_captures}).'}
 
             try:
+                obj_points = []
+                img_points = []
+
                 if session['pattern_type'] == 'ChAruco':
-                    # Use the specialized ChAruco calibration function
-                    ret, mtx, dist, rvecs, tvecs = aruco.calibrateCameraCharuco(
-                        charucoCorners=session['all_charuco_corners'],
-                        charucoIds=session['all_charuco_ids'],
-                        board=session['board'],
-                        imageSize=session['frame_shape'],
-                        cameraMatrix=None,
-                        distCoeffs=None
-                    )
-                    reprojection_error = ret  # The function directly returns the reprojection error
+                    board_corners = session['board'].getChessboardCorners()
+                    for i in range(len(session['all_charuco_corners'])):
+                        # For each frame, get the corresponding object and image points
+                        frame_obj_pts = board_corners[session['all_charuco_ids'][i]]
+                        frame_img_pts = session['all_charuco_corners'][i]
+                        obj_points.append(frame_obj_pts)
+                        img_points.append(frame_img_pts)
                 else: # Chessboard
-                    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-                        objectPoints=session['obj_points'],
-                        imagePoints=session['img_points'],
-                        imageSize=session['frame_shape'],
-                        cameraMatrix=None,
-                        distCoeffs=None
-                    )
-                    
-                    mean_error = 0
-                    for i in range(len(session['obj_points'])):
-                        imgpoints2, _ = cv2.projectPoints(session['obj_points'][i], rvecs[i], tvecs[i], mtx, dist)
-                        error = cv2.norm(session['img_points'][i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
-                        mean_error += error
-                    reprojection_error = mean_error / len(session['obj_points'])
+                    obj_points = session['obj_points']
+                    img_points = session['img_points']
+
+                ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+                    objectPoints=obj_points,
+                    imagePoints=img_points,
+                    imageSize=session['frame_shape'],
+                    cameraMatrix=None,
+                    distCoeffs=None
+                )
+                
+                # Calculate reprojection error for both types
+                mean_error = 0
+                for i in range(len(obj_points)):
+                    imgpoints2, _ = cv2.projectPoints(obj_points[i], rvecs[i], tvecs[i], mtx, dist)
+                    error = cv2.norm(img_points[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
+                    mean_error += error
+                reprojection_error = mean_error / len(obj_points)
 
                 return {
                     'success': True,

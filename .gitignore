@@ -121,3 +121,21 @@ iOSInjectionProject/
 # End of https://www.toptal.com/developers/gitignore/api/swift,macos
 __pycache__/
 app.log
+.coverage
+
+# Environment variables (may contain secrets)
+.env
+
+# Pixi
+.pixi/
+pixi.lock
+
+# Python coverage reports
+htmlcov/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/settings.json.user

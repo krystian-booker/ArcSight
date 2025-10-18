@@ -46,22 +46,38 @@ class RefCountedFrame:
 
 
 class FrameBufferPool:
-    """Manages a pool of pre-allocated numpy arrays to avoid repeated memory allocation."""
-    def __init__(self, name="DefaultPool"):
+    """Manages a pool of pre-allocated numpy arrays to avoid repeated memory allocation.
+
+    Uses a water-mark based shrinking strategy to prevent unbounded memory growth:
+    - Starts with initial_buffers (default: 5)
+    - Can grow up to max_buffers (default: 10) during high load
+    - Shrinks back to initial_buffers when pool size exceeds high_water_mark and is idle
+    """
+    def __init__(self, name="DefaultPool", max_buffers=10, initial_buffers=5, high_water_mark=8, shrink_idle_seconds=10.0):
         self._pool = queue.Queue()
         self._buffer_shape = None
         self._buffer_dtype = None
         self._allocated = 0
         self._name = name
+        self._max_buffers = max_buffers
+        self._initial_buffers = initial_buffers
+        self._high_water_mark = high_water_mark
+        self._shrink_idle_seconds = shrink_idle_seconds
+        self._lock = threading.Lock()
+        self._last_allocation_time = None
+        self._shrink_check_counter = 0
 
-    def initialize(self, frame, num_buffers=5):
+    def initialize(self, frame, num_buffers=None):
         """Initializes the pool with buffers matching the shape and type of a sample frame."""
-        
+
         # Already initialized with correct shape
         if self._buffer_shape is not None and self._buffer_shape == frame.shape:
             return
-        
+
         # If shape is different, we need to re-initialize.
+        if num_buffers is None:
+            num_buffers = self._initial_buffers
+
         print(f"[{self._name}] Initializing buffer pool for shape {frame.shape}...")
         self._pool = queue.Queue()
         self._buffer_shape = frame.shape
@@ -69,61 +85,126 @@ class FrameBufferPool:
         for _ in range(num_buffers):
             self._pool.put(np.empty(self._buffer_shape, dtype=self._buffer_dtype))
         self._allocated = num_buffers
-        print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers.")
+        self._last_allocation_time = None
+        self._shrink_check_counter = 0
+        print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers (max: {self._max_buffers}).")
 
     def get_buffer(self):
-        """Retrieves a buffer from the pool, allocating a new one if the pool is empty."""
+        """Retrieves a buffer from the pool, allocating a new one if the pool is empty.
+        Returns None if the maximum buffer limit is reached to prevent memory leaks."""
         try:
             return self._pool.get_nowait()
         except queue.Empty:
             if self._buffer_shape is not None:
-                print(f"[{self._name}] Pool empty, allocating new buffer. Total allocated: {self._allocated + 1}")
-                self._allocated += 1
-                return np.empty(self._buffer_shape, dtype=self._buffer_dtype)
+                with self._lock:
+                    if self._allocated < self._max_buffers:
+                        self._allocated += 1
+                        self._last_allocation_time = time.time()
+                        print(f"[{self._name}] Pool empty, allocating new buffer. Total allocated: {self._allocated}")
+                        return np.empty(self._buffer_shape, dtype=self._buffer_dtype)
+                    else:
+                        # Max buffers reached - drop frame to prevent memory leak
+                        print(f"[{self._name}] Max buffer limit ({self._max_buffers}) reached. Dropping frame.")
+                        return None
             return None
 
     def release_buffer(self, buffer):
-        """Returns a buffer to the pool for reuse."""
+        """Returns a buffer to the pool for reuse.
+
+        Implements water-mark based shrinking to prevent unbounded memory growth.
+        Periodically checks if the pool should be shrunk back to initial size.
+        """
         self._pool.put(buffer)
+
+        # Check for shrinking periodically (every N releases) to avoid overhead
+        self._shrink_check_counter += 1
+        if self._shrink_check_counter >= 100:
+            self._shrink_check_counter = 0
+            self._try_shrink_pool()
+
+    def _try_shrink_pool(self):
+        """Attempts to shrink the pool if conditions are met.
+
+        Shrinking occurs when:
+        1. Pool has grown beyond high_water_mark
+        2. No new allocations have occurred for shrink_idle_seconds
+        3. Pool is currently full (all buffers returned)
+        """
+        with self._lock:
+            # Only shrink if we've grown beyond initial size
+            if self._allocated <= self._initial_buffers:
+                return
+
+            # Only shrink if we've exceeded the high water mark
+            if self._allocated < self._high_water_mark:
+                return
+
+            # Check if pool has been idle (no new allocations recently)
+            if self._last_allocation_time is not None:
+                idle_time = time.time() - self._last_allocation_time
+                if idle_time < self._shrink_idle_seconds:
+                    return
+
+            # Check if pool is currently full (indicates low demand)
+            current_pool_size = self._pool.qsize()
+            if current_pool_size < self._allocated:
+                # Buffers are still in use, don't shrink
+                return
+
+            # Perform the shrink: drain excess buffers
+            buffers_to_remove = self._allocated - self._initial_buffers
+            removed = 0
+            for _ in range(buffers_to_remove):
+                try:
+                    self._pool.get_nowait()
+                    removed += 1
+                except queue.Empty:
+                    break
+
+            if removed > 0:
+                self._allocated -= removed
+                print(f"[{self._name}] Shrunk pool by {removed} buffers. New size: {self._allocated}/{self._max_buffers}")
+                self._last_allocation_time = None  # Reset allocation tracking
 
 
 # --- Vision Processing Thread (Consumer) ---
 class VisionProcessingThread(threading.Thread):
     """A consumer thread that runs a vision pipeline on frames from a queue."""
-    def __init__(self, identifier, pipeline, camera, frame_queue):
+    def __init__(self, identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, frame_queue, jpeg_quality=75):
         super().__init__()
         self.daemon = True
         self.identifier = identifier
-        self.pipeline_id = pipeline.id
-        self.pipeline_type = pipeline.pipeline_type
+        self.pipeline_id = pipeline_id
+        self.pipeline_type = pipeline_type
         self.frame_queue = frame_queue
         self.stop_event = threading.Event()
         self.results_lock = threading.Lock()
         self.latest_results = {"status": "Starting..."}
-        self.latest_processed_frame = None
+        self.latest_processed_frame = None  # DEPRECATED: Will be removed, use get_processed_frame() instead
+        self.latest_processed_frame_raw = None  # Raw annotated frame for lazy encoding
         self.processed_frame_lock = threading.Lock()
+        self.jpeg_quality = jpeg_quality
 
-        # Store camera data and initialize the pipeline object
-        self.camera = camera
+        # Initialize the pipeline object
         self.pipeline_instance = None
-   
+
         # Pre-calculation variables for drawing
         self.cam_matrix = None
         self.obj_pts = None
 
-        # Load camera calibration data
-        if self.camera.camera_matrix_json:
+        # Load camera calibration data from primitive values
+        if camera_matrix_json:
             try:
-                self.cam_matrix = np.array(json.loads(self.camera.camera_matrix_json))
+                self.cam_matrix = np.array(json.loads(camera_matrix_json))
                 print(f"[{self.identifier}] Loaded camera matrix from DB.")
             except (json.JSONDecodeError, TypeError):
                 print(f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default.")
                 self.cam_matrix = None
-        
+
         pipeline_config = {}
-        if pipeline.config:
+        if pipeline_config_json:
             try:
-                pipeline_config = json.loads(pipeline.config)
+                pipeline_config = json.loads(pipeline_config_json)
             except (json.JSONDecodeError, TypeError):
                 print(f"[{self.identifier}] Failed to parse pipeline config from DB. Using default.")
         
@@ -220,11 +301,11 @@ class VisionProcessingThread(threading.Thread):
                 with self.results_lock:
                     self.latest_results = current_results
 
-                # --- Generate Processed Frame ---
-                ret, buffer = cv2.imencode('.jpg', annotated_frame)
-                if ret:
-                    with self.processed_frame_lock:
-                        self.latest_processed_frame = buffer.tobytes()
+                # --- Store Processed Frame (raw, for lazy encoding) ---
+                with self.processed_frame_lock:
+                    self.latest_processed_frame_raw = annotated_frame
+                    # Keep legacy behavior for backward compatibility during transition
+                    self.latest_processed_frame = None
             except queue.Empty:
                 continue
             finally:
@@ -237,6 +318,25 @@ class VisionProcessingThread(threading.Thread):
         """Safely retrieves the latest results from this pipeline."""
         with self.results_lock:
             return self.latest_results
+
+    def get_processed_frame(self):
+        """Encodes and returns the latest processed frame as JPEG bytes.
+
+        This performs lazy encoding - JPEG compression only happens when a client
+        requests the frame, avoiding wasteful encoding when no clients are connected.
+
+        Returns:
+            bytes: JPEG-encoded frame, or None if no frame is available
+        """
+        with self.processed_frame_lock:
+            if self.latest_processed_frame_raw is None:
+                return None
+
+            ret, buffer = cv2.imencode('.jpg', self.latest_processed_frame_raw,
+                                      [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            if ret:
+                return buffer.tobytes()
+            return None
 
     def _draw_3d_box_on_frame(self, frame, detections):
         """Draws a 3D bounding box around each detected AprilTag."""
@@ -266,19 +366,20 @@ class VisionProcessingThread(threading.Thread):
 
 class CameraAcquisitionThread(threading.Thread):
     """
-    A producer thread that uses a driver to acquire frames and distributes them 
-    to multiple consumer queues. It handles camera connection, disconnection, 
+    A producer thread that uses a driver to acquire frames and distributes them
+    to multiple consumer queues. It handles camera connection, disconnection,
     and reconnection automatically.
     """
-    def __init__(self, camera, app):
+    def __init__(self, identifier, camera_type, orientation, app, jpeg_quality=85):
         super().__init__()
         self.daemon = True
-        self.camera = camera
-        self.identifier = camera.identifier
+        self.identifier = identifier
+        self.camera_type = camera_type
         self.app = app
         self.driver = None
         self.frame_lock = threading.Lock()
-        self.latest_frame_for_display = None
+        self.latest_frame_for_display = None  # DEPRECATED: Will be removed, use get_display_frame() instead
+        self.latest_display_frame_raw = None  # Raw frame for lazy encoding
         self.raw_frame_lock = threading.Lock()
         self.latest_raw_frame = None
         self.processing_queues = {}
@@ -286,6 +387,12 @@ class CameraAcquisitionThread(threading.Thread):
         self.stop_event = threading.Event()
         self.fps = 0.0
         self.buffer_pool = FrameBufferPool(name=self.identifier)
+        self.jpeg_quality = jpeg_quality
+
+        # Event-based configuration update
+        self.config_update_event = threading.Event()
+        self._orientation = orientation
+        self._orientation_lock = threading.Lock()
 
     def add_pipeline_queue(self, pipeline_id, frame_queue):
         """Adds a pipeline's frame queue to the list of queues to receive frames."""
@@ -297,17 +404,46 @@ class CameraAcquisitionThread(threading.Thread):
         with self.queues_lock:
             self.processing_queues.pop(pipeline_id, None)
 
+    def update_orientation(self, new_orientation):
+        """Updates the camera orientation and signals the acquisition thread."""
+        with self._orientation_lock:
+            if self._orientation != new_orientation:
+                self._orientation = new_orientation
+                self.config_update_event.set()
+                print(f"[{self.identifier}] Orientation update signaled: {new_orientation}")
+
+    def get_display_frame(self):
+        """Encodes and returns the latest display frame as JPEG bytes.
+
+        This performs lazy encoding - JPEG compression only happens when a client
+        requests the frame, avoiding wasteful encoding when no clients are connected.
+
+        Returns:
+            bytes: JPEG-encoded frame, or None if no frame is available
+        """
+        with self.frame_lock:
+            if self.latest_display_frame_raw is None:
+                return None
+
+            ret, buffer = cv2.imencode('.jpg', self.latest_display_frame_raw,
+                                      [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            if ret:
+                return buffer.tobytes()
+            return None
+
     def run(self):
         """The main loop for the camera acquisition thread."""
         print(f"Starting acquisition thread for {self.identifier}")
-        
+
         while not self.stop_event.is_set():
             try:
                 # Initialize the driver inside the loop for automatic reconnection
-                self.driver = get_driver(self.camera)
+                # Pass camera data as a dict to avoid ORM session issues
+                camera_data = {'camera_type': self.camera_type, 'identifier': self.identifier}
+                self.driver = get_driver(camera_data)
                 self.driver.connect()
                 print(f"Camera {self.identifier} connected successfully via driver.")
-                
+
                 # The acquisition loop now uses the driver interface
                 self._acquisition_loop()
 
@@ -316,41 +452,41 @@ class CameraAcquisitionThread(threading.Thread):
             finally:
                 if self.driver:
                     self.driver.disconnect()
-                # Wait before retrying connection
-                self.stop_event.wait(5.0) 
+                # Wait before retrying connection, but only if we're not stopping.
+                if not self.stop_event.is_set():
+                    self.stop_event.wait(5.0)
 
         print(f"Acquisition thread for {self.identifier} has stopped.")
 
     def _acquisition_loop(self):
         """Inner loop that processes frames once a camera is connected."""
-        orientation = self.camera.orientation
-        last_config_check = time.time()
-        
+        # Get initial orientation from the thread-safe copy
+        with self._orientation_lock:
+            orientation = self._orientation
+
         # Initialize buffer pool with the first frame
         first_frame = self.driver.get_frame()
         if first_frame is None:
             print(f"[{self.identifier}] Failed to get first frame, cannot initialize buffer pool.")
             return # Exit to trigger reconnection
-        
+
         oriented_first_frame = self._apply_orientation(first_frame, orientation)
         self.buffer_pool.initialize(oriented_first_frame)
 
         start_time, frame_count = time.time(), 0
 
         while not self.stop_event.is_set():
-            # Periodically check for orientation changes in the DB
-            if time.time() - last_config_check > 2.0:
-                with self.app.app_context():
-                    refreshed_data = db.session.get(Camera, self.camera.id)
-                if refreshed_data:
-                    new_orientation = refreshed_data.orientation
-                    if new_orientation != orientation:
-                        print(f"[{self.identifier}] Orientation changed to {new_orientation}. Re-initializing resources.")
-                        orientation = new_orientation
-                        # Re-initialize buffer pool if orientation changes frame size
-                        test_frame = self._apply_orientation(first_frame.copy(), orientation)
-                        self.buffer_pool.initialize(test_frame)
-                last_config_check = time.time()
+            # Check for configuration updates via event (non-blocking)
+            if self.config_update_event.is_set():
+                self.config_update_event.clear()
+                with self._orientation_lock:
+                    new_orientation = self._orientation
+                if new_orientation != orientation:
+                    print(f"[{self.identifier}] Orientation changed to {new_orientation}. Re-initializing resources.")
+                    orientation = new_orientation
+                    # Re-initialize buffer pool if orientation changes frame size
+                    test_frame = self._apply_orientation(first_frame.copy(), orientation)
+                    self.buffer_pool.initialize(test_frame)
 
             raw_frame_from_cam = self.driver.get_frame()
             if raw_frame_from_cam is None:
@@ -365,29 +501,45 @@ class CameraAcquisitionThread(threading.Thread):
 
             pooled_buffer = self.buffer_pool.get_buffer()
             if pooled_buffer is None:
+                # Buffer pool exhausted - drain queues to prevent buildup and memory leaks
+                print(f"[{self.identifier}] Buffer pool exhausted, draining queues to prevent memory buildup")
+                self._drain_processing_queues()
                 continue
 
             # Copy the oriented frame into the buffer for pipelines.
             np.copyto(pooled_buffer, oriented_frame)
             ref_counted_frame = RefCountedFrame(pooled_buffer, release_callback=self.buffer_pool.release_buffer)
-            
-            with self.queues_lock:
-                for q in self.processing_queues.values():
-                    ref_counted_frame.acquire()
-                    try:
-                        q.put_nowait(ref_counted_frame)
-                    except queue.Full:
-                        ref_counted_frame.release()
 
+            # Acquire initial reference for the acquisition thread to ensure buffer is released
+            # even if all queues are full or display frame encoding fails
             ref_counted_frame.acquire()
+
             try:
-                display_frame_copy = ref_counted_frame.get_writable_copy()
-                display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
-                ret, buffer = cv2.imencode('.jpg', display_frame_with_overlay)
-                if ret:
+                # Distribute frame to pipeline queues
+                with self.queues_lock:
+                    for q in self.processing_queues.values():
+                        ref_counted_frame.acquire()
+                        try:
+                            q.put_nowait(ref_counted_frame)
+                        except queue.Full:
+                            ref_counted_frame.release()
+
+                # Prepare display frame (store raw frame for lazy encoding)
+                ref_counted_frame.acquire()
+                try:
+                    display_frame_copy = ref_counted_frame.get_writable_copy()
+                    display_frame_with_overlay = self._prepare_display_frame(display_frame_copy)
+
+                    # Store the raw frame instead of encoding immediately (lazy encoding)
                     with self.frame_lock:
-                        self.latest_frame_for_display = buffer.tobytes()
+                        self.latest_display_frame_raw = display_frame_with_overlay
+                        # Keep legacy behavior for backward compatibility during transition
+                        self.latest_frame_for_display = None
+                finally:
+                    ref_counted_frame.release()
             finally:
+                # Release initial reference - this ensures buffer is returned to pool
+                # when all consumers (pipelines + display) have finished with it
                 ref_counted_frame.release()
             
             frame_count += 1
@@ -396,6 +548,23 @@ class CameraAcquisitionThread(threading.Thread):
                 self.fps = frame_count / elapsed_time
                 frame_count = 0
                 start_time = time.time()
+
+    def _drain_processing_queues(self):
+        """Drains old frames from processing queues when buffer pool is exhausted.
+        This prevents queue buildup and releases buffer pool resources."""
+        with self.queues_lock:
+            for q in self.processing_queues.values():
+                drained_count = 0
+                # Drain up to 2 frames from each queue (non-blocking)
+                while drained_count < 2:
+                    try:
+                        old_frame = q.get_nowait()
+                        old_frame.release()  # Release the ref-counted frame
+                        drained_count += 1
+                    except queue.Empty:
+                        break
+                if drained_count > 0:
+                    print(f"[{self.identifier}] Drained {drained_count} old frames from queue")
 
     def _apply_orientation(self, frame, orientation):
         if orientation == 90:

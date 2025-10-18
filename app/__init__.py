@@ -10,19 +10,40 @@ from .calibration_utils import CalibrationManager
 from .models import Setting
 
 
-def create_app():
-    """Creates and configures the Flask application."""
+def create_app(config_overrides=None):
+    """Creates and configures the Flask application.
+
+    Args:
+        config_overrides: Optional dictionary of config values to override.
+                         Typically used for testing.
+
+    Returns:
+        Flask: Configured Flask application instance
+    """
     app = Flask(__name__, static_folder='static', template_folder='templates')
     app.calibration_manager = CalibrationManager()
 
-    # Database configuration
-    APP_NAME = "VisionTools"
-    APP_AUTHOR = "User"
-    data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
-    os.makedirs(data_dir, exist_ok=True)
-    db_path = os.path.join(data_dir, "config.db")
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Load configuration from config.py (environment-based)
+    from config import get_config
+    config_class = get_config()
+    app.config.from_object(config_class)
+
+    # Apply test-specific or instance-specific overrides
+    if config_overrides:
+        app.config.from_mapping(config_overrides)
+
+    # Production-specific initialization
+    if hasattr(config_class, 'init_app'):
+        config_class.init_app(app)
+
+    # Database configuration - set default path if not configured
+    if app.config.get('SQLALCHEMY_DATABASE_URI') is None:
+        APP_NAME = "VisionTools"
+        APP_AUTHOR = "User"
+        data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
+        os.makedirs(data_dir, exist_ok=True)
+        db_path = os.path.join(data_dir, "config.db")
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
     db.init_app(app)
 
@@ -41,11 +62,14 @@ def create_app():
 
     with app.app_context():
         db.create_all()
-        genicam_setting = db.session.get(Setting, 'genicam_cti_path')
-        cti_path = genicam_setting.value if genicam_setting else ""
-        GenICamDriver.initialize(cti_path)
-        camera_manager.start_all_camera_threads(app)
+        # Only initialize cameras and threads if not disabled
+        if app.config.get("CAMERA_THREADS_ENABLED", True):
+            genicam_setting = db.session.get(Setting, 'genicam_cti_path')
+            cti_path = genicam_setting.value if genicam_setting else ""
+            GenICamDriver.initialize(cti_path)
+            camera_manager.start_all_camera_threads(app)
 
-    atexit.register(camera_manager.stop_all_camera_threads)
+    if app.config.get("CAMERA_THREADS_ENABLED", True):
+        atexit.register(camera_manager.stop_all_camera_threads)
 
     return app

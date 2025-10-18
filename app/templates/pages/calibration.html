@@ -330,7 +330,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/calibration/start', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify(payload)
             });
 
@@ -358,7 +360,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/calibration/capture', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ camera_id: state.cameraId })
             });
 
@@ -384,7 +388,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/calibration/calculate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ camera_id: state.cameraId })
             });
 
@@ -434,7 +440,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/calibration/save', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify(payload)
             });
 

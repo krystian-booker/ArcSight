@@ -37,12 +37,26 @@ def add_camera():
             # Add a default pipeline
             default_pipeline = Pipeline(name='default', pipeline_type='AprilTag', config=json.dumps({}))
             new_camera.pipelines.append(default_pipeline)
-            
+
             db.session.add(new_camera)
-            db.session.commit()
-            
-            # Use the committed object
-            camera_manager.start_camera_thread(new_camera, current_app._get_current_object())
+
+            try:
+                db.session.commit()
+
+                # Try to start the camera thread - if this fails, delete the camera from DB
+                try:
+                    camera_manager.start_camera_thread(new_camera, current_app._get_current_object())
+                except Exception as thread_error:
+                    print(f"Error starting camera thread: {thread_error}")
+                    # Thread failed to start, remove the orphaned database entry
+                    db.session.delete(new_camera)
+                    db.session.commit()
+                    raise
+
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error adding camera: {e}")
+                # Camera and pipeline will be removed from database due to rollback
 
     return redirect(url_for('cameras.cameras_page'))
 
@@ -62,9 +76,17 @@ def update_camera(camera_id):
 def delete_camera(camera_id):
     """Deletes a camera."""
     camera = db.session.get(Camera, camera_id)
-    camera_manager.stop_camera_thread(camera.identifier)
-    db.session.delete(camera)
-    db.session.commit()
+    if camera:
+        identifier = camera.identifier
+        # Stop thread and wait for confirmation
+        camera_manager.stop_camera_thread(identifier)
+
+        # Verify thread actually stopped before deleting DB record
+        if camera_manager.is_camera_thread_running(identifier):
+            return jsonify({'error': 'Failed to stop camera thread'}), 500
+
+        db.session.delete(camera)
+        db.session.commit()
     return redirect(url_for('cameras.cameras_page'))
 
 
@@ -122,13 +144,21 @@ def update_camera_controls(camera_id):
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Missing one or more required fields'}), 400
 
-    camera.orientation = data['orientation']
+    # Track if orientation changed
+    old_orientation = camera.orientation
+    new_orientation = data['orientation']
+
+    camera.orientation = new_orientation
     camera.exposure_mode = data['exposure_mode']
     camera.exposure_value = data['exposure_value']
     camera.gain_mode = data['gain_mode']
     camera.gain_value = data['gain_value']
     db.session.commit()
-    
+
+    # Notify the camera thread of orientation change via event
+    if old_orientation != new_orientation:
+        camera_manager.notify_camera_config_update(camera.identifier, new_orientation)
+
     return jsonify({'success': True})
 
 

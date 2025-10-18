@@ -1,0 +1,41 @@
+[project]
+name = "vision-tools"
+version = "0.1.0"
+description = "A Flask-based web application for vision processing and camera management"
+authors = [{name = "Krystian"}]
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "flask",
+    "flask-sqlalchemy",
+    "harvesters",
+    "genicam",
+    "robotpy-apriltag",
+    "appdirs",
+    "reportlab",
+    "depthai",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-flask",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest-timeout",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--cov=app",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+]
