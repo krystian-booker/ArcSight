@@ -210,6 +210,7 @@ class VisionProcessingThread(threading.Thread):
         pipeline_type,
         pipeline_config_json,
         camera_matrix_json,
+        dist_coeffs_json,
         frame_queue,
         jpeg_quality=75,
     ):
@@ -234,6 +235,7 @@ class VisionProcessingThread(threading.Thread):
 
         # Pre-calculation variables for drawing
         self.cam_matrix = None
+        self.dist_coeffs = None
         self.obj_pts = None
 
         # Load camera calibration data from primitive values
@@ -246,6 +248,20 @@ class VisionProcessingThread(threading.Thread):
                     f"[{self.identifier}] Failed to parse camera matrix from DB. Falling back to default."
                 )
                 self.cam_matrix = None
+
+        # Load distortion coefficients
+        if dist_coeffs_json:
+            try:
+                self.dist_coeffs = np.array(json.loads(dist_coeffs_json), dtype=np.float32).reshape(-1, 1)
+                print(f"[{self.identifier}] Loaded distortion coefficients from DB.")
+            except (json.JSONDecodeError, TypeError):
+                print(
+                    f"[{self.identifier}] Failed to parse dist_coeffs from DB. Assuming zero distortion."
+                )
+                self.dist_coeffs = np.zeros((4, 1), dtype=np.float32)
+        else:
+            # Default to zero distortion if not provided
+            self.dist_coeffs = np.zeros((4, 1), dtype=np.float32)
 
         pipeline_config = {}
         if pipeline_config_json:
@@ -347,7 +363,7 @@ class VisionProcessingThread(threading.Thread):
 
                 if self.pipeline_type == "AprilTag":
                     result = self.pipeline_instance.process_frame(
-                        raw_frame, self.cam_matrix
+                        raw_frame, self.cam_matrix, self.dist_coeffs
                     )
                     # Handle new return format: {"single_tags": [...], "multi_tag": {...}}
                     single_tags = result.get("single_tags", [])
@@ -448,9 +464,9 @@ class VisionProcessingThread(threading.Thread):
         for det in detections:
             rvec, tvec = det["rvec"], det["tvec"]
 
-            # Project points assuming an undistorted (zero distortion) image
+            # Project points using camera distortion coefficients
             img_pts, _ = cv2.projectPoints(
-                self.obj_pts, rvec, tvec, self.cam_matrix, np.zeros((4, 1))
+                self.obj_pts, rvec, tvec, self.cam_matrix, self.dist_coeffs
             )
             img_pts = np.int32(img_pts).reshape(-1, 2)
 

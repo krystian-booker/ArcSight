@@ -42,6 +42,7 @@ def start_camera_thread(camera, app):
                     pipeline_type=pipeline.pipeline_type,
                     pipeline_config_json=pipeline.config,
                     camera_matrix_json=camera.camera_matrix_json,
+                    dist_coeffs_json=camera.dist_coeffs_json,
                     frame_queue=frame_queue,
                     jpeg_quality=75,
                 )
@@ -108,7 +109,7 @@ def stop_camera_thread(identifier):
 
 
 def add_pipeline_to_camera(
-    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json
+    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, dist_coeffs_json
 ):
     """Starts a new processing thread for a running camera.
 
@@ -118,6 +119,7 @@ def add_pipeline_to_camera(
         pipeline_type: Pipeline type string (e.g., 'AprilTag')
         pipeline_config_json: Pipeline configuration as JSON string
         camera_matrix_json: Camera calibration matrix as JSON string
+        dist_coeffs_json: Camera distortion coefficients as JSON string
 
     Note:
         This function accepts primitive values to avoid database I/O in the hot path.
@@ -146,6 +148,7 @@ def add_pipeline_to_camera(
                 pipeline_type=pipeline_type,
                 pipeline_config_json=pipeline_config_json,
                 camera_matrix_json=camera_matrix_json,
+                dist_coeffs_json=dist_coeffs_json,
                 frame_queue=frame_queue,
                 jpeg_quality=75,
             )
@@ -185,7 +188,7 @@ def remove_pipeline_from_camera(identifier, pipeline_id):
 
 
 def update_pipeline_in_camera(
-    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json
+    identifier, pipeline_id, pipeline_type, pipeline_config_json, camera_matrix_json, dist_coeffs_json
 ):
     """Stops and restarts a pipeline processing thread to apply new settings.
 
@@ -195,6 +198,7 @@ def update_pipeline_in_camera(
         pipeline_type: Pipeline type string (e.g., 'AprilTag')
         pipeline_config_json: Updated pipeline configuration as JSON string
         camera_matrix_json: Camera calibration matrix as JSON string
+        dist_coeffs_json: Camera distortion coefficients as JSON string
 
     Note:
         This function accepts primitive values to avoid database I/O in the hot path.
@@ -233,6 +237,7 @@ def update_pipeline_in_camera(
             pipeline_type=pipeline_type,
             pipeline_config_json=pipeline_config_json,
             camera_matrix_json=camera_matrix_json,
+            dist_coeffs_json=dist_coeffs_json,
             frame_queue=frame_queue,
             jpeg_quality=75,
         )

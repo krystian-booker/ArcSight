@@ -160,6 +160,7 @@ def test_add_pipeline_to_camera(mock_camera, mock_pipeline, mock_app, mock_threa
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
     )
 
     # A new processing thread should be created and started
@@ -227,6 +228,7 @@ def test_update_pipeline_in_camera(mock_camera, mock_pipeline, mock_app, mock_th
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
     )
 
     # 1. Stop the old thread
@@ -338,6 +340,7 @@ def test_add_pipeline_to_camera_not_found(mock_pipeline, mock_app):
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json="{}",
+        dist_coeffs_json="{}",
     )
     assert not camera_manager.active_camera_threads  # Should not have changed
 
@@ -360,5 +363,6 @@ def test_update_pipeline_in_camera_not_found(mock_app):
         pipeline_type="AprilTag",
         pipeline_config_json="{}",
         camera_matrix_json="{}",
+        dist_coeffs_json="{}",
     )
     assert not camera_manager.active_camera_threads  # Should not have changed

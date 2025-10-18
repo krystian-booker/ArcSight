@@ -456,6 +456,7 @@ def test_vision_processing_thread_initialization(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -479,6 +480,7 @@ def test_vision_processing_thread_initialization_all_types(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -497,6 +499,7 @@ def test_vision_processing_thread_init_invalid_pipeline_type(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
     assert thread.pipeline_instance is None
@@ -513,6 +516,7 @@ def test_vision_processing_thread_init_bad_json_config(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -534,6 +538,7 @@ def test_vision_processing_thread_init_no_camera_matrix(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -558,6 +563,7 @@ def test_vision_processing_thread_run_loop(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -604,6 +610,7 @@ def test_vision_processing_thread_run_loop_empty_queue(mock_camera, mock_pipelin
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -625,6 +632,7 @@ def test_vision_processing_thread_stop_method(mock_camera, mock_pipeline):
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
     thread.start()
@@ -655,6 +663,7 @@ def test_vision_processing_thread_draw_3d_box(mock_camera, mock_pipeline):
             pipeline_type=mock_pipeline.pipeline_type,
             pipeline_config_json=mock_pipeline.config,
             camera_matrix_json=mock_camera.camera_matrix_json,
+            dist_coeffs_json=mock_camera.dist_coeffs_json,
             frame_queue=queue.Queue(),
         )
         # Manually set a valid camera matrix
@@ -685,6 +694,7 @@ def test_vision_processing_thread_run_loop_ml_pipeline(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -717,6 +727,7 @@ def test_vision_processing_thread_run_loop_coloured_shape_pipeline(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -744,6 +755,7 @@ def test_vision_processing_thread_run_exits_if_no_pipeline(mock_camera, mock_pip
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -762,6 +774,7 @@ def test_vision_processing_thread_imencode_failure(mock_camera, mock_pipeline):
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -795,6 +808,7 @@ def test_vision_processing_thread_init_bad_camera_matrix_json(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
     assert thread.cam_matrix is None

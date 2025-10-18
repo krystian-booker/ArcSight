@@ -56,6 +56,7 @@ def add_pipeline(camera_id):
         pipeline_type=new_pipeline.pipeline_type,
         pipeline_config_json=new_pipeline.config,
         camera_matrix_json=camera.camera_matrix_json,
+        dist_coeffs_json=camera.dist_coeffs_json,
     )
     return jsonify({"success": True, "pipeline": new_pipeline.to_dict()})
 
@@ -86,6 +87,7 @@ def update_pipeline(pipeline_id):
             pipeline_type=pipeline.pipeline_type,
             pipeline_config_json=pipeline.config,
             camera_matrix_json=camera.camera_matrix_json,
+            dist_coeffs_json=camera.dist_coeffs_json,
         )
 
     return jsonify({"success": True})
@@ -120,6 +122,7 @@ def update_pipeline_config(pipeline_id):
             pipeline_type=pipeline.pipeline_type,
             pipeline_config_json=pipeline.config,
             camera_matrix_json=camera.camera_matrix_json,
+            dist_coeffs_json=camera.dist_coeffs_json,
         )
 
     return jsonify({"success": True})
