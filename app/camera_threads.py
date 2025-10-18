@@ -259,11 +259,14 @@ class VisionProcessingThread(threading.Thread):
         # Merge with default config to ensure all keys are present
         default_config = {
             "family": "tag36h11",
-            "threads": 2,
+            "threads": 1,
             "decimate": 1.0,
             "blur": 0.0,
             "refine_edges": True,
             "tag_size_m": 0.165,
+            "decision_margin": 35.0,
+            "pose_iterations": 40,
+            "decode_sharpening": 0.25,
         }
         # This ensures user settings override defaults, but defaults are there as a fallback
         final_config = {**default_config, **pipeline_config}

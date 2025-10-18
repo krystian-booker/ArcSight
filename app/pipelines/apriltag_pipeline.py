@@ -31,6 +31,19 @@ class AprilTagPipeline:
         # Add the family to the detector. The second argument is error correction bits.
         self.detector.addFamily(family, config.get("error_correction", 3))
 
+        # --- Configure Detector Parameters ---
+        detector_config = self.detector.getConfig()
+        detector_config.numThreads = config.get("threads", 1)
+        detector_config.quadDecimate = config.get("decimate", 1.0)
+        detector_config.quadSigma = config.get("blur", 0.0)
+        detector_config.refineEdges = config.get("refine_edges", True)
+        detector_config.decodeSharpening = config.get("decode_sharpening", 0.25)
+        self.detector.setConfig(detector_config)
+
+        # Store filtering parameters
+        self.decision_margin_threshold = config.get("decision_margin", 35.0)
+        self.pose_iterations = config.get("pose_iterations", 40)
+
         # --- Pose Estimator Setup ---
         # Get tag size from config, default to 6.5 inches in meters
         tag_size_m = config.get("tag_size_m", 0.1651)
@@ -49,7 +62,13 @@ class AprilTagPipeline:
         # --- Reusable Buffers (for optimization) ---
         self.gray_frame = None
 
-        print(f"AprilTag detector initialized with family: {family}")
+        print(
+            f"AprilTag detector initialized with family: {family}, "
+            f"threads: {detector_config.numThreads}, "
+            f"decimate: {detector_config.quadDecimate}, "
+            f"blur: {detector_config.quadSigma}, "
+            f"refine_edges: {detector_config.refineEdges}"
+        )
 
     def process_frame(self, frame, cam_matrix):
         """
@@ -96,12 +115,17 @@ class AprilTagPipeline:
         results = []
         for tag in detections:
             # Reject tags with high hamming distance or low decision margin
-            if tag.getHamming() > 1 or tag.getDecisionMargin() < 25.0:
+            if (
+                tag.getHamming() > 1
+                or tag.getDecisionMargin() < self.decision_margin_threshold
+            ):
                 continue
 
             # --- Pose Estimation ---
             # Use estimateOrthogonalIteration to get the AprilTagPoseEstimate object
-            est_result = self.pose_estimator.estimateOrthogonalIteration(tag, 50)
+            est_result = self.pose_estimator.estimateOrthogonalIteration(
+                tag, self.pose_iterations
+            )
 
             pose: Transform3d = est_result.pose1
             pose_error = est_result.error1

@@ -140,7 +140,7 @@ def test_process_frame_with_tags(mock_libs, default_config, default_cam_matrix):
     assert len(results) == 1
     mock_rpa.AprilTagPoseEstimator.assert_called_once()
     mock_estimator_instance.estimateOrthogonalIteration.assert_called_once_with(
-        mock_detection, 50
+        mock_detection, 40
     )
 
     ui_data = results[0]["ui_data"]
