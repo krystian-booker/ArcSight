@@ -1,6 +1,5 @@
 import os
 import atexit
-import secrets
 from flask import Flask
 from appdirs import user_data_dir
 
@@ -12,34 +11,39 @@ from .models import Setting
 
 
 def create_app(config_overrides=None):
-    """Creates and configures the Flask application."""
+    """Creates and configures the Flask application.
+
+    Args:
+        config_overrides: Optional dictionary of config values to override.
+                         Typically used for testing.
+
+    Returns:
+        Flask: Configured Flask application instance
+    """
     app = Flask(__name__, static_folder='static', template_folder='templates')
     app.calibration_manager = CalibrationManager()
 
-    # Default configuration
-    app.config.from_mapping(
-        CAMERA_THREADS_ENABLED=True,
-    )
+    # Load configuration from config.py (environment-based)
+    from config import get_config
+    config_class = get_config()
+    app.config.from_object(config_class)
 
-    # Load instance-specific config
+    # Apply test-specific or instance-specific overrides
     if config_overrides:
         app.config.from_mapping(config_overrides)
 
-    # Security configuration - Generate a secret key for CSRF protection
-    if 'SECRET_KEY' not in app.config:
-        app.config['SECRET_KEY'] = secrets.token_hex(32)
+    # Production-specific initialization
+    if hasattr(config_class, 'init_app'):
+        config_class.init_app(app)
 
-    # Database configuration
-    APP_NAME = "VisionTools"
-    APP_AUTHOR = "User"
-    data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
-    os.makedirs(data_dir, exist_ok=True)
-    db_path = os.path.join(data_dir, "config.db")
-
-    # Use provided DB URI or default
-    if 'SQLALCHEMY_DATABASE_URI' not in app.config:
+    # Database configuration - set default path if not configured
+    if app.config.get('SQLALCHEMY_DATABASE_URI') is None:
+        APP_NAME = "VisionTools"
+        APP_AUTHOR = "User"
+        data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
+        os.makedirs(data_dir, exist_ok=True)
+        db_path = os.path.join(data_dir, "config.db")
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
     csrf.init_app(app)

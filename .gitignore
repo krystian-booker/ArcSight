@@ -122,3 +122,6 @@ iOSInjectionProject/
 __pycache__/
 app.log
 .coverage
+
+# Environment variables (may contain secrets)
+.env
