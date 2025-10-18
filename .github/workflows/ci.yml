@@ -77,19 +77,25 @@ jobs:
       - name: Validate app can start
         shell: bash -el {0}
         run: |
+          set +e  # Don't exit on error
+          
           # Start the app in the background
-          timeout 30s python run.py > startup.log 2>&1 || EXIT_CODE=$?
-
+          timeout 30s python run.py > startup.log 2>&1
+          TIMEOUT_EXIT=$?
+          
+          # Display the log
+          echo "=== Startup Log ==="
+          cat startup.log
+          echo "=== End Log ==="
+          
           # Check if the app started successfully by looking for Flask startup messages
           if grep -q "WARNING: This is a development server" startup.log || \
              grep -q "Running on" startup.log || \
              grep -q "Starting acquisition and processing threads" startup.log; then
-            echo "✓ App started successfully"
-            cat startup.log
+            echo "✓ App started successfully (timeout exit code: $TIMEOUT_EXIT)"
             exit 0
           else
             echo "✗ App failed to start or hung during startup"
-            cat startup.log
             exit 1
           fi
 
