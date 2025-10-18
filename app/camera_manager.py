@@ -61,7 +61,7 @@ def start_camera_thread(camera, app):
 
 def stop_camera_thread(identifier):
     """Stops all threads for a single camera."""
-    # Step 1: Mark camera as stopping and get thread references
+    # Step 1: Mark camera as stopping and copy thread references under lock
     with active_camera_threads_lock:
         if identifier not in active_camera_threads:
             return
@@ -69,20 +69,23 @@ def stop_camera_thread(identifier):
         thread_group = active_camera_threads[identifier]
 
         # Mark as stopping to prevent concurrent access issues
-        if "stopping" in thread_group and thread_group["stopping"]:
+        if thread_group.get("stopping", False):
             print(f"Camera {identifier} is already being stopped")
             return
 
         thread_group["stopping"] = True
         print(f"Stopping threads for camera {identifier}")
 
+        # Copy thread references while holding lock to avoid TOCTOU race condition
+        acq_thread = thread_group["acquisition"]
+        proc_threads_list = list(thread_group["processing_threads"].items())
+
     # Step 2: Signal all threads to stop (outside lock to avoid deadlock)
-    for proc_thread in thread_group["processing_threads"].values():
+    for pipeline_id, proc_thread in proc_threads_list:
         proc_thread.stop()
-    thread_group["acquisition"].stop()
+    acq_thread.stop()
 
     # Step 3: Wait for threads to terminate with timeout
-    acq_thread = thread_group["acquisition"]
     acq_thread.join(timeout=5)
 
     if acq_thread.is_alive():
@@ -90,7 +93,7 @@ def stop_camera_thread(identifier):
             f"WARNING: Acquisition thread for {identifier} did not terminate within 5 seconds"
         )
 
-    for pipeline_id, proc_thread in thread_group["processing_threads"].items():
+    for pipeline_id, proc_thread in proc_threads_list:
         proc_thread.join(timeout=5)
         if proc_thread.is_alive():
             print(

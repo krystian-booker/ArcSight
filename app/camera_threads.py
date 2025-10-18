@@ -43,6 +43,23 @@ class RefCountedFrame:
         """Returns a deep copy of the frame for pipelines that need to modify it."""
         return self.frame_buffer.copy()
 
+    def get_modifiable_view(self):
+        """Returns either the buffer directly (if ref_count <= 2) or a copy.
+
+        This is an optimization for the display frame overlay. If only the acquisition
+        thread and the display frame hold references (ref_count <= 2), we can safely
+        modify the buffer directly. Otherwise, we need a copy to avoid affecting pipelines.
+
+        Returns:
+            tuple: (numpy.ndarray, bool) - The frame and whether it's safe to modify in place
+        """
+        with self._lock:
+            # ref_count <= 2 means only acquisition thread + display/latest_raw_frame
+            if self._ref_count <= 2:
+                return self.frame_buffer, True
+            else:
+                return self.frame_buffer.copy(), False
+
 
 class FrameBufferPool:
     """Manages a pool of pre-allocated numpy arrays to avoid repeated memory allocation.
@@ -559,6 +576,12 @@ class CameraAcquisitionThread(threading.Thread):
                 if not self.stop_event.is_set():
                     self.stop_event.wait(5.0)
 
+        # Clean up the ref-counted frame
+        with self.raw_frame_lock:
+            if self.latest_raw_frame is not None:
+                self.latest_raw_frame.release()
+                self.latest_raw_frame = None
+
         print(f"Acquisition thread for {self.identifier} has stopped.")
 
     def _acquisition_loop(self):
@@ -605,9 +628,6 @@ class CameraAcquisitionThread(threading.Thread):
             # Apply orientation to the frame right after capture
             oriented_frame = self._apply_orientation(raw_frame_from_cam, orientation)
 
-            with self.raw_frame_lock:
-                self.latest_raw_frame = oriented_frame.copy()
-
             pooled_buffer = self.buffer_pool.get_buffer()
             if pooled_buffer is None:
                 # Buffer pool exhausted - drain queues to prevent buildup and memory leaks
@@ -628,6 +648,15 @@ class CameraAcquisitionThread(threading.Thread):
             ref_counted_frame.acquire()
 
             try:
+                # Store ref-counted frame for raw frame access (eliminates copy #1)
+                with self.raw_frame_lock:
+                    # Release previous frame if it exists
+                    if self.latest_raw_frame is not None:
+                        self.latest_raw_frame.release()
+                    # Store new frame with reference
+                    ref_counted_frame.acquire()
+                    self.latest_raw_frame = ref_counted_frame
+
                 # Distribute frame to pipeline queues
                 with self.queues_lock:
                     for q in self.processing_queues.values():
@@ -638,20 +667,15 @@ class CameraAcquisitionThread(threading.Thread):
                             ref_counted_frame.release()
 
                 # Prepare display frame (store raw frame for lazy encoding)
-                ref_counted_frame.acquire()
-                try:
-                    display_frame_copy = ref_counted_frame.get_writable_copy()
-                    display_frame_with_overlay = self._prepare_display_frame(
-                        display_frame_copy
-                    )
+                # Use get_modifiable_view to avoid unnecessary copy when possible
+                display_frame, is_direct = ref_counted_frame.get_modifiable_view()
+                display_frame_with_overlay = self._prepare_display_frame(display_frame)
 
-                    # Store the raw frame instead of encoding immediately (lazy encoding)
-                    with self.frame_lock:
-                        self.latest_display_frame_raw = display_frame_with_overlay
-                        # Keep legacy behavior for backward compatibility during transition
-                        self.latest_frame_for_display = None
-                finally:
-                    ref_counted_frame.release()
+                # Store the raw frame instead of encoding immediately (lazy encoding)
+                with self.frame_lock:
+                    self.latest_display_frame_raw = display_frame_with_overlay
+                    # Keep legacy behavior for backward compatibility during transition
+                    self.latest_frame_for_display = None
             finally:
                 # Release initial reference - this ensures buffer is returned to pool
                 # when all consumers (pipelines + display) have finished with it

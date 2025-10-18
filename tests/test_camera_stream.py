@@ -24,15 +24,19 @@ def mock_active_threads(mock_camera):
     """
     mock_acq_thread = MagicMock()
     mock_acq_thread.is_alive.return_value = True
-    # Mock the lazy encoding method to return encoded frame
-    mock_acq_thread.get_display_frame.return_value = b"jpeg_frame_data"
-    # The code calls .copy() on this, so it must be a numpy array
-    mock_acq_thread.latest_raw_frame = np.zeros((10, 10), dtype=np.uint8)
+    # Mock the raw frame for lazy encoding (must be a numpy array for cv2.imencode)
+    mock_acq_thread.latest_display_frame_raw = np.zeros((10, 10, 3), dtype=np.uint8)
+    mock_acq_thread.jpeg_quality = 85
+    # latest_raw_frame is now a RefCountedFrame, create a mock for it
+    mock_ref_frame = MagicMock()
+    mock_ref_frame.get_writable_copy.return_value = np.zeros((10, 10), dtype=np.uint8)
+    mock_acq_thread.latest_raw_frame = mock_ref_frame
 
     mock_proc_thread = MagicMock()
     mock_proc_thread.is_alive.return_value = True
-    # Mock the lazy encoding method to return encoded frame
-    mock_proc_thread.get_processed_frame.return_value = b"processed_jpeg_frame_data"
+    # Mock the raw processed frame for lazy encoding (must be a numpy array for cv2.imencode)
+    mock_proc_thread.latest_processed_frame_raw = np.zeros((10, 10, 3), dtype=np.uint8)
+    mock_proc_thread.jpeg_quality = 75
 
     threads_dict = {
         mock_camera.identifier: {
@@ -60,8 +64,9 @@ def test_get_camera_feed_success(mock_camera, mock_active_threads):
     # Now, simulate the thread dying to prevent an infinite loop in the test
     mock_active_threads["acq"].is_alive.return_value = False
 
-    assert b"jpeg_frame_data" in frame
+    # The frame should be a JPEG-encoded image with proper MIME boundaries
     assert b"--frame" in frame
+    assert b"Content-Type: image/jpeg" in frame
 
 
 def test_get_camera_feed_thread_not_running(mock_camera):
@@ -80,7 +85,7 @@ def test_get_camera_feed_thread_dies(mock_camera, mock_active_threads):
 
     # The first yield should work fine
     frame = next(feed_generator)
-    assert b"jpeg_frame_data" in frame
+    assert b"--frame" in frame
 
     # Now, we simulate the thread dying
     mock_active_threads["acq"].is_alive.return_value = False
@@ -105,7 +110,7 @@ def test_get_camera_feed_generator_exit(mock_camera, mock_active_threads):
 
 def test_get_camera_feed_no_frame(mock_camera, mock_active_threads):
     """Test the camera feed generator when the thread is alive but there's no frame."""
-    mock_active_threads["acq"].get_display_frame.return_value = None
+    mock_active_threads["acq"].latest_display_frame_raw = None
     # Let the thread die after the first check to prevent an infinite loop
     mock_active_threads["acq"].is_alive.side_effect = [True, False]
 
@@ -130,8 +135,8 @@ def test_get_processed_camera_feed_success(mock_active_threads):
     # Simulate the thread dying after the first frame
     mock_active_threads["proc"].is_alive.return_value = False
 
-    assert b"processed_jpeg_frame_data" in frame
     assert b"--frame" in frame
+    assert b"Content-Type: image/jpeg" in frame
 
 
 def test_get_processed_camera_feed_thread_not_found():
@@ -149,7 +154,7 @@ def test_get_processed_camera_feed_thread_dies(mock_active_threads):
 
     # The first yield should work fine
     frame = next(feed_generator)
-    assert b"processed_jpeg_frame_data" in frame
+    assert b"--frame" in frame
 
     # Now, we simulate the thread dying
     mock_active_threads["proc"].is_alive.return_value = False
@@ -175,7 +180,7 @@ def test_get_processed_camera_feed_generator_exit(mock_active_threads):
 def test_get_processed_camera_feed_no_frame(mock_active_threads):
     """Test the processed feed generator when the thread is alive but there's no frame."""
     pipeline_id = 101
-    mock_active_threads["proc"].get_processed_frame.return_value = None
+    mock_active_threads["proc"].latest_processed_frame_raw = None
     # Let the thread die after the first check to prevent an infinite loop
     mock_active_threads["proc"].is_alive.side_effect = [True, False]
 
@@ -191,14 +196,16 @@ def test_get_processed_camera_feed_no_frame(mock_active_threads):
 
 def test_get_latest_raw_frame_success(mock_camera, mock_active_threads):
     """Test successfully getting the latest raw frame."""
-    original_frame = mock_active_threads["acq"].latest_raw_frame
+    # latest_raw_frame is now a RefCountedFrame mock
+    ref_frame_mock = mock_active_threads["acq"].latest_raw_frame
+    expected_frame = ref_frame_mock.get_writable_copy.return_value
 
     frame_copy = camera_stream.get_latest_raw_frame(mock_camera.identifier)
 
-    # Check that the data is the same
-    assert np.array_equal(frame_copy, original_frame)
-    # Check that it's a different object in memory (i.e., a copy)
-    assert id(frame_copy) != id(original_frame)
+    # Check that get_writable_copy was called
+    ref_frame_mock.get_writable_copy.assert_called_once()
+    # Check that the returned frame matches
+    assert np.array_equal(frame_copy, expected_frame)
 
 
 def test_get_latest_raw_frame_thread_not_running(mock_camera):
@@ -223,17 +230,18 @@ def test_get_camera_feed_waits_for_frame(mock_camera, mock_active_threads):
     # The thread is alive for two loops, then dies.
     mock_active_threads["acq"].is_alive.side_effect = [True, True, False]
 
-    # The frame is not available on the first loop (get_display_frame returns None).
-    mock_active_threads["acq"].get_display_frame.return_value = None
+    # The frame is not available on the first loop (latest_display_frame_raw is None).
+    mock_active_threads["acq"].latest_display_frame_raw = None
 
     feed_generator = camera_stream.get_camera_feed(mock_camera)
 
     with patch("time.sleep") as mock_sleep:
         # This side effect runs when time.sleep is called after the first empty loop.
         def make_frame_available(duration):
-            mock_active_threads[
-                "acq"
-            ].get_display_frame.return_value = b"new_frame_data"
+            # Set a new raw frame (numpy array) that will be encoded
+            mock_active_threads["acq"].latest_display_frame_raw = np.zeros(
+                (10, 10, 3), dtype=np.uint8
+            )
 
         mock_sleep.side_effect = make_frame_available
 
@@ -241,8 +249,8 @@ def test_get_camera_feed_waits_for_frame(mock_camera, mock_active_threads):
         # then loop again, find the new frame, and yield it.
         frame = next(feed_generator)
 
-        assert b"new_frame_data" in frame
-        mock_sleep.assert_called_once_with(0.01)
+        assert b"--frame" in frame
+        mock_sleep.assert_called_once_with(0.033)
 
 
 def test_get_processed_camera_feed_waits_for_frame(mock_active_threads):
@@ -254,17 +262,18 @@ def test_get_processed_camera_feed_waits_for_frame(mock_active_threads):
     # The thread is alive for two loops, then dies.
     mock_active_threads["proc"].is_alive.side_effect = [True, True, False]
 
-    # The frame is not available on the first loop (get_processed_frame returns None).
-    mock_active_threads["proc"].get_processed_frame.return_value = None
+    # The frame is not available on the first loop (latest_processed_frame_raw is None).
+    mock_active_threads["proc"].latest_processed_frame_raw = None
 
     feed_generator = camera_stream.get_processed_camera_feed(pipeline_id)
 
     with patch("time.sleep") as mock_sleep:
         # This side effect runs when time.sleep is called after the first empty loop.
         def make_frame_available(duration):
-            mock_active_threads[
-                "proc"
-            ].get_processed_frame.return_value = b"new_processed_frame"
+            # Set a new raw processed frame (numpy array) that will be encoded
+            mock_active_threads["proc"].latest_processed_frame_raw = np.zeros(
+                (10, 10, 3), dtype=np.uint8
+            )
 
         mock_sleep.side_effect = make_frame_available
 
@@ -272,5 +281,5 @@ def test_get_processed_camera_feed_waits_for_frame(mock_active_threads):
         # then loop again, find the new frame, and yield it.
         frame = next(feed_generator)
 
-        assert b"new_processed_frame" in frame
-        mock_sleep.assert_called_once_with(0.01)
+        assert b"--frame" in frame
+        mock_sleep.assert_called_once_with(0.033)

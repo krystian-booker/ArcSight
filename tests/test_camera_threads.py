@@ -1166,13 +1166,17 @@ def test_acquisition_loop_reference_counting_correctness():
             frame = normal_q.get_nowait()
             frame.release()
 
+        # Release the final latest_raw_frame to complete reference counting
+        if thread.latest_raw_frame is not None:
+            thread.latest_raw_frame.release()
+
     # Verify that all acquires have matching releases
     # Each frame should have:
     # - 1 initial acquire (acquisition thread)
+    # - 1 acquire for latest_raw_frame
     # - 1 acquire for normal_q (succeeds, released after consuming)
     # - 1 acquire for full_q (fails, gets released immediately)
-    # - 1 acquire for display frame (released after encoding)
-    # Total: 4 acquires, 4 releases per frame (2 frames processed after init)
+    # Total: 4 acquires, 4 releases per frame (after latest_raw_frame cleanup)
     assert acquire_calls[0] == release_calls[0], (
         f"Reference counting mismatch: {acquire_calls[0]} acquires vs {release_calls[0]} releases"
     )
@@ -1194,9 +1198,9 @@ def test_acquisition_loop_empty_buffer_pool(mock_driver, mock_camera, mock_app):
         thread._acquisition_loop()
         # Loop should complete
         assert mock_driver.get_frame.call_count > 0
-        # The raw frame should be set
-        assert thread.latest_raw_frame is not None
-        # But the display frame should not be set (lazy encoding won't work without buffer)
+        # When buffer pool is exhausted, frames are skipped entirely
+        # So latest_raw_frame and display frame should not be set
+        assert thread.latest_raw_frame is None
         assert thread.latest_display_frame_raw is None
 
 
