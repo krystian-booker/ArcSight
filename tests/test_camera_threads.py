@@ -159,6 +159,200 @@ def test_frame_buffer_pool_release_buffer():
     pool.release_buffer(buffer)
     assert pool._pool.qsize() == 1
 
+def test_frame_buffer_pool_shrinking_on_idle():
+    """Test that the pool shrinks when it exceeds high water mark and is idle."""
+    pool = FrameBufferPool(
+        name="TestPool",
+        max_buffers=10,
+        initial_buffers=5,
+        high_water_mark=8,
+        shrink_idle_seconds=1.0
+    )
+    sample_frame = np.zeros((10, 10), dtype=np.uint8)
+    pool.initialize(sample_frame, num_buffers=5)
+
+    # Simulate high load: allocate up to 9 buffers
+    buffers = []
+    for _ in range(9):
+        buffer = pool.get_buffer()
+        buffers.append(buffer)
+    assert pool._allocated == 9
+
+    # Return all buffers to pool
+    for buffer in buffers:
+        pool.release_buffer(buffer)
+
+    # Pool should be full now
+    assert pool._pool.qsize() == 9
+
+    # Wait for idle timeout
+    time.sleep(1.1)
+
+    # Trigger shrink check by doing get/release cycles (not releasing same buffer multiple times)
+    for _ in range(100):
+        buffer = pool.get_buffer()
+        pool.release_buffer(buffer)
+
+    # Pool should have shrunk back to initial_buffers
+    assert pool._allocated == 5
+    assert pool._pool.qsize() == 5
+
+def test_frame_buffer_pool_no_shrink_below_high_water_mark():
+    """Test that the pool does not shrink if below high water mark."""
+    pool = FrameBufferPool(
+        name="TestPool",
+        max_buffers=10,
+        initial_buffers=5,
+        high_water_mark=8,
+        shrink_idle_seconds=0.1
+    )
+    sample_frame = np.zeros((10, 10), dtype=np.uint8)
+    pool.initialize(sample_frame, num_buffers=5)
+
+    # Allocate up to 7 buffers (below high water mark of 8)
+    buffers = []
+    for _ in range(7):
+        buffer = pool.get_buffer()
+        buffers.append(buffer)
+    assert pool._allocated == 7
+
+    # Return all buffers
+    for buffer in buffers:
+        pool.release_buffer(buffer)
+
+    # Wait for idle timeout
+    time.sleep(0.2)
+
+    # Trigger shrink check
+    for _ in range(100):
+        buffer = pool.get_buffer()
+        pool.release_buffer(buffer)
+
+    # Pool should NOT shrink because it's below high water mark
+    assert pool._allocated == 7
+
+def test_frame_buffer_pool_no_shrink_if_not_idle():
+    """Test that the pool does not shrink if not idle long enough."""
+    pool = FrameBufferPool(
+        name="TestPool",
+        max_buffers=10,
+        initial_buffers=5,
+        high_water_mark=8,
+        shrink_idle_seconds=10.0  # Long idle time
+    )
+    sample_frame = np.zeros((10, 10), dtype=np.uint8)
+    pool.initialize(sample_frame, num_buffers=5)
+
+    # Allocate up to 9 buffers
+    buffers = []
+    for _ in range(9):
+        buffer = pool.get_buffer()
+        buffers.append(buffer)
+    assert pool._allocated == 9
+
+    # Return all buffers immediately (not idle long enough)
+    for buffer in buffers:
+        pool.release_buffer(buffer)
+
+    # Trigger shrink check
+    for _ in range(100):
+        buffer = pool.get_buffer()
+        pool.release_buffer(buffer)
+
+    # Pool should NOT shrink because not idle long enough
+    assert pool._allocated == 9
+
+def test_frame_buffer_pool_no_shrink_if_buffers_in_use():
+    """Test that the pool does not shrink if buffers are still in use."""
+    pool = FrameBufferPool(
+        name="TestPool",
+        max_buffers=10,
+        initial_buffers=5,
+        high_water_mark=8,
+        shrink_idle_seconds=0.1
+    )
+    sample_frame = np.zeros((10, 10), dtype=np.uint8)
+    pool.initialize(sample_frame, num_buffers=5)
+
+    # Allocate up to 9 buffers
+    buffers = []
+    for _ in range(9):
+        buffer = pool.get_buffer()
+        buffers.append(buffer)
+    assert pool._allocated == 9
+
+    # Return only some buffers (keep 3 in use)
+    for buffer in buffers[:6]:
+        pool.release_buffer(buffer)
+
+    # Wait for idle timeout
+    time.sleep(0.2)
+
+    # Trigger shrink check by doing get/release cycles from the pool
+    # The pool has 6 buffers available, 3 are still held by the test
+    for _ in range(100):
+        b = pool.get_buffer()
+        pool.release_buffer(b)
+
+    # Pool should NOT shrink because buffers are still in use
+    # (pool size < allocated since 3 buffers are still held)
+    assert pool._allocated == 9
+
+def test_frame_buffer_pool_shrink_check_counter():
+    """Test that shrink checks only happen every 100 releases."""
+    pool = FrameBufferPool(
+        name="TestPool",
+        max_buffers=10,
+        initial_buffers=5,
+        high_water_mark=8,
+        shrink_idle_seconds=0.1
+    )
+    sample_frame = np.zeros((10, 10), dtype=np.uint8)
+    pool.initialize(sample_frame, num_buffers=5)
+
+    # Allocate up to 9 buffers
+    buffers = []
+    for _ in range(9):
+        buffer = pool.get_buffer()
+        buffers.append(buffer)
+
+    # Return all buffers
+    for buffer in buffers:
+        pool.release_buffer(buffer)
+
+    # Wait for idle timeout
+    time.sleep(0.2)
+
+    # Release buffer only 50 times (should not trigger shrink)
+    for _ in range(50):
+        buffer = pool.get_buffer()
+        pool.release_buffer(buffer)
+
+    # Should not have shrunk yet
+    assert pool._allocated == 9
+
+    # Release 50 more times (total 100, should trigger shrink)
+    for _ in range(50):
+        buffer = pool.get_buffer()
+        pool.release_buffer(buffer)
+
+    # Should have shrunk now
+    assert pool._allocated == 5
+
+def test_frame_buffer_pool_initialize_default_initial_buffers():
+    """Test that initialize uses initial_buffers as default when num_buffers not specified."""
+    pool = FrameBufferPool(
+        name="TestPool",
+        max_buffers=10,
+        initial_buffers=7  # Custom initial size
+    )
+    sample_frame = np.zeros((10, 10), dtype=np.uint8)
+    pool.initialize(sample_frame)  # No num_buffers specified
+
+    # Should use initial_buffers
+    assert pool._allocated == 7
+    assert pool._pool.qsize() == 7
+
 
 # --- Mocks and Fixtures for Thread Tests ---
 

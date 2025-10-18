@@ -46,17 +46,28 @@ class RefCountedFrame:
 
 
 class FrameBufferPool:
-    """Manages a pool of pre-allocated numpy arrays to avoid repeated memory allocation."""
-    def __init__(self, name="DefaultPool", max_buffers=10):
+    """Manages a pool of pre-allocated numpy arrays to avoid repeated memory allocation.
+
+    Uses a water-mark based shrinking strategy to prevent unbounded memory growth:
+    - Starts with initial_buffers (default: 5)
+    - Can grow up to max_buffers (default: 10) during high load
+    - Shrinks back to initial_buffers when pool size exceeds high_water_mark and is idle
+    """
+    def __init__(self, name="DefaultPool", max_buffers=10, initial_buffers=5, high_water_mark=8, shrink_idle_seconds=10.0):
         self._pool = queue.Queue()
         self._buffer_shape = None
         self._buffer_dtype = None
         self._allocated = 0
         self._name = name
         self._max_buffers = max_buffers
+        self._initial_buffers = initial_buffers
+        self._high_water_mark = high_water_mark
+        self._shrink_idle_seconds = shrink_idle_seconds
         self._lock = threading.Lock()
+        self._last_allocation_time = None
+        self._shrink_check_counter = 0
 
-    def initialize(self, frame, num_buffers=5):
+    def initialize(self, frame, num_buffers=None):
         """Initializes the pool with buffers matching the shape and type of a sample frame."""
 
         # Already initialized with correct shape
@@ -64,6 +75,9 @@ class FrameBufferPool:
             return
 
         # If shape is different, we need to re-initialize.
+        if num_buffers is None:
+            num_buffers = self._initial_buffers
+
         print(f"[{self._name}] Initializing buffer pool for shape {frame.shape}...")
         self._pool = queue.Queue()
         self._buffer_shape = frame.shape
@@ -71,6 +85,8 @@ class FrameBufferPool:
         for _ in range(num_buffers):
             self._pool.put(np.empty(self._buffer_shape, dtype=self._buffer_dtype))
         self._allocated = num_buffers
+        self._last_allocation_time = None
+        self._shrink_check_counter = 0
         print(f"[{self._name}] Buffer pool initialized with {num_buffers} buffers (max: {self._max_buffers}).")
 
     def get_buffer(self):
@@ -83,6 +99,7 @@ class FrameBufferPool:
                 with self._lock:
                     if self._allocated < self._max_buffers:
                         self._allocated += 1
+                        self._last_allocation_time = time.time()
                         print(f"[{self._name}] Pool empty, allocating new buffer. Total allocated: {self._allocated}")
                         return np.empty(self._buffer_shape, dtype=self._buffer_dtype)
                     else:
@@ -92,8 +109,62 @@ class FrameBufferPool:
             return None
 
     def release_buffer(self, buffer):
-        """Returns a buffer to the pool for reuse."""
+        """Returns a buffer to the pool for reuse.
+
+        Implements water-mark based shrinking to prevent unbounded memory growth.
+        Periodically checks if the pool should be shrunk back to initial size.
+        """
         self._pool.put(buffer)
+
+        # Check for shrinking periodically (every N releases) to avoid overhead
+        self._shrink_check_counter += 1
+        if self._shrink_check_counter >= 100:
+            self._shrink_check_counter = 0
+            self._try_shrink_pool()
+
+    def _try_shrink_pool(self):
+        """Attempts to shrink the pool if conditions are met.
+
+        Shrinking occurs when:
+        1. Pool has grown beyond high_water_mark
+        2. No new allocations have occurred for shrink_idle_seconds
+        3. Pool is currently full (all buffers returned)
+        """
+        with self._lock:
+            # Only shrink if we've grown beyond initial size
+            if self._allocated <= self._initial_buffers:
+                return
+
+            # Only shrink if we've exceeded the high water mark
+            if self._allocated < self._high_water_mark:
+                return
+
+            # Check if pool has been idle (no new allocations recently)
+            if self._last_allocation_time is not None:
+                idle_time = time.time() - self._last_allocation_time
+                if idle_time < self._shrink_idle_seconds:
+                    return
+
+            # Check if pool is currently full (indicates low demand)
+            current_pool_size = self._pool.qsize()
+            if current_pool_size < self._allocated:
+                # Buffers are still in use, don't shrink
+                return
+
+            # Perform the shrink: drain excess buffers
+            buffers_to_remove = self._allocated - self._initial_buffers
+            removed = 0
+            for _ in range(buffers_to_remove):
+                try:
+                    self._pool.get_nowait()
+                    removed += 1
+                except queue.Empty:
+                    break
+
+            if removed > 0:
+                self._allocated -= removed
+                print(f"[{self._name}] Shrunk pool by {removed} buffers. New size: {self._allocated}/{self._max_buffers}")
+                self._last_allocation_time = None  # Reset allocation tracking
 
 
 # --- Vision Processing Thread (Consumer) ---
