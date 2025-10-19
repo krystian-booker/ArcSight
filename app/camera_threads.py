@@ -328,6 +328,13 @@ class VisionProcessingThread(threading.Thread):
             "decode_sharpening": 0.25,
             "multi_tag_enabled": False,
             "field_layout": "",
+            "ransac_reproj_threshold": 1.2,
+            "ransac_confidence": 0.999,
+            "min_inliers": 12,
+            "use_prev_guess": True,
+            "publish_field_pose": True,
+            "output_quaternion": True,
+            "multi_tag_error_threshold": 6.0,
         }
         # This ensures user settings override defaults, but defaults are there as a fallback
         final_config = {**default_config, **pipeline_config}
@@ -424,19 +431,38 @@ class VisionProcessingThread(threading.Thread):
                     result = self.pipeline_instance.process_frame(
                         raw_frame, self.cam_matrix, self.dist_coeffs
                     )
-                    # Handle new return format: {"single_tags": [...], "multi_tag": {...}}
-                    single_tags = result.get("single_tags", [])
-                    multi_tag = result.get("multi_tag")
 
-                    ui_detections = [d["ui_data"] for d in single_tags]
-                    drawing_detections = [d["drawing_data"] for d in single_tags]
+                    detections_payload = result.get("detections")
+                    overlays = result.get("overlays")
+
+                    if detections_payload is None and "single_tags" in result:
+                        detections_payload = [
+                            entry.get("ui_data")
+                            for entry in result.get("single_tags", [])
+                            if entry.get("ui_data") is not None
+                        ]
+
+                    if overlays is None and "single_tags" in result:
+                        overlays = [
+                            entry.get("drawing_data")
+                            for entry in result.get("single_tags", [])
+                            if entry.get("drawing_data") is not None
+                        ]
+
+                    multi_tag_pose = result.get("multi_tag_pose")
+                    if multi_tag_pose is None and "multi_tag" in result:
+                        multi_tag_pose = result.get("multi_tag")
+
+                    detections = detections_payload or []
                     current_results = {
-                        "tags_found": len(ui_detections) > 0,
-                        "detections": ui_detections,
-                        "multi_tag": multi_tag,
+                        "tags_found": bool(detections),
+                        "detections": detections,
+                        "multi_tag_pose": multi_tag_pose,
                     }
-                    if drawing_detections:
-                        self._draw_3d_box_on_frame(annotated_frame, drawing_detections)
+                    if "multi_tag" in result:
+                        current_results["multi_tag"] = result.get("multi_tag")
+                    if overlays:
+                        self._draw_3d_box_on_frame(annotated_frame, overlays)
 
                 elif self.pipeline_type == "Object Detection (ML)":
                     detections = self.pipeline_instance.process_frame(

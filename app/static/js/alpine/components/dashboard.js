@@ -9,6 +9,18 @@ const APRILTAG_DEFAULTS = {
     refine_edges: true,
     decision_margin: 35,
     pose_iterations: 40,
+    decode_sharpening: 0.25,
+    min_weight: 0,
+    edge_threshold: 0,
+    multi_tag_enabled: false,
+    field_layout: '',
+    ransac_reproj_threshold: 1.2,
+    ransac_confidence: 0.999,
+    min_inliers: 12,
+    use_prev_guess: true,
+    publish_field_pose: true,
+    output_quaternion: true,
+    multi_tag_error_threshold: 6.0,
 };
 
 const COLOURED_DEFAULTS = {
@@ -48,6 +60,11 @@ function toStringId(value) {
         return '';
     }
     return String(value);
+}
+
+function toNumber(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 export function registerDashboardComponents(Alpine) {
@@ -491,13 +508,23 @@ export function registerDashboardComponents(Alpine) {
                 const form = this.pipelineForms.apriltag;
                 return {
                     family: form.family || 'tag36h11',
-                    tag_size_m: Number(form.tag_size_m) || 0,
-                    threads: Number(form.threads) || 1,
-                    decimate: Number(form.decimate) || 1,
-                    blur: Number(form.blur) || 0,
+                    tag_size_m: toNumber(form.tag_size_m, 0.165),
+                    threads: toNumber(form.threads, 1),
+                    decimate: toNumber(form.decimate, 1),
+                    blur: toNumber(form.blur, 0),
                     refine_edges: Boolean(form.refine_edges),
-                    decision_margin: Number(form.decision_margin) || 35,
-                    pose_iterations: Number(form.pose_iterations) || 40,
+                    decision_margin: toNumber(form.decision_margin, 35),
+                    pose_iterations: toNumber(form.pose_iterations, 40),
+                    decode_sharpening: toNumber(form.decode_sharpening, 0.25),
+                    multi_tag_enabled: Boolean(form.multi_tag_enabled),
+                    field_layout: form.field_layout ? String(form.field_layout) : '',
+                    ransac_reproj_threshold: toNumber(form.ransac_reproj_threshold, 1.2),
+                    ransac_confidence: toNumber(form.ransac_confidence, 0.999),
+                    min_inliers: Math.max(0, Math.round(toNumber(form.min_inliers, 12))),
+                    use_prev_guess: Boolean(form.use_prev_guess),
+                    publish_field_pose: Boolean(form.publish_field_pose),
+                    output_quaternion: Boolean(form.output_quaternion),
+                    multi_tag_error_threshold: toNumber(form.multi_tag_error_threshold, 6),
                 };
             }
 

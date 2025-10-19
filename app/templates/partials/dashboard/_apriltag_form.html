@@ -203,6 +203,132 @@
                 >
                 <span title="Refines tag edges for more accurate pose estimation.">Refine edges</span>
             </label>
+            <div class="form-field">
+                <label class="form-label" title="Sharpens gradients before decoding tags.">Decode Sharpening (0-1)</label>
+                <div class="cluster">
+                    <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        class="form-range"
+                        x-model.number="pipelineForms.apriltag.decode_sharpening"
+                        @input.debounce.300="queuePipelineSave"
+                    >
+                    <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        class="form-control form-control--small"
+                        x-model.number="pipelineForms.apriltag.decode_sharpening"
+                        @change.debounce.300="queuePipelineSave"
+                    >
+                </div>
+            </div>
+            <div class="surface surface--subtle stack stack-sm">
+                <header class="stack stack-xs">
+                    <h4 class="text-small">Multi-Tag Pose</h4>
+                    <p class="muted text-xsmall">Enable when a WPILib field layout is available to recover the camera pose.</p>
+                </header>
+                <label class="cluster text-small">
+                    <input
+                        type="checkbox"
+                        class="form-checkbox"
+                        x-model="pipelineForms.apriltag.multi_tag_enabled"
+                        @change="queuePipelineSave"
+                    >
+                    <span>Enable multi-tag solver</span>
+                </label>
+                <div class="form-field">
+                    <label class="form-label text-small" title="Paste the JSON exported by WPILib describing the AprilTag field layout.">Field Layout JSON</label>
+                    <textarea
+                        rows="4"
+                        class="form-control text-small"
+                        x-model="pipelineForms.apriltag.field_layout"
+                        @change.debounce.500="queuePipelineSave"
+                        :disabled="!pipelineForms.apriltag.multi_tag_enabled"
+                    ></textarea>
+                </div>
+                <div class="grid-2 grid-tight">
+                    <div class="form-field">
+                        <label class="form-label text-small" title="Maximum allowed reprojection error during RANSAC.">RANSAC Threshold (px)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            class="form-control form-control--small"
+                            x-model.number="pipelineForms.apriltag.ransac_reproj_threshold"
+                            @change.debounce.300="queuePipelineSave"
+                            :disabled="!pipelineForms.apriltag.multi_tag_enabled"
+                        >
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label text-small" title="Probability that the computed pose is correct.">RANSAC Confidence</label>
+                        <input
+                            type="number"
+                            min="0.5"
+                            max="0.9999"
+                            step="0.001"
+                            class="form-control form-control--small"
+                            x-model.number="pipelineForms.apriltag.ransac_confidence"
+                            @change.debounce.300="queuePipelineSave"
+                            :disabled="!pipelineForms.apriltag.multi_tag_enabled"
+                        >
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label text-small" title="Minimum inlier corners across all tags required for a valid pose.">Min Inliers</label>
+                        <input
+                            type="number"
+                            min="4"
+                            class="form-control form-control--small"
+                            x-model.number="pipelineForms.apriltag.min_inliers"
+                            @change.debounce.300="queuePipelineSave"
+                            :disabled="!pipelineForms.apriltag.multi_tag_enabled"
+                        >
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label text-small" title="Reject tags whose mean reprojection error exceeds this value.">Prune Error (px)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            class="form-control form-control--small"
+                            x-model.number="pipelineForms.apriltag.multi_tag_error_threshold"
+                            @change.debounce.300="queuePipelineSave"
+                            :disabled="!pipelineForms.apriltag.multi_tag_enabled"
+                        >
+                    </div>
+                </div>
+                <label class="cluster text-small">
+                    <input
+                        type="checkbox"
+                        class="form-checkbox"
+                        x-model="pipelineForms.apriltag.use_prev_guess"
+                        @change="queuePipelineSave"
+                        :disabled="!pipelineForms.apriltag.multi_tag_enabled"
+                    >
+                    <span>Use previous pose as solver hint</span>
+                </label>
+                <label class="cluster text-small">
+                    <input
+                        type="checkbox"
+                        class="form-checkbox"
+                        x-model="pipelineForms.apriltag.publish_field_pose"
+                        @change="queuePipelineSave"
+                    >
+                    <span>Publish camera pose in field coordinates</span>
+                </label>
+                <label class="cluster text-small">
+                    <input
+                        type="checkbox"
+                        class="form-checkbox"
+                        x-model="pipelineForms.apriltag.output_quaternion"
+                        @change="queuePipelineSave"
+                    >
+                    <span>Include quaternion output</span>
+                </label>
+            </div>
         </div>
 
         <div class="stack stack-lg">
@@ -219,24 +345,50 @@
                                 <th>Yaw (°)</th>
                                 <th>Pitch (°)</th>
                                 <th>Roll (°)</th>
-                                <th>Error</th>
+                                <th>Pose Err</th>
+                                <th>Reproj (px)</th>
                             </tr>
                         </thead>
                         <tbody>
                             <template x-for="(target, index) in results.apriltag" :key="target.id ?? index">
-                                <tr>
-                                    <td x-text="target.id ?? index"></td>
-                                    <td x-text="formatNumber(target.x_m, 3)"></td>
-                                    <td x-text="formatNumber(target.y_m, 3)"></td>
-                                    <td x-text="formatNumber(target.z_m, 3)"></td>
-                                    <td x-text="formatNumber(target.yaw_deg, 2)"></td>
-                                    <td x-text="formatNumber(target.pitch_deg, 2)"></td>
-                                    <td x-text="formatNumber(target.roll_deg, 2)"></td>
-                                    <td x-text="formatNumber(target.pose_error, 4)"></td>
-                                </tr>
+                                <template>
+                                    <tr>
+                                        <td x-text="target.id ?? index"></td>
+                                        <td x-text="formatNumber(target.camera_to_tag?.translation?.x, 3)"></td>
+                                        <td x-text="formatNumber(target.camera_to_tag?.translation?.y, 3)"></td>
+                                        <td x-text="formatNumber(target.camera_to_tag?.translation?.z, 3)"></td>
+                                        <td x-text="formatNumber(target.camera_to_tag?.rotation?.euler_deg?.yaw, 2)"></td>
+                                        <td x-text="formatNumber(target.camera_to_tag?.rotation?.euler_deg?.pitch, 2)"></td>
+                                        <td x-text="formatNumber(target.camera_to_tag?.rotation?.euler_deg?.roll, 2)"></td>
+                                        <td x-text="formatNumber(target.pose_error, 4)"></td>
+                                        <td x-text="formatNumber(target.reprojection_error, 4)"></td>
+                                    </tr>
+                                    <tr class="muted text-xsmall">
+                                        <td colspan="2">Quat (w,x,y,z)</td>
+                                        <td colspan="3">
+                                            <span x-text="formatNumber(target.camera_to_tag?.rotation?.quaternion?.w, 4)"></span>,
+                                            <span x-text="formatNumber(target.camera_to_tag?.rotation?.quaternion?.x, 4)"></span>,
+                                            <span x-text="formatNumber(target.camera_to_tag?.rotation?.quaternion?.y, 4)"></span>,
+                                            <span x-text="formatNumber(target.camera_to_tag?.rotation?.quaternion?.z, 4)"></span>
+                                        </td>
+                                        <td colspan="4">
+                                            <template x-if="target.camera_pose_field">
+                                                <span>
+                                                    Field XYZ:
+                                                    <span x-text="formatNumber(target.camera_pose_field?.translation?.x, 3)"></span>,
+                                                    <span x-text="formatNumber(target.camera_pose_field?.translation?.y, 3)"></span>,
+                                                    <span x-text="formatNumber(target.camera_pose_field?.translation?.z, 3)"></span>
+                                                </span>
+                                            </template>
+                                            <template x-if="!target.camera_pose_field">
+                                                <span>No field layout</span>
+                                            </template>
+                                        </td>
+                                    </tr>
+                                </template>
                             </template>
                             <tr x-show="!results.apriltag.length">
-                                <td colspan="8" class="muted text-center text-small">No targets detected</td>
+                                <td colspan="9" class="muted text-center text-small">No targets detected</td>
                             </tr>
                         </tbody>
                     </table>
@@ -246,15 +398,46 @@
             <div class="surface stack stack-sm" x-show="results.multiTag" x-cloak style="border-color: rgba(0, 194, 168, 0.16);">
                 <h4>Multi-Tag Pose</h4>
                 <div class="grid-2 grid-tight text-small">
-                    <div><span class="muted">Tags used:</span> <span x-text="(results.multiTag?.tag_ids || []).length || '0'"></span></div>
-                    <div><span class="muted">Error:</span> <span x-text="formatNumber(results.multiTag?.pose_error, 4)"></span></div>
-                    <div><span class="muted">X (m):</span> <span x-text="formatNumber(results.multiTag?.x_m, 3)"></span></div>
-                    <div><span class="muted">Y (m):</span> <span x-text="formatNumber(results.multiTag?.y_m, 3)"></span></div>
-                    <div><span class="muted">Z (m):</span> <span x-text="formatNumber(results.multiTag?.z_m, 3)"></span></div>
-                    <div><span class="muted">Yaw (°):</span> <span x-text="formatNumber(results.multiTag?.yaw_deg, 2)"></span></div>
-                    <div><span class="muted">Pitch (°):</span> <span x-text="formatNumber(results.multiTag?.pitch_deg, 2)"></span></div>
-                    <div><span class="muted">Roll (°):</span> <span x-text="formatNumber(results.multiTag?.roll_deg, 2)"></span></div>
+                    <div><span class="muted">Tags used:</span> <span x-text="(results.multiTag?.tag_ids_used || []).length || '0'"></span></div>
+                    <div><span class="muted">Inliers:</span> <span x-text="results.multiTag?.num_inliers ?? '0'"></span></div>
+                    <div><span class="muted">Mean reproj (px):</span> <span x-text="formatNumber(results.multiTag?.mean_reproj_error, 3)"></span></div>
+                    <div><span class="muted">Max reproj (px):</span> <span x-text="formatNumber(results.multiTag?.max_reproj_error, 3)"></span></div>
                 </div>
+                <template x-if="results.multiTag?.camera_to_field">
+                    <div class="stack stack-xs text-small">
+                        <div class="muted">Camera → Field (translation m)</div>
+                        <div>
+                            X:<span x-text="formatNumber(results.multiTag.camera_to_field.translation.x, 3)"></span>,
+                            Y:<span x-text="formatNumber(results.multiTag.camera_to_field.translation.y, 3)"></span>,
+                            Z:<span x-text="formatNumber(results.multiTag.camera_to_field.translation.z, 3)"></span>
+                        </div>
+                        <div class="muted">Euler (°)</div>
+                        <div>
+                            Yaw:<span x-text="formatNumber(results.multiTag.camera_to_field.rotation.euler_deg.yaw, 2)"></span>,
+                            Pitch:<span x-text="formatNumber(results.multiTag.camera_to_field.rotation.euler_deg.pitch, 2)"></span>,
+                            Roll:<span x-text="formatNumber(results.multiTag.camera_to_field.rotation.euler_deg.roll, 2)"></span>
+                        </div>
+                        <div class="muted">Quaternion (w,x,y,z)</div>
+                        <div>
+                            <span x-text="formatNumber(results.multiTag.camera_to_field.rotation.quaternion.w, 4)"></span>,
+                            <span x-text="formatNumber(results.multiTag.camera_to_field.rotation.quaternion.x, 4)"></span>,
+                            <span x-text="formatNumber(results.multiTag.camera_to_field.rotation.quaternion.y, 4)"></span>,
+                            <span x-text="formatNumber(results.multiTag.camera_to_field.rotation.quaternion.z, 4)"></span>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="results.multiTag?.per_tag_error">
+                    <div class="stack stack-xs text-small">
+                        <div class="muted">Per-Tag Error (px)</div>
+                        <template x-for="(metrics, tagId) in results.multiTag.per_tag_error" :key="tagId">
+                            <div>
+                                <span class="muted">Tag </span><span x-text="tagId"></span>:
+                                μ=<span x-text="formatNumber(metrics.mean_reproj_error, 3)"></span>,
+                                max=<span x-text="formatNumber(metrics.max_reproj_error, 3)"></span>
+                            </div>
+                        </template>
+                    </div>
+                </template>
             </div>
         </div>
     </div>

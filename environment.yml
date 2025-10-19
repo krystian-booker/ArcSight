@@ -23,6 +23,7 @@ dependencies:
       - harvesters
       - genicam
       - robotpy-apriltag
+      - robotpy-wpimath
       - depthai
       
       # ML inference and conversion
