@@ -1,0 +1,150 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.stack-xs {
+  gap: var(--space-xs);
+}
+
+.stack-md {
+  gap: var(--space-md);
+}
+
+.stack-sm {
+  gap: var(--space-sm);
+}
+
+.stack-lg {
+  gap: var(--space-lg);
+}
+
+.stack-xl {
+  gap: var(--space-xl);
+}
+
+.stack-2xl {
+  gap: var(--space-2xl);
+}
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.cluster-wrap {
+  flex-wrap: wrap;
+}
+
+.grid-2 {
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.grid-3 {
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.grid-tight {
+  gap: var(--space-md);
+}
+
+.grid-loose {
+  gap: var(--space-xl);
+}
+
+.surface {
+  background: rgba(30, 30, 30, 0.95);
+  border-radius: var(--arc-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.muted {
+  color: var(--arc-muted);
+}
+
+.align-start {
+  align-items: flex-start;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.grow {
+  flex-grow: 1;
+}
+
+.w-100 {
+  width: 100%;
+}
+
+.monospace {
+  font-family: var(--arc-font-mono);
+}
+
+.text-small {
+  font-size: 0.85rem;
+}
+
+.text-xs {
+  font-size: 0.75rem;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.uppercase {
+  text-transform: uppercase;
+}
+
+.divider {
+  height: 1px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.callout {
+  padding: var(--space-md);
+  border-radius: var(--arc-radius-md);
+  background: rgba(0, 194, 168, 0.08);
+  border: 1px solid rgba(0, 194, 168, 0.24);
+}
+
+.callout-danger {
+  background: rgba(212, 46, 18, 0.08);
+  border-color: rgba(212, 46, 18, 0.25);
+  color: var(--arc-primary);
+}
+
+.callout-warn {
+  background: rgba(240, 180, 41, 0.08);
+  border-color: rgba(240, 180, 41, 0.25);
+  color: var(--arc-warning);
+}
+
+.app-content a {
+  position: relative;
+  background-image: linear-gradient(90deg, rgba(212, 46, 18, 0.8), rgba(0, 194, 168, 0.85));
+  background-repeat: no-repeat;
+  background-size: 0% 2px;
+  background-position: 0 100%;
+  padding-bottom: 2px;
+  transition: background-size var(--arc-speed) var(--arc-ease-out), color var(--arc-speed) var(--arc-ease-out);
+}
+
+.app-content a:hover,
+.app-content a:focus-visible {
+  background-size: 100% 2px;
+  color: var(--arc-accent);
+}

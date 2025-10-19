@@ -7,220 +7,235 @@
         genicam_enabled: {{ 'true' if genicam_enabled else 'false' }}
     })"
     x-cloak
-    class="space-y-6"
+    class="stack stack-2xl"
 >
-    <div class="flex items-center justify-between">
-        <h1 class="text-3xl font-bold">Cameras</h1>
+    <header class="cluster cluster-wrap justify-between align-start">
+        <div class="stack stack-sm">
+            <h1>Cameras</h1>
+            <p class="muted text-small">Manage capture devices, inspect driver status, and configure GenICam nodes when available.</p>
+        </div>
         <button
             type="button"
-            class="inline-flex items-center px-4 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow"
+            class="button button--primary"
             @click="openAddModal"
         >
             Add Camera
         </button>
-    </div>
+    </header>
 
-    <div class="bg-gray-800 rounded-lg shadow p-4">
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-700">
-                <thead class="bg-gray-700">
+    <section class="panel stack stack-lg">
+        <header class="cluster cluster-wrap justify-between align-start">
+            <div class="stack stack-xs">
+                <h2 class="panel-title">Registered Cameras</h2>
+                <p class="panel-hint">ArcSight keeps camera connections warm; status updates stream live.</p>
+            </div>
+            <div class="status-pill" :class="cameras.length ? 'status-pill--ok' : 'status-pill--warn'">
+                <span class="status-pill__dot"></span>
+                <span x-text="`${cameras.length} device${cameras.length === 1 ? '' : 's'}`"></span>
+            </div>
+        </header>
+        <div style="overflow-x:auto;">
+            <table class="table">
+                <thead>
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Identifier</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Identifier</th>
+                        <th>Status</th>
+                        <th class="text-right">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="bg-gray-800 divide-y divide-gray-700">
+                <tbody>
                     <template x-for="camera in cameras" :key="camera.id">
                         <template>
-                            <tr
-                                class="hover:bg-gray-750 transition"
-                                x-init="camera.camera_type === 'GenICam' && ensureNodePanel(camera.id)"
-                            >
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white" x-text="camera.name"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300" x-text="camera.camera_type"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300" x-text="camera.identifier || '—'"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <tr x-init="camera.camera_type === 'GenICam' && ensureNodePanel(camera.id)">
+                                <td>
+                                    <div class="stack stack-xs">
+                                        <span x-text="camera.name"></span>
+                                        <span class="muted text-small" x-text="`ID: ${camera.id}`"></span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="muted text-small" x-text="camera.camera_type"></span>
+                                </td>
+                                <td>
+                                    <span class="muted text-small" x-text="camera.identifier || '—'"></span>
+                                </td>
+                                <td>
                                     <template x-if="status[camera.id]?.loading">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-500 text-yellow-900">
+                                        <span class="status-pill status-pill--warn">
+                                            <span class="status-pill__dot"></span>
                                             Checking…
                                         </span>
                                     </template>
                                     <template x-if="status[camera.id] && status[camera.id].connected === true">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-500 text-green-900">
+                                        <span class="status-pill status-pill--ok">
+                                            <span class="status-pill__dot"></span>
                                             Connected
                                         </span>
                                     </template>
                                     <template x-if="status[camera.id] && status[camera.id].connected === false">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-500 text-red-900">
+                                        <span class="status-pill status-pill--error">
+                                            <span class="status-pill__dot"></span>
                                             Disconnected
                                         </span>
                                     </template>
                                     <template x-if="status[camera.id] && status[camera.id].connected === null && !status[camera.id].loading">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-500 text-gray-900">
+                                        <span class="status-pill status-pill--warn">
+                                            <span class="status-pill__dot"></span>
                                             Error
                                         </span>
                                     </template>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-right space-x-3">
-                                    <button
-                                        type="button"
-                                        class="text-indigo-400 hover:text-indigo-200"
-                                        x-show="camera.camera_type === 'GenICam'"
-                                        @click="toggleNodePanel(camera.id)"
-                                    >
-                                        <span x-show="!(nodePanels[camera.id]?.open)">Nodes</span>
-                                        <span x-show="nodePanels[camera.id]?.open">Hide</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="text-indigo-400 hover:text-indigo-200"
-                                        @click="openEditModal(camera)"
-                                    >
-                                        Edit
-                                    </button>
-                                    <form
-                                        method="POST"
-                                        class="inline"
-                                        :action="`/cameras/delete/${camera.id}`"
-                                        x-on:submit.prevent="if (confirm(deleteConfirmationMessage(camera))) {$event.target.submit();}"
-                                    >
-                                        <button type="submit" class="text-red-500 hover:text-red-300">Delete</button>
-                                    </form>
+                                <td class="text-right">
+                                    <div class="cluster cluster-wrap justify-end">
+                                        <button
+                                            type="button"
+                                            class="button-text"
+                                            x-show="camera.camera_type === 'GenICam'"
+                                            @click="toggleNodePanel(camera.id)"
+                                        >
+                                            <span x-show="!(nodePanels[camera.id]?.open)">Nodes</span>
+                                            <span x-show="nodePanels[camera.id]?.open">Hide</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="button-text"
+                                            @click="openEditModal(camera)"
+                                        >
+                                            Rename
+                                        </button>
+                                        <form
+                                            method="POST"
+                                            :action="`/cameras/delete/${camera.id}`"
+                                            @submit.prevent="confirm(deleteConfirmationMessage(camera)) && $event.target.submit()"
+                                        >
+                                            <button
+                                                type="submit"
+                                                class="button-text"
+                                                style="color: var(--arc-primary);"
+                                            >
+                                                Delete
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
-                            <tr
-                                class="bg-gray-900"
-                                x-show="camera.camera_type === 'GenICam' && nodePanels[camera.id]?.open"
-                                x-cloak
-                            >
-                                <td colspan="5" class="px-6 py-4">
-                                    <div class="space-y-4">
-                                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                                            <div>
-                                                <h3 class="text-lg font-semibold text-white">GenICam Node Map</h3>
-                                                <p class="text-xs text-gray-400">Inspect and configure the camera's remote device parameters.</p>
+                            <tr x-show="nodePanels[camera.id]?.open" x-cloak>
+                                <td colspan="5">
+                                    <div class="surface stack stack-lg" x-data="{ panel: nodePanels[camera.id] }">
+                                        <div class="cluster cluster-wrap justify-between align-start">
+                                            <div class="stack stack-xs">
+                                                <h4>GenICam Node Map</h4>
+                                                <p class="muted text-small">Filter writable nodes or inspect current values straight from the device.</p>
                                             </div>
-                                            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                                            <div class="cluster cluster-wrap">
                                                 <input
                                                     type="text"
-                                                    placeholder="Search nodes…"
-                                                    class="w-full sm:w-64 bg-gray-700 border border-gray-600 rounded-md text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                                    x-model.debounce.300ms="nodePanels[camera.id].filter.query"
+                                                    class="form-control"
+                                                    placeholder="Filter nodes"
+                                                    x-model="panel.filter.query"
                                                 >
-                                                <label class="inline-flex items-center text-sm text-gray-300">
+                                                <label class="cluster text-small">
                                                     <input
                                                         type="checkbox"
-                                                        class="mr-2 rounded bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500"
-                                                        x-model="nodePanels[camera.id].filter.showAll"
+                                                        class="form-checkbox"
+                                                        x-model="panel.filter.showAll"
                                                     >
-                                                    Show all
+                                                    <span>Show raw nodes</span>
                                                 </label>
                                                 <button
                                                     type="button"
-                                                    class="inline-flex justify-center px-3 py-2 text-sm font-medium rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow"
+                                                    class="button-icon"
+                                                    title="Refresh node map"
                                                     @click="loadNodeMap(camera.id, { force: true })"
+                                                    :disabled="panel.loading"
                                                 >
-                                                    Refresh
+                                                    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M4 5a6 6 0 0 1 10.39-4H11v2h6V1h-2.12A8 8 0 1 0 4 15.9l1.4-1.45A6 6 0 0 1 4 5Zm12 5a6 6 0 0 1-10.39 4H9v-2H3v6h2.12A8 8 0 1 0 16 4.1l-1.4 1.45A6 6 0 0 1 16 10Z"/></svg>
                                                 </button>
                                             </div>
                                         </div>
-
-                                        <div class="border border-gray-700 rounded-lg overflow-hidden">
-                                            <template x-if="nodePanels[camera.id].loading">
-                                                <div class="p-4 text-sm text-gray-400">Loading nodes…</div>
-                                            </template>
-                                            <template x-if="nodePanels[camera.id].error">
-                                                <div class="p-4 text-sm text-red-400" x-text="nodePanels[camera.id].error"></div>
-                                            </template>
-                                            <template x-if="!nodePanels[camera.id].loading && !nodePanels[camera.id].error">
-                                                <div class="overflow-x-auto">
-                                                    <table class="min-w-full divide-y divide-gray-700">
-                                                        <thead class="bg-gray-750">
-                                                            <tr>
-                                                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Node</th>
-                                                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Value</th>
-                                                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Type</th>
-                                                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Update</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody class="bg-gray-800 divide-y divide-gray-700">
-                                                            <template x-for="node in filteredNodes(camera.id)" :key="node.name">
-                                                                <tr :data-node-name="node.name">
-                                                                    <td class="px-4 py-3 align-top">
-                                                                        <div class="text-sm font-medium text-white" x-text="node.display_name || node.name"></div>
-                                                                        <div class="text-xs text-gray-400 break-all" x-text="node.name"></div>
-                                                                        <div class="text-xs text-gray-500 mt-1" x-text="node.description"></div>
-                                                                    </td>
-                                                                    <td class="px-4 py-3 text-sm text-gray-200 align-top" x-text="node.value ?? '—'"></td>
-                                                                    <td class="px-4 py-3 text-sm text-gray-300 align-top" x-text="node.interface_type"></td>
-                                                                    <td class="px-4 py-3 text-sm align-top">
-                                                                        <template x-if="node.is_writable">
-                                                                            <form class="space-y-2" @submit.prevent="submitNode(camera.id, node)">
-                                                                                <div>
-                                                                                    <template x-if="node.interface_type === 'boolean'">
-                                                                                        <select
-                                                                                            class="custom-select w-full"
-                                                                                            x-model="node.workingValue"
-                                                                                        >
-                                                                                            <option value="True">True</option>
-                                                                                            <option value="False">False</option>
-                                                                                        </select>
+                                        <div class="callout text-small" x-show="panel.loading">Loading node map…</div>
+                                        <div class="callout callout-danger text-small" x-show="panel.error" x-text="panel.error"></div>
+                                        <div style="overflow-x:auto;">
+                                            <table class="table table--compact">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                        <th>Value</th>
+                                                        <th>Interface</th>
+                                                        <th>Write</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <template x-for="node in filteredNodes(camera.id)" :key="node.name">
+                                                        <tr>
+                                                            <td>
+                                                                <div class="stack stack-xs">
+                                                                    <span x-text="node.name"></span>
+                                                                    <span class="muted text-small" x-text="node.display_name || '—'"></span>
+                                                                </div>
+                                                            </td>
+                                                            <td class="muted text-small" x-text="node.value ?? '—'"></td>
+                                                            <td class="muted text-small" x-text="node.interface_type"></td>
+                                                            <td>
+                                                                <template x-if="node.is_writable">
+                                                                    <form class="stack stack-sm" @submit.prevent="submitNode(camera.id, node)">
+                                                                        <div>
+                                                                            <template x-if="node.interface_type === 'boolean'">
+                                                                                <select class="form-control" x-model="node.workingValue">
+                                                                                    <option value="True">True</option>
+                                                                                    <option value="False">False</option>
+                                                                                </select>
+                                                                            </template>
+                                                                            <template x-if="node.interface_type === 'enumeration'">
+                                                                                <select class="form-control" x-model="node.workingValue">
+                                                                                    <template x-for="choice in node.choices || []" :key="choice">
+                                                                                        <option :value="choice" x-text="choice"></option>
                                                                                     </template>
-                                                                                    <template x-if="node.interface_type === 'enumeration'">
-                                                                                        <select
-                                                                                            class="custom-select w-full"
-                                                                                            x-model="node.workingValue"
-                                                                                        >
-                                                                                            <template x-for="choice in node.choices || []" :key="choice">
-                                                                                                <option :value="choice" x-text="choice"></option>
-                                                                                            </template>
-                                                                                        </select>
-                                                                                    </template>
-                                                                                    <template x-if="['integer', 'float', 'string'].includes(node.interface_type)">
-                                                                                        <input
-                                                                                            class="custom-select w-full"
-                                                                                            :type="node.interface_type === 'string' ? 'text' : 'number'"
-                                                                                            :step="node.interface_type === 'float' ? 'any' : 1"
-                                                                                            x-model="node.workingValue"
-                                                                                        >
-                                                                                    </template>
-                                                                                </div>
-                                                                                <div class="flex items-center gap-2">
-                                                                                    <button
-                                                                                        type="submit"
-                                                                                        class="inline-flex items-center px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium"
-                                                                                        :disabled="node.saving"
-                                                                                    >
-                                                                                        <span x-show="!node.saving">Update</span>
-                                                                                        <span x-show="node.saving">Saving…</span>
-                                                                                    </button>
-                                                                                    <span
-                                                                                        class="text-xs"
-                                                                                        x-show="node.feedback"
-                                                                                        :class="node.feedbackType === 'success' ? 'text-green-400' : 'text-red-400'"
-                                                                                        x-text="node.feedback"
-                                                                                    ></span>
-                                                                                </div>
-                                                                            </form>
-                                                                        </template>
-                                                                        <template x-if="!node.is_writable">
-                                                                            <span class="text-xs text-gray-500">Read only</span>
-                                                                        </template>
-                                                                    </td>
-                                                                </tr>
-                                                            </template>
-                                                            <tr x-show="!filteredNodes(camera.id).length">
-                                                                <td colspan="4" class="px-4 py-4 text-center text-sm text-gray-400">
-                                                                    No configurable nodes match your filters.
-                                                                </td>
-                                                            </tr>
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </template>
+                                                                                </select>
+                                                                            </template>
+                                                                            <template x-if="['integer', 'float', 'string'].includes(node.interface_type)">
+                                                                                <input
+                                                                                    class="form-control"
+                                                                                    :type="node.interface_type === 'string' ? 'text' : 'number'"
+                                                                                    :step="node.interface_type === 'float' ? 'any' : 1"
+                                                                                    x-model="node.workingValue"
+                                                                                >
+                                                                            </template>
+                                                                        </div>
+                                                                        <div class="cluster cluster-wrap">
+                                                                            <button
+                                                                                type="submit"
+                                                                                class="button button--primary"
+                                                                                :disabled="node.saving"
+                                                                            >
+                                                                                <span x-show="!node.saving">Update</span>
+                                                                                <span x-show="node.saving">Saving…</span>
+                                                                            </button>
+                                                                            <span
+                                                                                class="badge"
+                                                                                x-show="node.feedback"
+                                                                                :class="{
+                                                                                    'badge--ok': node.feedbackType === 'success',
+                                                                                    'badge--error': node.feedbackType !== 'success'
+                                                                                }"
+                                                                                x-text="node.feedback"
+                                                                            ></span>
+                                                                        </div>
+                                                                    </form>
+                                                                </template>
+                                                                <template x-if="!node.is_writable">
+                                                                    <span class="muted text-small">Read only</span>
+                                                                </template>
+                                                            </td>
+                                                        </tr>
+                                                    </template>
+                                                    <tr x-show="!filteredNodes(camera.id).length">
+                                                        <td colspan="4" class="muted text-center text-small">No configurable nodes match your filters.</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
                                 </td>
@@ -228,120 +243,118 @@
                         </template>
                     </template>
                     <tr x-show="!cameras.length">
-                        <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-400">No cameras configured yet.</td>
+                        <td colspan="5" class="muted text-center text-small">No cameras configured yet.</td>
                     </tr>
                 </tbody>
             </table>
         </div>
-    </div>
+    </section>
 
-    <!-- Add Camera Modal -->
     <div
-        class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-40"
+        class="modal-overlay"
         x-show="addModal.open"
         x-transition
     >
-        <div
-            class="bg-gray-800 rounded-lg shadow-xl w-full max-w-xl overflow-hidden"
-            @click.away="closeAddModal"
-        >
-            <div class="px-6 py-4 border-b border-gray-700">
-                <h2 class="text-lg font-semibold text-white">Add Camera</h2>
-                <p class="text-sm text-gray-400">Discovery runs in the background; select a device to pair.</p>
-            </div>
-            <form method="POST" action="{{ url_for('cameras.add_camera') }}">
-                <div class="px-6 py-5 space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">Camera Name</label>
-                        <input
-                            name="camera-name"
-                            type="text"
-                            class="mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            x-model="addModal.name"
-                            required
-                        >
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">Camera Type</label>
-                        <select
-                            name="camera-type"
-                            class="mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            x-model="addModal.camera_type"
-                            required
-                        >
-                            <option value="">Select a type…</option>
-                            <option value="USB">USB Camera</option>
-                            <template x-if="genicamEnabled">
-                                <option value="GenICam">GenICam</option>
-                            </template>
-                            <option value="OAK-D">OAK-D (DepthAI)</option>
-                        </select>
-                    </div>
-
-                    <div x-show="addModal.camera_type === 'USB'" x-cloak>
-                        <label class="block text-sm font-medium text-gray-300">USB Cameras</label>
-                        <select
-                            name="usb-camera-select"
-                            class="mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            x-model="addModal.selections.usb"
-                            :disabled="addModal.loading"
-                            required
-                        >
-                            <option value="" x-show="!(addModal.options.usb && addModal.options.usb.length)">No USB cameras found</option>
-                            <template x-for="device in addModal.options.usb" :key="device.identifier">
-                                <option :value="device.identifier" x-text="device.name"></option>
-                            </template>
-                        </select>
-                    </div>
-
-                    <div x-show="addModal.camera_type === 'GenICam'" x-cloak>
-                        <label class="block text-sm font-medium text-gray-300">GenICam Cameras</label>
-                        <select
-                            name="genicam-camera-select"
-                            class="mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            x-model="addModal.selections.genicam"
-                            :disabled="addModal.loading"
-                            required
-                        >
-                            <option value="" x-show="!(addModal.options.genicam && addModal.options.genicam.length)">No GenICam cameras found</option>
-                            <template x-for="device in addModal.options.genicam" :key="device.identifier">
-                                <option :value="device.identifier" x-text="device.name"></option>
-                            </template>
-                        </select>
-                    </div>
-
-                    <div x-show="addModal.camera_type === 'OAK-D'" x-cloak>
-                        <label class="block text-sm font-medium text-gray-300">OAK-D Cameras</label>
-                        <select
-                            name="oakd-camera-select"
-                            class="mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            x-model="addModal.selections.oakd"
-                            :disabled="addModal.loading"
-                            required
-                        >
-                            <option value="" x-show="!(addModal.options.oakd && addModal.options.oakd.length)">No OAK-D cameras found</option>
-                            <template x-for="device in addModal.options.oakd" :key="device.identifier">
-                                <option :value="device.identifier" x-text="device.name"></option>
-                            </template>
-                        </select>
-                    </div>
-
-                    <div class="text-sm text-gray-400" x-show="addModal.loading">
-                        Discovering cameras…
-                    </div>
-                    <div class="text-sm text-red-400" x-show="addModal.error" x-text="addModal.error"></div>
+        <div class="modal-content stack stack-lg" @click.away="closeAddModal">
+            <header class="stack stack-xs">
+                <h2>Add Camera</h2>
+                <p class="panel-hint">Discovery runs in the background; select a device to pair.</p>
+            </header>
+            <form method="POST" action="{{ url_for('cameras.add_camera') }}" class="stack stack-lg">
+                <div class="form-field">
+                    <label class="form-label" for="camera-name">Camera Name</label>
+                    <input
+                        id="camera-name"
+                        name="camera-name"
+                        type="text"
+                        class="form-control"
+                        x-model="addModal.name"
+                        required
+                    >
                 </div>
-                <div class="px-6 py-4 bg-gray-900 border-t border-gray-700 flex justify-end gap-3">
+                <div class="form-field">
+                    <label class="form-label" for="camera-type">Camera Type</label>
+                    <select
+                        id="camera-type"
+                        name="camera-type"
+                        class="form-control"
+                        x-model="addModal.camera_type"
+                        required
+                    >
+                        <option value="">Select a type…</option>
+                        <option value="USB">USB Camera</option>
+                        <template x-if="genicamEnabled">
+                            <option value="GenICam">GenICam</option>
+                        </template>
+                        <option value="OAK-D">OAK-D (DepthAI)</option>
+                    </select>
+                </div>
+
+                <div class="form-field" x-show="addModal.camera_type === 'USB'" x-cloak>
+                    <label class="form-label" for="usb-camera-select">USB Cameras</label>
+                    <select
+                        id="usb-camera-select"
+                        name="usb-camera-select"
+                        class="form-control"
+                        x-model="addModal.selections.usb"
+                        :disabled="addModal.loading"
+                        required
+                    >
+                        <option value="" x-show="!(addModal.options.usb && addModal.options.usb.length)">No USB cameras found</option>
+                        <template x-for="device in addModal.options.usb" :key="device.identifier">
+                            <option :value="device.identifier" x-text="device.name"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="form-field" x-show="addModal.camera_type === 'GenICam'" x-cloak>
+                    <label class="form-label" for="genicam-camera-select">GenICam Cameras</label>
+                    <select
+                        id="genicam-camera-select"
+                        name="genicam-camera-select"
+                        class="form-control"
+                        x-model="addModal.selections.genicam"
+                        :disabled="addModal.loading"
+                        required
+                    >
+                        <option value="" x-show="!(addModal.options.genicam && addModal.options.genicam.length)">No GenICam cameras found</option>
+                        <template x-for="device in addModal.options.genicam" :key="device.identifier">
+                            <option :value="device.identifier" x-text="device.name"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="form-field" x-show="addModal.camera_type === 'OAK-D'" x-cloak>
+                    <label class="form-label" for="oakd-camera-select">OAK-D Cameras</label>
+                    <select
+                        id="oakd-camera-select"
+                        name="oakd-camera-select"
+                        class="form-control"
+                        x-model="addModal.selections.oakd"
+                        :disabled="addModal.loading"
+                        required
+                    >
+                        <option value="" x-show="!(addModal.options.oakd && addModal.options.oakd.length)">No OAK-D cameras found</option>
+                        <template x-for="device in addModal.options.oakd" :key="device.identifier">
+                            <option :value="device.identifier" x-text="device.name"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="form-hint" x-show="addModal.loading">Discovering cameras…</div>
+                <div class="callout callout-danger text-small" x-show="addModal.error" x-text="addModal.error"></div>
+
+                <div class="cluster justify-end">
                     <button
                         type="button"
-                        class="px-4 py-2 rounded-md border border-gray-600 text-sm text-gray-200 hover:bg-gray-700"
+                        class="button button--ghost"
                         @click="closeAddModal"
                     >
                         Cancel
                     </button>
                     <button
                         type="submit"
-                        class="px-4 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="button button--primary"
                         :disabled="!isAddFormValid() || addModal.loading"
                     >
                         Save
@@ -351,40 +364,39 @@
         </div>
     </div>
 
-    <!-- Edit Camera Modal -->
     <div
-        class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-40"
+        class="modal-overlay"
         x-show="editModal.open"
         x-transition
     >
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden" @click.away="closeEditModal">
-            <div class="px-6 py-4 border-b border-gray-700">
-                <h2 class="text-lg font-semibold text-white">Edit Camera</h2>
-            </div>
-            <form method="POST" :action="`/cameras/update/${editModal.camera_id}`">
-                <div class="px-6 py-5 space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">Camera Name</label>
-                        <input
-                            name="camera-name"
-                            type="text"
-                            class="mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            x-model="editModal.name"
-                            required
-                        >
-                    </div>
+        <div class="modal-content stack stack-lg" @click.away="closeEditModal">
+            <header class="stack stack-xs">
+                <h2>Edit Camera</h2>
+                <p class="panel-hint">Rename devices to match field wiring or deployment zones.</p>
+            </header>
+            <form method="POST" :action="`/cameras/update/${editModal.camera_id}`" class="stack stack-lg">
+                <div class="form-field">
+                    <label class="form-label" for="edit-camera-name">Camera Name</label>
+                    <input
+                        id="edit-camera-name"
+                        name="camera-name"
+                        type="text"
+                        class="form-control"
+                        x-model="editModal.name"
+                        required
+                    >
                 </div>
-                <div class="px-6 py-4 bg-gray-900 border-t border-gray-700 flex justify-end gap-3">
+                <div class="cluster justify-end">
                     <button
                         type="button"
-                        class="px-4 py-2 rounded-md border border-gray-600 text-sm text-gray-200 hover:bg-gray-700"
+                        class="button button--ghost"
                         @click="closeEditModal"
                     >
                         Cancel
                     </button>
                     <button
                         type="submit"
-                        class="px-4 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium"
+                        class="button button--primary"
                     >
                         Save
                     </button>

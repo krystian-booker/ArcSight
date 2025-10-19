@@ -72,7 +72,7 @@ export function registerDashboardComponents(Alpine) {
             },
             config.endpoints || {},
         ),
-        selectedCameraId: config.cameras?.length ? toStringId(config.cameras[0].id) : '',
+        selectedCameraId: toStringId(config.selectedCameraId ?? ''),
         pipelines: [],
         selectedPipelineId: '',
         pipelineType: '',
@@ -247,25 +247,26 @@ export function registerDashboardComponents(Alpine) {
             this.isLoadingPipelines = true;
             try {
                 const data = await fetchJson(this.endpoints.pipelinesForCamera(this.selectedCameraId));
+                const existingSelection = this.selectedPipelineId;
                 this.pipelines = (data || []).map((pipeline) => ({
                     ...pipeline,
                     id: toStringId(pipeline.id),
                     configData: safeJsonParse(pipeline.config || '{}', {}),
                 }));
-                if (!this.pipelines.length) {
+                const stillExists = existingSelection && this.pipelines.some((pipeline) => pipeline.id === existingSelection);
+                if (!stillExists) {
                     this.selectedPipelineId = '';
+                }
+                if (!this.pipelines.length) {
                     this.pipelineType = '';
                     this.labelOptions = [];
-                } else if (!this.selectedPipelineId) {
-                    this.selectedPipelineId = this.pipelines[0].id;
-                } else if (!this.pipelines.find((pipeline) => pipeline.id === this.selectedPipelineId)) {
-                    this.selectedPipelineId = this.pipelines[0].id;
                 }
             } catch (error) {
                 this.toast('error', `Failed to load pipelines: ${error.message}`);
                 this.pipelines = [];
                 this.selectedPipelineId = '';
                 this.pipelineType = '';
+                this.labelOptions = [];
             } finally {
                 this.isLoadingPipelines = false;
             }

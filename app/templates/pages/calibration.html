@@ -4,23 +4,30 @@
 
 {% block content %}
 <div
-    class="container mx-auto space-y-6"
+    class="stack stack-2xl"
     x-data="calibrationApp({ cameras: {{ cameras|tojson|safe }} })"
     x-cloak
 >
-    <h1 class="text-3xl font-bold">Camera Calibration</h1>
+    <header class="stack stack-sm">
+        <h1>Camera Calibration</h1>
+        <p class="muted text-small">Guide ArcSight through pattern capture and optimisation to generate intrinsic camera parameters.</p>
+    </header>
 
-    <div
-        class="bg-gray-800 p-6 rounded-lg shadow-lg"
+    <section
+        class="panel stack stack-lg"
         x-show="step === 'setup'"
         x-transition
     >
-        <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">Step 1: Setup</h2>
-        <form class="space-y-4" @submit.prevent="startCalibration">
-            <div>
-                <label class="block text-sm font-medium mb-1">Select Camera</label>
+        <header class="stack stack-xs">
+            <h2 class="panel-title">Step 1 · Setup</h2>
+            <p class="panel-hint">Choose a camera and pattern type. ArcSight supplies prompts while you capture frames.</p>
+        </header>
+        <form class="stack stack-lg" @submit.prevent="startCalibration">
+            <div class="form-field">
+                <label class="form-label" for="calibration-camera">Select Camera</label>
                 <select
-                    class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500"
+                    id="calibration-camera"
+                    class="form-control"
                     x-model="setup.cameraId"
                     required
                 >
@@ -30,10 +37,12 @@
                     {% endfor %}
                 </select>
             </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">Pattern Type</label>
+
+            <div class="form-field">
+                <label class="form-label" for="pattern-type">Pattern Type</label>
                 <select
-                    class="w-full bg-gray-700 border border-gray-600 rounded-md p-2"
+                    id="pattern-type"
+                    class="form-control"
                     x-model="setup.patternType"
                 >
                     <option value="Chessboard">Chessboard</option>
@@ -41,48 +50,41 @@
                 </select>
             </div>
 
-            <div class="space-y-4" x-show="setup.patternType === 'Chessboard'" x-transition>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Inner Corners Width</label>
-                        <input type="number" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model.number="setup.chessboard.cols" min="2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Inner Corners Height</label>
-                        <input type="number" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model.number="setup.chessboard.rows" min="2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Square Size (mm)</label>
-                        <input type="number" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model.number="setup.chessboard.square_size" min="1">
-                    </div>
+            <div class="grid-3 grid-tight" x-show="setup.patternType === 'Chessboard'" x-transition>
+                <div class="form-field">
+                    <label class="form-label">Inner Corners Width</label>
+                    <input type="number" class="form-control" x-model.number="setup.chessboard.cols" min="2">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">Inner Corners Height</label>
+                    <input type="number" class="form-control" x-model.number="setup.chessboard.rows" min="2">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">Square Size (mm)</label>
+                    <input type="number" class="form-control" x-model.number="setup.chessboard.square_size" min="1">
                 </div>
             </div>
 
-            <div class="space-y-4" x-show="setup.patternType === 'ChAruco'" x-transition>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Squares X</label>
-                        <input type="number" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model.number="setup.charuco.squares_x" min="2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Squares Y</label>
-                        <input type="number" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model.number="setup.charuco.squares_y" min="2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Square Size (mm)</label>
-                        <input type="number" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model.number="setup.charuco.square_size" min="1">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Marker Size (mm)</label>
-                        <input type="number" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model.number="setup.charuco.marker_size" min="1">
-                    </div>
+            <div class="grid-3 grid-tight" x-show="setup.patternType === 'ChAruco'" x-transition>
+                <div class="form-field">
+                    <label class="form-label">Squares X</label>
+                    <input type="number" class="form-control" x-model.number="setup.charuco.squares_x" min="2">
                 </div>
-                <div class="text-red-500 text-sm" x-show="!charucoValid">
-                    Marker size must be smaller than the square size.
+                <div class="form-field">
+                    <label class="form-label">Squares Y</label>
+                    <input type="number" class="form-control" x-model.number="setup.charuco.squares_y" min="2">
                 </div>
-                <div>
-                    <label class="block text-sm font-medium mb-1">ArUco Dictionary</label>
-                    <select class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" x-model="setup.charuco.dictionary">
+                <div class="form-field">
+                    <label class="form-label">Square Size (mm)</label>
+                    <input type="number" class="form-control" x-model.number="setup.charuco.square_size" min="1">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">Marker Size (mm)</label>
+                    <input type="number" class="form-control" x-model.number="setup.charuco.marker_size" min="1">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">ArUco Dictionary</label>
+                    <select class="form-control" x-model="setup.charuco.dictionary">
                         <option value="DICT_4X4_250">4x4 (250 markers)</option>
                         <option value="DICT_5X5_250">5x5 (250 markers)</option>
                         <option value="DICT_6X6_250">6x6 (250 markers)</option>
@@ -90,54 +92,63 @@
                         <option value="DICT_APRILTAG_36h11">AprilTag 36h11</option>
                     </select>
                 </div>
+                <div class="callout callout-danger text-small" x-show="!charucoValid">
+                    Marker size must be smaller than the square size.
+                </div>
             </div>
 
-            <div class="mt-4 text-center">
+            <div class="cluster cluster-wrap justify-between align-start">
                 <a
                     :href="charucoValid ? downloadHref : '#'"
-                    :class="charucoValid ? 'text-blue-400 hover:text-blue-300 hover:underline' : 'text-gray-500 pointer-events-none'"
+                    class="button button--ghost"
+                    :class="{ muted: !charucoValid }"
+                    :aria-disabled="(!charucoValid).toString()"
+                    @click="if (!charucoValid) { $event.preventDefault(); }"
                 >
                     Download Pattern
                 </a>
+                <button
+                    type="submit"
+                    class="button button--primary"
+                    :disabled="setup.patternType === 'ChAruco' && !charucoValid"
+                >
+                    Start Calibration
+                </button>
             </div>
-
-            <button
-                type="submit"
-                class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed"
-                :disabled="setup.patternType === 'ChAruco' && !charucoValid"
-            >
-                Start Calibration
-            </button>
         </form>
-    </div>
+    </section>
 
-    <div
-        class="bg-gray-800 p-6 rounded-lg shadow-lg"
+    <section
+        class="panel stack stack-lg"
         x-show="step === 'capture'"
         x-transition
     >
-        <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">Step 2: Capture</h2>
-        <div class="flex flex-col md:flex-row gap-6">
-            <div class="flex-grow">
-                <img :src="capture.feedSrc" alt="Calibration Feed" class="w-full rounded-md bg-black">
+        <header class="stack stack-xs">
+            <h2 class="panel-title">Step 2 · Capture</h2>
+            <p class="panel-hint">Show the pattern at varied angles and distances. Capture at least 15 frames for accurate results.</p>
+        </header>
+        <div class="grid-2 grid-tight align-start">
+            <div class="video-feed-wrapper">
+                <img :src="capture.feedSrc" alt="Calibration Feed" class="w-100">
             </div>
-            <div class="md:w-1/3 flex flex-col space-y-4">
-                <p class="text-gray-400">Show the pattern at varied angles and distances. Capture at least 15 frames for accurate results.</p>
-                <button
-                    type="button"
-                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-green-900"
-                    @click="captureFrame"
-                    :disabled="capture.capturing"
-                >
-                    <span x-show="!capture.capturing">Capture Frame</span>
-                    <span x-show="capture.capturing">Capturing…</span>
-                </button>
-                <div class="text-center text-lg">
-                    Images Captured: <span x-text="capture.count"></span>
+            <div class="stack stack-lg">
+                <div class="stack stack-sm">
+                    <button
+                        type="button"
+                        class="button button--primary"
+                        @click="captureFrame"
+                        :disabled="capture.capturing"
+                    >
+                        <span x-show="!capture.capturing">Capture Frame</span>
+                        <span x-show="capture.capturing">Capturing…</span>
+                    </button>
+                    <div class="callout text-center">
+                        Images Captured: <strong x-text="capture.count"></strong>
+                    </div>
                 </div>
                 <button
                     type="button"
-                    class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    class="button"
                     @click="calculate"
                     :disabled="capture.count < 5 || capture.calculating"
                 >
@@ -146,41 +157,51 @@
                 </button>
             </div>
         </div>
-    </div>
+    </section>
 
-    <div
-        class="bg-gray-800 p-6 rounded-lg shadow-lg"
+    <section
+        class="panel stack stack-lg"
         x-show="step === 'results'"
         x-transition
     >
-        <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">Step 3: Results</h2>
-        <div class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium">Reprojection Error:</label>
-                <p class="text-lg font-mono p-2 rounded"
-                    :class="reprojectionError() < 1 ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'"
+        <header class="stack stack-xs">
+            <h2 class="panel-title">Step 3 · Results</h2>
+            <p class="panel-hint">Review reprojection error and matrices, then persist settings to the selected camera.</p>
+        </header>
+        <div class="grid-2 grid-tight align-start">
+            <div class="form-field">
+                <label class="form-label">Reprojection Error</label>
+                <p
+                    class="callout text-small monospace"
+                    :class="{ 'callout-danger': reprojectionError() !== null && reprojectionError() >= 1 }"
                     x-text="reprojectionError() !== null ? reprojectionError().toFixed(4) : ''"
                 ></p>
             </div>
-            <div>
-                <label class="block text-sm font-medium">Camera Matrix (fx, fy, cx, cy):</label>
-                <pre class="text-sm font-mono p-2 bg-gray-700 rounded" x-text="formattedCameraMatrix()"></pre>
-            </div>
-            <div>
-                <label class="block text-sm font-medium">Distortion Coefficients:</label>
-                <pre class="text-sm font-mono p-2 bg-gray-700 rounded" x-text="formattedDistCoeffs()"></pre>
+            <div class="cluster justify-end">
+                <button type="button" class="button button--primary" @click="saveResults">
+                    Save to Camera
+                </button>
+                <button type="button" class="button button--ghost" @click="restart">
+                    Discard and Restart
+                </button>
             </div>
         </div>
-        <div class="flex gap-4 mt-6">
-            <button type="button" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md" @click="saveResults">Save to Camera</button>
-            <button type="button" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md" @click="restart">Discard and Restart</button>
+        <div class="grid-2 grid-tight" style="gap: var(--space-lg);">
+            <div class="form-field">
+                <label class="form-label">Camera Matrix (fx, fy, cx, cy)</label>
+                <pre class="surface monospace" style="padding: var(--space-md);" x-text="formattedCameraMatrix()"></pre>
+            </div>
+            <div class="form-field">
+                <label class="form-label">Distortion Coefficients</label>
+                <pre class="surface monospace" style="padding: var(--space-md);" x-text="formattedDistCoeffs()"></pre>
+            </div>
         </div>
-    </div>
+    </section>
 
     <div
-        class="mt-2 p-3 rounded-md text-center"
+        class="callout"
         x-show="status.message"
-        :class="status.isError ? 'bg-red-900/40 text-red-300' : 'bg-gray-700 text-gray-100'"
+        :class="{ 'callout-danger': status.isError }"
         x-text="status.message"
     ></div>
 </div>

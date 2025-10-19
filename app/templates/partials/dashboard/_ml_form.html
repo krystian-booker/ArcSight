@@ -1,23 +1,26 @@
 <div
-    class="pipeline-form"
+    class="pipeline-form surface stack stack-xl"
     x-show="pipelineType === 'Object Detection (ML)'"
     x-transition
     x-cloak
 >
-    <h3 class="text-lg font-bold mb-4">Object Detection (ML) Configuration</h3>
-    <div class="flex flex-wrap md:flex-nowrap gap-4">
-        <div class="w-full md:w-1/2 space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-300 mb-2">ML Model File</label>
-                <div class="flex items-center gap-3">
+    <header class="stack stack-xs">
+        <h3>Object Detection (ML)</h3>
+        <p class="panel-hint">Attach model artifacts, choose an accelerator, and filter detections for the processed overlay.</p>
+    </header>
+    <div class="grid-2">
+        <div class="stack stack-lg">
+            <div class="form-field">
+                <label class="form-label">ML Model File</label>
+                <div class="cluster cluster-wrap">
                     <input
                         type="file"
-                        class="w-full text-sm text-gray-200 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-500 file:text-white hover:file:bg-indigo-600"
+                        class="form-control form-control--file"
                         @change="uploadPipelineFile($event, 'model')"
                         :disabled="isUploadingFile"
                     >
                     <button
-                        class="btn btn-danger"
+                        class="button button--danger"
                         type="button"
                         @click="deletePipelineFile('model')"
                         :disabled="!pipelineForms.ml.model_filename"
@@ -26,23 +29,22 @@
                         Remove
                     </button>
                 </div>
-                <p class="text-xs text-gray-400 mt-2" x-show="pipelineForms.ml.model_filename">
-                    <span class="text-gray-300">Current:</span>
-                    <span x-text="pipelineForms.ml.model_filename"></span>
+                <p class="form-hint" x-show="pipelineForms.ml.model_filename">
+                    Current file: <span x-text="pipelineForms.ml.model_filename"></span>
                 </p>
             </div>
 
-            <div>
-                <label class="block text-sm font-medium text-gray-300 mb-2">Labels File</label>
-                <div class="flex items-center gap-3">
+            <div class="form-field">
+                <label class="form-label">Labels File</label>
+                <div class="cluster cluster-wrap">
                     <input
                         type="file"
-                        class="w-full text-sm text-gray-200 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-500 file:text-white hover:file:bg-indigo-600"
+                        class="form-control form-control--file"
                         @change="uploadPipelineFile($event, 'labels')"
                         :disabled="isUploadingFile"
                     >
                     <button
-                        class="btn btn-danger"
+                        class="button button--danger"
                         type="button"
                         @click="deletePipelineFile('labels')"
                         :disabled="!pipelineForms.ml.labels_filename"
@@ -51,26 +53,25 @@
                         Remove
                     </button>
                 </div>
-                <p class="text-xs text-gray-400 mt-2" x-show="pipelineForms.ml.labels_filename">
-                    <span class="text-gray-300">Current:</span>
-                    <span x-text="pipelineForms.ml.labels_filename"></span>
+                <p class="form-hint" x-show="pipelineForms.ml.labels_filename">
+                    Current file: <span x-text="pipelineForms.ml.labels_filename"></span>
                 </p>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Model Type</label>
+            <div class="grid-2 grid-tight">
+                <div class="form-field">
+                    <label class="form-label">Model Type</label>
                     <input
                         type="text"
-                        class="custom-select w-full bg-gray-700 border border-gray-600 text-gray-200"
+                        class="form-control"
                         x-model="pipelineForms.ml.model_type"
                         readonly
                     >
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Hardware Accelerator</label>
+                <div class="form-field">
+                    <label class="form-label">Hardware Accelerator</label>
                     <select
-                        class="custom-select w-full"
+                        class="form-control"
                         x-model="pipelineForms.ml.accelerator"
                         @change="queuePipelineSave"
                     >
@@ -79,14 +80,14 @@
                             <option value="rknn">Orange Pi 5 NPU (RKNN)</option>
                         </template>
                     </select>
-                    <p class="text-xs text-gray-500 mt-2">RKNN is available on Orange Pi 5 devices with the toolkit installed.</p>
+                    <p class="form-hint">RKNN available on Orange Pi 5 with toolkit installed.</p>
                 </div>
             </div>
 
-            <div x-show="pipelineForms.ml.model_type === 'yolo'" x-cloak>
-                <label class="block text-sm font-medium text-gray-300 mb-2">ONNX Runtime Provider</label>
+            <div class="form-field" x-show="pipelineForms.ml.model_type === 'yolo'" x-cloak>
+                <label class="form-label">ONNX Runtime Provider</label>
                 <select
-                    class="custom-select w-full"
+                    class="form-control"
                     x-model="pipelineForms.ml.onnx_provider"
                     @change="queuePipelineSave"
                 >
@@ -96,65 +97,73 @@
                 </select>
             </div>
 
-            <div x-show="pipelineForms.ml.model_type === 'tflite'" x-cloak>
-                <label class="block text-sm font-medium text-gray-300 mb-2">TFLite Delegate</label>
+            <div class="form-field" x-show="pipelineForms.ml.model_type === 'tflite'" x-cloak>
+                <label class="form-label">TFLite Delegate</label>
                 <select
-                    class="custom-select w-full"
+                    class="form-control"
                     x-model="pipelineForms.ml.tflite_delegate"
                     @change="queuePipelineSave"
                 >
-                    <template x-for="delegate in (mlAvailability?.tflite?.delegates || ['CPU'])" :key="delegate">
+                    <template x-for="delegate in (mlAvailability?.tflite?.delegates || ['None'])" :key="delegate">
                         <option :value="delegate" x-text="delegate"></option>
                     </template>
                 </select>
             </div>
 
-            <div>
-                <label class="block text-sm font-medium text-gray-300 mb-2">Confidence Threshold (0-1)</label>
-                <div class="flex items-center gap-4">
-                    <input type="range" min="0" max="1" step="0.01" class="w-full" x-model.number="pipelineForms.ml.confidence_threshold" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="1" step="0.01" class="w-24 custom-select" x-model.number="pipelineForms.ml.confidence_threshold" @change.debounce.300="queuePipelineSave">
+            <div class="grid-2 grid-tight">
+                <div class="form-field">
+                    <label class="form-label">Confidence Threshold</label>
+                    <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        class="form-control"
+                        x-model.number="pipelineForms.ml.confidence_threshold"
+                        @change.debounce.300="queuePipelineSave"
+                    >
                 </div>
-            </div>
-
-            <div>
-                <label class="block text-sm font-medium text-gray-300 mb-2">NMS IoU Threshold (0-1)</label>
-                <div class="flex items-center gap-4">
-                    <input type="range" min="0" max="1" step="0.01" class="w-full" x-model.number="pipelineForms.ml.nms_iou_threshold" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="1" step="0.01" class="w-24 custom-select" x-model.number="pipelineForms.ml.nms_iou_threshold" @change.debounce.300="queuePipelineSave">
+                <div class="form-field">
+                    <label class="form-label">NMS Threshold</label>
+                    <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        class="form-control"
+                        x-model.number="pipelineForms.ml.nms_threshold"
+                        @change.debounce.300="queuePipelineSave"
+                    >
                 </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Input Image Size (pixels)</label>
+                <div class="form-field">
+                    <label class="form-label">Input Image Size (px)</label>
                     <input
                         type="number"
                         min="32"
                         max="2048"
                         step="32"
-                        class="custom-select w-full"
+                        class="form-control"
                         x-model.number="pipelineForms.ml.img_size"
                         @change.debounce.300="queuePipelineSave"
                     >
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Maximum Detections</label>
+                <div class="form-field">
+                    <label class="form-label">Maximum Detections</label>
                     <input
                         type="number"
                         min="1"
                         max="500"
-                        class="custom-select w-full"
+                        class="form-control"
                         x-model.number="pipelineForms.ml.max_detections"
                         @change.debounce.300="queuePipelineSave"
                     >
                 </div>
             </div>
 
-            <div>
-                <label class="block text-sm font-medium text-gray-300 mb-2">Target Class Filter</label>
+            <div class="form-field">
+                <label class="form-label">Target Class Filter</label>
                 <select
-                    class="custom-select w-full"
+                    class="form-control"
                     multiple
                     size="6"
                     x-model="pipelineForms.ml.target_classes"
@@ -164,31 +173,31 @@
                         <option :value="label" x-text="label"></option>
                     </template>
                 </select>
-                <p class="text-xs text-gray-500 mt-2" x-show="!labelOptions.length">Upload a labels file to enable class filtering.</p>
+                <p class="form-hint" x-show="!labelOptions.length">Upload a labels file to enable class filtering.</p>
             </div>
         </div>
 
-        <div class="w-full md:w-1/2">
-            <h4 class="text-md font-bold mb-2">Live Detections</h4>
-            <div class="overflow-x-auto rounded border border-gray-700">
-                <table class="min-w-full divide-y divide-gray-700">
-                    <thead class="bg-gray-700">
+        <div class="stack stack-lg">
+            <h4>Live Detections</h4>
+            <div style="overflow-x:auto;">
+                <table class="table table--compact">
+                    <thead>
                         <tr>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Label</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Confidence</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Notes</th>
+                            <th>Label</th>
+                            <th>Confidence</th>
+                            <th>Notes</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-gray-800 divide-y divide-gray-700">
+                    <tbody>
                         <template x-for="(det, index) in results.ml" :key="det.id ?? `${det.label}-${index}`">
                             <tr>
-                                <td class="px-4 py-2 text-sm text-gray-200" x-text="det.label || 'unknown'"></td>
-                                <td class="px-4 py-2 text-sm text-gray-300" x-text="formatNumber(det.confidence, 3)"></td>
-                                <td class="px-4 py-2 text-sm text-gray-400">Bounding boxes available on processed feed</td>
+                                <td x-text="det.label || 'unknown'"></td>
+                                <td x-text="formatNumber(det.confidence, 3)"></td>
+                                <td class="muted">Bounding boxes shown on processed feed</td>
                             </tr>
                         </template>
                         <tr x-show="!results.ml.length">
-                            <td colspan="3" class="px-4 py-4 text-center text-sm text-gray-500">No detections</td>
+                            <td colspan="3" class="muted text-center text-small">No detections</td>
                         </tr>
                     </tbody>
                 </table>

@@ -31,6 +31,8 @@ class Config:
 
     # Application settings
     CAMERA_THREADS_ENABLED = True
+    BRAND_NAME = os.environ.get('BRAND_NAME', 'ArcSight')
+    BRAND_TAGLINE = os.environ.get('BRAND_TAGLINE', 'Industrial computer vision, engineered in the open.')
 
 
 class DevelopmentConfig(Config):
