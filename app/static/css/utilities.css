@@ -139,7 +139,6 @@
   background-repeat: no-repeat;
   background-size: 0% 2px;
   background-position: 0 100%;
-  padding-bottom: 2px;
   transition: background-size var(--arc-speed) var(--arc-ease-out), color var(--arc-speed) var(--arc-ease-out);
 }
 

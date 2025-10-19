@@ -12,9 +12,20 @@
     <script type="module" defer src="{{ url_for('static', filename='js/alpine/bootstrap.js') }}"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.8/dist/cdn.min.js"></script>
 </head>
-<body class="app-body">
+<body class="app-body" x-data="layoutShell()" x-bind:class="{'has-sidebar-open': sidebarOpen && isHandheld}" @keydown.escape.window="closeSidebar()">
     <div class="app-shell">
-        <aside class="app-sidebar">
+        <aside
+            id="primary-sidebar"
+            class="app-sidebar"
+            x-ref="sidebar"
+            x-cloak
+            :class="{'is-open': sidebarOpen && isHandheld}"
+            tabindex="-1"
+            role="navigation"
+            :aria-hidden="isHandheld ? (!sidebarOpen).toString() : 'false'"
+            aria-label="Primary navigation"
+            @keydown.escape.stop="closeSidebar()"
+        >
             <div class="sidebar-brand">
                 <div class="brand-mark" aria-hidden="true">
                     <span class="brand-mark__pip"></span>
@@ -26,7 +37,7 @@
                     <span class="brand-tagline">Robotics Vision Platform</span>
                 </div>
             </div>
-            <nav class="sidebar-nav" aria-label="Primary">
+            <nav class="sidebar-nav" aria-label="Primary" @click="handleNavClick">
                 <a href="{{ url_for('dashboard.dashboard_page') }}" class="nav-link {% if request.endpoint == 'dashboard.dashboard_page' %}is-active{% endif %}">
                     <span class="nav-link__icon">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4zm0 7h6v-6H4zm10 0h6v-9h-6zm0-16v4h6V4z"/></svg>
@@ -56,8 +67,32 @@
                 <p class="sidebar-footnote">Powered by High Voltage</p>
             </div>
         </aside>
-        <div class="app-main">
+        <div
+            x-cloak
+            x-show="sidebarOpen && isHandheld"
+            x-transition.opacity
+            class="app-backdrop"
+            @click="closeSidebar()"
+            aria-hidden="true"
+        ></div>
+        <div class="app-main" :aria-hidden="sidebarOpen && isHandheld ? 'true' : 'false'">
             <header class="app-topbar">
+                <button
+                    type="button"
+                    class="button-icon topbar-toggle"
+                    x-cloak
+                    x-show="isHandheld"
+                    x-ref="sidebarToggle"
+                    :aria-expanded="(sidebarOpen && isHandheld).toString()"
+                    aria-controls="primary-sidebar"
+                    :aria-label="sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'"
+                    @click="toggleSidebar()"
+                >
+                    <span class="sr-only" x-text="sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'"></span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </button>
                 <div class="topbar-context">
                     <span class="topbar-context__label">ArcSight Control</span>
                     <span class="topbar-context__dot" aria-hidden="true"></span>

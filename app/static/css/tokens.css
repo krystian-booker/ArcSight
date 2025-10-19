@@ -46,6 +46,9 @@
   /* Layout */
   --arc-max-width: 1440px;
   --arc-sidebar-width: 280px;
+  --arc-sidebar-mobile-width: min(82vw, 320px);
+  --arc-breakpoint-handheld: 1080px;
+  --arc-topbar-height: 64px;
 
   /* Spacing scale */
   --space-3xs: 2px;
