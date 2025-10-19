@@ -12,6 +12,7 @@ def app():
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
         "CAMERA_THREADS_ENABLED": False,
         "SERVER_NAME": "localhost.localdomain",  # Required for url_for to work in tests
+        "METRICS_ENABLED": False,
     }
     app = create_app(config_overrides)
 

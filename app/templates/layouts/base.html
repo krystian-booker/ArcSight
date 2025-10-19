@@ -62,6 +62,12 @@
                     </span>
                     <span class="nav-link__label">Settings</span>
                 </a>
+                <a href="{{ url_for('monitoring.monitoring_dashboard') }}" class="nav-link {% if request.endpoint == 'monitoring.monitoring_dashboard' %}is-active{% endif %}">
+                    <span class="nav-link__icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3a2 2 0 0 0-2 2v14h2V5h14V3Zm4 4a2 2 0 0 0-2 2v10h2V9h10V7Zm4 4a2 2 0 0 0-2 2v6h2v-6h6v-2Zm4 4a2 2 0 0 0-2 2v2h6v-2h-4Z"/></svg>
+                    </span>
+                    <span class="nav-link__label">Monitoring</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <p class="sidebar-footnote">Powered by High Voltage</p>

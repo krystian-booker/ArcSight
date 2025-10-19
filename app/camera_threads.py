@@ -4,11 +4,35 @@ import time
 import queue
 import numpy as np
 import json
+import logging
+from typing import Dict, Optional
+from numbers import Real
 
 from .pipelines.apriltag_pipeline import AprilTagPipeline
 from .pipelines.coloured_shape_pipeline import ColouredShapePipeline
 from .pipelines.object_detection_ml_pipeline import ObjectDetectionMLPipeline
 from .camera_discovery import get_driver
+from .metrics import metrics_registry
+
+logger = logging.getLogger(__name__)
+
+
+def _coerce_real(value) -> Optional[float]:
+    """Return float(value) when possible, otherwise None."""
+    if isinstance(value, Real):
+        return float(value)
+    return None
+
+
+def _coerce_int(value) -> Optional[int]:
+    """Return int(value) when possible, otherwise None."""
+    real_value = _coerce_real(value)
+    if real_value is None:
+        return None
+    try:
+        return int(real_value)
+    except (TypeError, ValueError):
+        return None
 
 
 # --- Frame Buffer and Reference Counting ---
@@ -20,6 +44,8 @@ class RefCountedFrame:
         self._release_callback = release_callback
         self._ref_count = 0
         self._lock = threading.Lock()
+        self._created_time = time.perf_counter()
+        self._enqueue_times: Dict[int, float] = {}
 
     def acquire(self):
         """Increments the reference count."""
@@ -59,6 +85,22 @@ class RefCountedFrame:
                 return self.frame_buffer, True
             else:
                 return self.frame_buffer.copy(), False
+
+    @property
+    def created_timestamp(self) -> float:
+        """Monotonic timestamp captured when the frame was created."""
+        return self._created_time
+
+    def mark_enqueued(self, pipeline_id: int, timestamp: Optional[float] = None) -> None:
+        """Record when the frame was enqueued for a specific pipeline."""
+        ts = time.perf_counter() if timestamp is None else timestamp
+        with self._lock:
+            self._enqueue_times[pipeline_id] = ts
+
+    def pop_enqueue_timestamp(self, pipeline_id: int) -> Optional[float]:
+        """Return and clear the stored enqueue timestamp for a pipeline."""
+        with self._lock:
+            return self._enqueue_times.pop(pipeline_id, None)
 
 
 class FrameBufferPool:
@@ -315,6 +357,13 @@ class VisionProcessingThread(threading.Thread):
             print(
                 f"Warning: Unknown pipeline type '{self.pipeline_type}' for pipeline ID {self.pipeline_id}"
             )
+        metrics_registry.register_pipeline(
+            camera_identifier=self.identifier,
+            pipeline_id=self.pipeline_id,
+            pipeline_type=self.pipeline_type,
+            queue_max_size=getattr(frame_queue, "maxsize", 0),
+        )
+        self._latency_log_state = {"last_warn": 0.0, "last_latency_ms": 0.0}
 
     def run(self):
         """The main loop for the vision processing thread."""
@@ -338,11 +387,33 @@ class VisionProcessingThread(threading.Thread):
             ref_counted_frame = None
             try:
                 ref_counted_frame = self.frame_queue.get(timeout=1)
+                dequeue_timestamp = time.perf_counter()
                 raw_frame = ref_counted_frame.data
+                queue_depth_after_pop = _coerce_int(self.frame_queue.qsize())
+                queue_max_size = _coerce_int(getattr(self.frame_queue, "maxsize", 0))
+                if queue_depth_after_pop is not None:
+                    metrics_registry.record_queue_depth(
+                        camera_identifier=self.identifier,
+                        pipeline_id=self.pipeline_id,
+                        queue_size=queue_depth_after_pop,
+                        queue_max_size=queue_max_size or 0,
+                    )
+                queue_util_pct = 0.0
+                if queue_depth_after_pop is not None and queue_max_size:
+                    queue_util_pct = min(
+                        ((queue_depth_after_pop + 1) / queue_max_size) * 100.0, 100.0
+                    )
+
+                enqueue_timestamp = ref_counted_frame.pop_enqueue_timestamp(self.pipeline_id)
+                queue_wait_ms = 0.0
+                if isinstance(enqueue_timestamp, Real):
+                    queue_wait_ms = max(
+                        (dequeue_timestamp - float(enqueue_timestamp)) * 1000.0, 0.0
+                    )
 
                 self._ensure_default_cam_matrix(raw_frame)
 
-                start_time = time.time()
+                processing_start = time.perf_counter()
 
                 # Delegate processing to the pipeline object
                 annotated_frame = raw_frame.copy()  # Always make a copy to draw on
@@ -399,8 +470,17 @@ class VisionProcessingThread(threading.Thread):
                     )
                     current_results = {"detections": detections}
 
-                processing_time = (time.time() - start_time) * 1000
-                current_results["processing_time_ms"] = f"{processing_time:.2f}"
+                processing_end = time.perf_counter()
+                processing_latency_ms = (processing_end - processing_start) * 1000.0
+                created_timestamp = getattr(ref_counted_frame, "created_timestamp", None)
+                if not isinstance(created_timestamp, Real):
+                    created_timestamp = enqueue_timestamp if isinstance(enqueue_timestamp, Real) else dequeue_timestamp
+                total_latency_ms = max(
+                    (processing_end - float(created_timestamp)) * 1000.0, 0.0
+                )
+                current_results["processing_time_ms"] = f"{processing_latency_ms:.2f}"
+                current_results["queue_wait_ms"] = f"{queue_wait_ms:.2f}"
+                current_results["total_latency_ms"] = f"{total_latency_ms:.2f}"
 
                 with self.results_lock:
                     self.latest_results = current_results
@@ -408,6 +488,20 @@ class VisionProcessingThread(threading.Thread):
                 # --- Store Processed Frame (raw, for lazy encoding) ---
                 with self.processed_frame_lock:
                     self.latest_processed_frame_raw = annotated_frame
+
+                metrics_registry.record_latencies(
+                    camera_identifier=self.identifier,
+                    pipeline_id=self.pipeline_id,
+                    pipeline_type=self.pipeline_type,
+                    total_latency_ms=total_latency_ms,
+                    queue_latency_ms=queue_wait_ms,
+                    processing_latency_ms=processing_latency_ms,
+                )
+                self._log_latency_if_needed(
+                    total_latency_ms=total_latency_ms,
+                    queue_wait_ms=queue_wait_ms,
+                    queue_util_pct=queue_util_pct,
+                )
             except queue.Empty:
                 continue
             finally:
@@ -509,6 +603,57 @@ class VisionProcessingThread(threading.Thread):
         """Signals the thread to stop."""
         self.stop_event.set()
 
+    def _log_latency_if_needed(
+        self,
+        total_latency_ms: float,
+        queue_wait_ms: float,
+        queue_util_pct: float,
+    ) -> None:
+        """Emit throttled warnings when pipelines fall behind."""
+        now = time.time()
+        last_warn = self._latency_log_state.get("last_warn", 0.0)
+        if now - last_warn < 5.0:
+            return
+
+        latency_threshold = metrics_registry.latency_warn_ms or 0.0
+        queue_threshold = metrics_registry.queue_high_utilization_pct or 100.0
+
+        if latency_threshold > 0.0 and total_latency_ms > latency_threshold:
+            logger.warning(
+                "Slow pipeline %s (%s) on camera %s: total latency %.1f ms (threshold %.1f ms, queue wait %.1f ms)",
+                self.pipeline_id,
+                self.pipeline_type,
+                self.identifier,
+                total_latency_ms,
+                latency_threshold,
+                queue_wait_ms,
+            )
+            self._latency_log_state["last_warn"] = now
+            return
+
+        if queue_threshold > 0.0 and queue_util_pct >= queue_threshold:
+            logger.warning(
+                "Pipeline %s (%s) nearing queue saturation on camera %s: utilization %.1f%% (threshold %.1f%%)",
+                self.pipeline_id,
+                self.pipeline_type,
+                self.identifier,
+                queue_util_pct,
+                queue_threshold,
+            )
+            self._latency_log_state["last_warn"] = now
+            return
+
+        queue_wait_threshold = max(latency_threshold * 0.6, 50.0)
+        if queue_wait_ms > queue_wait_threshold:
+            logger.warning(
+                "Pipeline %s (%s) experiencing queue delays on camera %s: queue wait %.1f ms",
+                self.pipeline_id,
+                self.pipeline_type,
+                self.identifier,
+                queue_wait_ms,
+            )
+            self._latency_log_state["last_warn"] = now
+
 
 class CameraAcquisitionThread(threading.Thread):
     """
@@ -537,6 +682,7 @@ class CameraAcquisitionThread(threading.Thread):
         self.fps = 0.0
         self.buffer_pool = FrameBufferPool(name=self.identifier)
         self.jpeg_quality = jpeg_quality
+        self._drop_states: Dict[int, Dict[str, float]] = {}
 
         # Event-based configuration update
         self.config_update_event = threading.Event()
@@ -552,6 +698,36 @@ class CameraAcquisitionThread(threading.Thread):
         """Removes a pipeline's frame queue from the list of queues."""
         with self.queues_lock:
             self.processing_queues.pop(pipeline_id, None)
+
+    def _reset_drop_state(self, pipeline_id: int) -> None:
+        state = self._drop_states.get(pipeline_id)
+        if state:
+            state["consecutive"] = 0
+
+    def _handle_pipeline_drop(
+        self, pipeline_id: int, frame_queue, queue_size: int, queue_max_size: int
+    ) -> None:
+        state = self._drop_states.setdefault(
+            pipeline_id, {"last_log": 0.0, "consecutive": 0}
+        )
+        state["consecutive"] += 1
+        now = time.time()
+        max_size = queue_max_size or _coerce_int(getattr(frame_queue, "maxsize", 0)) or 0
+        utilization_pct = 0.0
+        if max_size:
+            utilization_pct = min(float(queue_size) / max_size, 1.0) * 100.0
+        should_log = now - state["last_log"] >= 5.0 or state["consecutive"] in (1, 5, 10)
+        if should_log:
+            logger.warning(
+                "Dropped frame for pipeline %s on camera %s (queue depth %d/%s, utilization %.1f%%, consecutive drops %d)",
+                pipeline_id,
+                self.identifier,
+                queue_size,
+                max_size if max_size else "unbounded",
+                utilization_pct,
+                state["consecutive"],
+            )
+            state["last_log"] = now
 
     def update_orientation(self, new_orientation):
         """Updates the camera orientation and signals the acquisition thread."""
@@ -708,12 +884,46 @@ class CameraAcquisitionThread(threading.Thread):
 
                 # Distribute frame to pipeline queues
                 with self.queues_lock:
-                    for q in self.processing_queues.values():
-                        ref_counted_frame.acquire()
-                        try:
-                            q.put_nowait(ref_counted_frame)
-                        except queue.Full:
-                            ref_counted_frame.release()
+                    queue_targets = list(self.processing_queues.items())
+
+                for pipeline_id, frame_queue in queue_targets:
+                    ref_counted_frame.acquire()
+                    queue_max_size = _coerce_int(getattr(frame_queue, "maxsize", 0)) or 0
+                    queue_size_before = _coerce_int(frame_queue.qsize())
+                    if queue_size_before is not None:
+                        metrics_registry.record_queue_depth(
+                            camera_identifier=self.identifier,
+                            pipeline_id=pipeline_id,
+                            queue_size=queue_size_before,
+                            queue_max_size=queue_max_size,
+                        )
+                    try:
+                        frame_queue.put_nowait(ref_counted_frame)
+                        enqueue_timestamp = time.perf_counter()
+                        ref_counted_frame.mark_enqueued(pipeline_id, enqueue_timestamp)
+                        queue_size_after = _coerce_int(frame_queue.qsize())
+                        if queue_size_after is not None:
+                            metrics_registry.record_queue_depth(
+                                camera_identifier=self.identifier,
+                                pipeline_id=pipeline_id,
+                                queue_size=queue_size_after,
+                                queue_max_size=queue_max_size,
+                            )
+                        self._reset_drop_state(pipeline_id)
+                    except queue.Full:
+                        metrics_registry.record_drop(
+                            camera_identifier=self.identifier,
+                            pipeline_id=pipeline_id,
+                            queue_size=queue_size_before,
+                            queue_max_size=queue_max_size,
+                        )
+                        ref_counted_frame.release()
+                        self._handle_pipeline_drop(
+                            pipeline_id,
+                            frame_queue,
+                            queue_size_before if queue_size_before is not None else 0,
+                            queue_max_size,
+                        )
 
                 # Prepare display frame (store raw frame for lazy encoding)
                 # Use get_modifiable_view to avoid unnecessary copy when possible

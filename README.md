@@ -96,6 +96,13 @@ ruff check app tests
 | `HOST` | Server host address | `0.0.0.0` | Any valid IP address |
 | `PORT` | Server port | `8080` | Any valid port number |
 | `DATABASE_URL` | Database connection string | SQLite in user data dir | Any valid SQLAlchemy URL |
+| `METRICS_ENABLED` | Enable acquisition/pipeline metrics | `1` (prod) / `0` (tests) | `0`, `1` |
+| `METRICS_WINDOW_SECONDS` | Sliding window for latency/drop stats | `300` | Float (seconds) |
+| `METRICS_FPS_WINDOW_SECONDS` | Sliding window for FPS calculations | `10` | Float (seconds) |
+| `METRICS_MEMORY_SAMPLE_SECONDS` | Sampling interval for process RSS | `2` | Float (seconds) |
+| `PIPELINE_QUEUE_HIGH_UTILIZATION_PCT` | Queue utilization warning threshold | `80` | Percentage |
+| `PIPELINE_LATENCY_WARN_MS` | Total latency warning threshold | `150` | Milliseconds |
+| `METRICS_REFRESH_INTERVAL_MS` | Browser polling interval for monitoring UI | `2000` | Milliseconds |
 
 See `.env.example` for more details.
 
@@ -107,6 +114,7 @@ The web interface provides:
 - **Pipeline Configuration**: Set up vision pipelines (AprilTag, colored shapes, ML detection)
 - **Calibration Tools**: Camera calibration utilities
 - **Settings**: Application-wide settings
+- **Monitoring**: Inspect per-pipeline latency, queue health, dropped frames, and resource usage
 
 ## Architecture
 
@@ -115,3 +123,16 @@ The web interface provides:
 - **Frame Buffer Pooling**: Efficient memory management with automatic shrinking
 - **Lazy JPEG Encoding**: Frames encoded only when clients request them
 - **SQLite Database**: Configuration stored in user data directory
+
+## Monitoring & Metrics
+
+The monitoring dashboard at `/monitoring` surfaces live health data for each active pipeline. Metrics include:
+
+- Frame processing latency (average, p95, and max)
+- Queue depth, utilization, and high-water marks
+- Dropped frame counts and drop rate per minute
+- Pipeline throughput (FPS) and system memory (RSS)
+
+Use the JSON endpoint at `/api/metrics/summary` to integrate metrics with external monitoring solutions.
+
+Thresholds for latency warnings, queue saturation, sampling cadence, and UI refresh rate are configurable via environment variables. When thresholds are exceeded the acquisition/processing threads emit throttled warnings suggesting mitigation (e.g., reduce frame rate or add capacity).
