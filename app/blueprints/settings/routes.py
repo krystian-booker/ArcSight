@@ -18,12 +18,17 @@ def get_db_path():
 @settings.route("/")
 def settings_page():
     """Renders the application settings page."""
+    def _get_setting_value(key, default=""):
+        setting = db.session.get(Setting, key)
+        if setting:
+            return setting.value or default
+        return default
+
     all_settings = {
-        "genicam_cti_path": (db.session.get(Setting, "genicam_cti_path") or {}).value
-        or "",
-        "team_number": (db.session.get(Setting, "team_number") or {}).value or "",
-        "ip_mode": (db.session.get(Setting, "ip_mode") or {}).value or "dhcp",
-        "hostname": (db.session.get(Setting, "hostname") or {}).value or "",
+        "genicam_cti_path": _get_setting_value("genicam_cti_path", ""),
+        "team_number": _get_setting_value("team_number", ""),
+        "ip_mode": _get_setting_value("ip_mode", "dhcp"),
+        "hostname": _get_setting_value("hostname", ""),
     }
     current_network_settings = network_utils.get_network_settings()
     current_hostname = network_utils.get_hostname()

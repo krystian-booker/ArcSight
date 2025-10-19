@@ -1,10 +1,11 @@
 {% extends "layouts/base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold mb-4">Settings</h1>
+<div x-data="settingsApp()" x-cloak class="space-y-8">
+<h1 class="text-3xl font-bold">Settings</h1>
 
 <!-- Global Settings -->
-<div class="bg-gray-800 rounded-lg p-4 mb-8">
+<div class="bg-gray-800 rounded-lg p-4">
     <h2 class="text-2xl font-bold mb-4">Global Settings</h2>
     <form action="{{ url_for('settings.update_global_settings') }}" method="POST">
         <div class="space-y-4">
@@ -59,59 +60,33 @@
     <h2 class="text-2xl font-bold mb-4">Device Control</h2>
     <div class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button onclick="postToAction('{{ url_for('settings.restart_app') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Vision-Tools</button>
-            <button onclick="postToAction('{{ url_for('settings.reboot_device') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Device</button>
+            <button @click="submitPost('{{ url_for('settings.restart_app') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Vision-Tools</button>
+            <button @click="submitPost('{{ url_for('settings.reboot_device') }}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Restart Device</button>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <a href="{{ url_for('settings.export_db') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center w-full">Export Configuration</a>
-            <button onclick="document.getElementById('import-db-input').click()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded w-full">Import Configuration</button>
+            <button @click="triggerImport" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded w-full">Import Configuration</button>
         </div>
         <div>
-            <button onclick="openFactoryResetModal()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded w-full">Factory Reset</button>
+            <button @click="openFactoryResetModal" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded w-full">Factory Reset</button>
         </div>
     </div>
     <form id="import-db-form" action="{{ url_for('settings.import_db') }}" method="POST" enctype="multipart/form-data" class="hidden">
-        <input type="file" name="database" id="import-db-input" onchange="document.getElementById('import-db-form').submit()">
+        <input type="file" name="database" id="import-db-input" x-ref="importInput" @change="handleImportChange">
     </form>
 </div>
 
 <!-- Factory Reset Modal -->
-<div id="factoryResetModal" class="modal-hidden">
+<div id="factoryResetModal" x-show="factoryResetOpen" x-transition>
     <div class="modal-overlay"></div>
     <div class="modal-content">
         <h3 class="text-lg font-bold mb-4">Confirm Factory Reset</h3>
         <p>Are you sure you want to factory reset? This will delete all settings and cameras and cannot be undone.</p>
         <div class="mt-6 flex justify-end space-x-4">
-            <button onclick="closeFactoryResetModal()" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-md text-white">Cancel</button>
-            <button onclick="confirmFactoryReset()" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white">Factory Reset</button>
+            <button @click="closeFactoryResetModal" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-md text-white">Cancel</button>
+            <button @click="confirmFactoryReset('{{ url_for('settings.factory_reset') }}')" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white">Factory Reset</button>
         </div>
     </div>
 </div>
-
-
-<script>
-function postToAction(url, confirmMsg) {
-    if (confirmMsg && !confirm(confirmMsg)) {
-        return;
-    }
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    document.body.appendChild(form);
-    form.submit();
-}
-
-function openFactoryResetModal() {
-    document.getElementById('factoryResetModal').classList.remove('modal-hidden');
-}
-
-function closeFactoryResetModal() {
-    document.getElementById('factoryResetModal').classList.add('modal-hidden');
-}
-
-function confirmFactoryReset() {
-    postToAction('{{ url_for('settings.factory_reset') }}');
-    closeFactoryResetModal();
-}
-</script>
+</div>
 {% endblock %}
