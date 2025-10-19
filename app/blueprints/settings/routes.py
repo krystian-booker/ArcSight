@@ -18,6 +18,7 @@ def get_db_path():
 @settings.route("/")
 def settings_page():
     """Renders the application settings page."""
+
     def _get_setting_value(key, default=""):
         setting = db.session.get(Setting, key)
         if setting:

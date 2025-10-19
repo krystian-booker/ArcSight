@@ -70,8 +70,12 @@ def test_metrics_registry_snapshot_contains_pipeline(metrics_app):
     assert pipeline_snapshot["queue"]["current_depth"] == 1
     assert pipeline_snapshot["queue"]["max_size"] == 2
     assert pipeline_snapshot["latency_ms"]["total"]["avg_ms"] == pytest.approx(45.0)
-    assert pipeline_snapshot["latency_ms"]["queue_wait"]["avg_ms"] == pytest.approx(15.0)
-    assert pipeline_snapshot["latency_ms"]["processing"]["avg_ms"] == pytest.approx(30.0)
+    assert pipeline_snapshot["latency_ms"]["queue_wait"]["avg_ms"] == pytest.approx(
+        15.0
+    )
+    assert pipeline_snapshot["latency_ms"]["processing"]["avg_ms"] == pytest.approx(
+        30.0
+    )
 
 
 def test_metrics_summary_endpoint(metrics_app, metrics_client):

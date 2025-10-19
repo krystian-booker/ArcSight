@@ -91,7 +91,9 @@ class RefCountedFrame:
         """Monotonic timestamp captured when the frame was created."""
         return self._created_time
 
-    def mark_enqueued(self, pipeline_id: int, timestamp: Optional[float] = None) -> None:
+    def mark_enqueued(
+        self, pipeline_id: int, timestamp: Optional[float] = None
+    ) -> None:
         """Record when the frame was enqueued for a specific pipeline."""
         ts = time.perf_counter() if timestamp is None else timestamp
         with self._lock:
@@ -411,7 +413,9 @@ class VisionProcessingThread(threading.Thread):
                         ((queue_depth_after_pop + 1) / queue_max_size) * 100.0, 100.0
                     )
 
-                enqueue_timestamp = ref_counted_frame.pop_enqueue_timestamp(self.pipeline_id)
+                enqueue_timestamp = ref_counted_frame.pop_enqueue_timestamp(
+                    self.pipeline_id
+                )
                 queue_wait_ms = 0.0
                 if isinstance(enqueue_timestamp, Real):
                     queue_wait_ms = max(
@@ -498,9 +502,15 @@ class VisionProcessingThread(threading.Thread):
 
                 processing_end = time.perf_counter()
                 processing_latency_ms = (processing_end - processing_start) * 1000.0
-                created_timestamp = getattr(ref_counted_frame, "created_timestamp", None)
+                created_timestamp = getattr(
+                    ref_counted_frame, "created_timestamp", None
+                )
                 if not isinstance(created_timestamp, Real):
-                    created_timestamp = enqueue_timestamp if isinstance(enqueue_timestamp, Real) else dequeue_timestamp
+                    created_timestamp = (
+                        enqueue_timestamp
+                        if isinstance(enqueue_timestamp, Real)
+                        else dequeue_timestamp
+                    )
                 total_latency_ms = max(
                     (processing_end - float(created_timestamp)) * 1000.0, 0.0
                 )
@@ -738,11 +748,17 @@ class CameraAcquisitionThread(threading.Thread):
         )
         state["consecutive"] += 1
         now = time.time()
-        max_size = queue_max_size or _coerce_int(getattr(frame_queue, "maxsize", 0)) or 0
+        max_size = (
+            queue_max_size or _coerce_int(getattr(frame_queue, "maxsize", 0)) or 0
+        )
         utilization_pct = 0.0
         if max_size:
             utilization_pct = min(float(queue_size) / max_size, 1.0) * 100.0
-        should_log = now - state["last_log"] >= 5.0 or state["consecutive"] in (1, 5, 10)
+        should_log = now - state["last_log"] >= 5.0 or state["consecutive"] in (
+            1,
+            5,
+            10,
+        )
         if should_log:
             logger.warning(
                 "Dropped frame for pipeline %s on camera %s (queue depth %d/%s, utilization %.1f%%, consecutive drops %d)",
@@ -914,7 +930,9 @@ class CameraAcquisitionThread(threading.Thread):
 
                 for pipeline_id, frame_queue in queue_targets:
                     ref_counted_frame.acquire()
-                    queue_max_size = _coerce_int(getattr(frame_queue, "maxsize", 0)) or 0
+                    queue_max_size = (
+                        _coerce_int(getattr(frame_queue, "maxsize", 0)) or 0
+                    )
                     queue_size_before = _coerce_int(frame_queue.qsize())
                     if queue_size_before is not None:
                         metrics_registry.record_queue_depth(

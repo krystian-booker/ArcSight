@@ -13,7 +13,9 @@ def _to_bool(value) -> bool:
 @monitoring.route("/monitoring")
 def monitoring_dashboard():
     """Render the monitoring dashboard that visualizes pipeline metrics."""
-    refresh_interval_ms = int(current_app.config.get("METRICS_REFRESH_INTERVAL_MS", 2000))
+    refresh_interval_ms = int(
+        current_app.config.get("METRICS_REFRESH_INTERVAL_MS", 2000)
+    )
     metrics_enabled = _to_bool(current_app.config.get("METRICS_ENABLED", True))
     return render_template(
         "pages/monitoring.html",

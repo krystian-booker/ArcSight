@@ -53,7 +53,9 @@ def create_app(config_overrides=None):
         window_seconds=app.config.get("METRICS_WINDOW_SECONDS", 300.0),
         fps_window_seconds=app.config.get("METRICS_FPS_WINDOW_SECONDS", 10.0),
         memory_sampler_interval=app.config.get("METRICS_MEMORY_SAMPLE_SECONDS", 2.0),
-        queue_high_utilization_pct=app.config.get("PIPELINE_QUEUE_HIGH_UTILIZATION_PCT", 80.0),
+        queue_high_utilization_pct=app.config.get(
+            "PIPELINE_QUEUE_HIGH_UTILIZATION_PCT", 80.0
+        ),
         latency_warn_ms=app.config.get("PIPELINE_LATENCY_WARN_MS", 150.0),
     )
     if app.config.get("METRICS_ENABLED", True):

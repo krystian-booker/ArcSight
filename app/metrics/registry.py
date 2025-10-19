@@ -60,7 +60,9 @@ def _build_latency_stats(values: Iterable[float]) -> LatencyBreakdown:
     p50 = _quantile(values_list, 0.5)
     p95 = _quantile(values_list, 0.95)
     maximum = max(values_list)
-    return LatencyBreakdown(avg_ms=avg, p50_ms=p50, p95_ms=p95, max_ms=maximum, count=len(values_list))
+    return LatencyBreakdown(
+        avg_ms=avg, p50_ms=p50, p95_ms=p95, max_ms=maximum, count=len(values_list)
+    )
 
 
 class PipelineMetrics:
@@ -94,7 +96,9 @@ class PipelineMetrics:
         self._processing_latency_samples: Deque[Tuple[float, float]] = deque()
         self._processed_timestamps: Deque[Tuple[float, float]] = deque()
 
-    def update_metadata(self, pipeline_type: Optional[str], queue_max_size: Optional[int]) -> None:
+    def update_metadata(
+        self, pipeline_type: Optional[str], queue_max_size: Optional[int]
+    ) -> None:
         with self._lock:
             if pipeline_type:
                 self.pipeline_type = pipeline_type
@@ -165,13 +169,21 @@ class PipelineMetrics:
 
             fps = 0.0
             if self._processed_timestamps:
-                elapsed = self._processed_timestamps[-1][0] - self._processed_timestamps[0][0]
+                elapsed = (
+                    self._processed_timestamps[-1][0] - self._processed_timestamps[0][0]
+                )
                 if elapsed > 0:
                     fps = len(self._processed_timestamps) / elapsed
 
-            total_latency = _build_latency_stats(value for _, value in self._total_latency_samples)
-            queue_latency = _build_latency_stats(value for _, value in self._queue_latency_samples)
-            processing_latency = _build_latency_stats(value for _, value in self._processing_latency_samples)
+            total_latency = _build_latency_stats(
+                value for _, value in self._total_latency_samples
+            )
+            queue_latency = _build_latency_stats(
+                value for _, value in self._queue_latency_samples
+            )
+            processing_latency = _build_latency_stats(
+                value for _, value in self._processing_latency_samples
+            )
 
             return {
                 "camera_identifier": self.camera_identifier,
@@ -241,7 +253,9 @@ class MetricsRegistry:
                 return
             self._memory_stop_event.clear()
             self._memory_thread = threading.Thread(
-                target=self._memory_sampler_loop, name="MetricsMemorySampler", daemon=True
+                target=self._memory_sampler_loop,
+                name="MetricsMemorySampler",
+                daemon=True,
             )
             self._memory_thread.start()
 
@@ -344,7 +358,9 @@ class MetricsRegistry:
             queue_max_size=0,
         )
         now = time.time()
-        metrics.record_latencies(now, total_latency_ms, queue_latency_ms, processing_latency_ms)
+        metrics.record_latencies(
+            now, total_latency_ms, queue_latency_ms, processing_latency_ms
+        )
         metrics.record_processed_frame(now)
 
     def get_snapshot(self) -> Dict[str, object]:

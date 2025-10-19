@@ -43,7 +43,9 @@ def test_transform_to_rvec_tvec_matches_cv2():
     matrix_wpimath = _rotation3d_to_matrix(rotation)
 
     assert _close_matrix(matrix_cv, matrix_wpimath)
-    assert np.allclose(tvec.reshape(-1), [translation.X(), translation.Y(), translation.Z()], atol=1e-6)
+    assert np.allclose(
+        tvec.reshape(-1), [translation.X(), translation.Y(), translation.Z()], atol=1e-6
+    )
 
 
 def test_scale_tag_corners_ordering():

@@ -194,7 +194,11 @@ def _scale_tag_corners(tag_size: float) -> np.ndarray:
     )
 
 
-def _compute_frc_pose(rvec: np.ndarray, tvec: np.ndarray) -> Tuple[np.ndarray, Tuple[float, float, float], Tuple[float, float, float], np.ndarray]:
+def _compute_frc_pose(
+    rvec: np.ndarray, tvec: np.ndarray
+) -> Tuple[
+    np.ndarray, Tuple[float, float, float], Tuple[float, float, float], np.ndarray
+]:
     rmat_opencv, _ = cv2.Rodrigues(rvec)
     rmat_frc = FRC_AXIS_SWAP @ rmat_opencv @ FRC_AXIS_SWAP.T
 
@@ -415,8 +419,12 @@ class AprilTagPipeline:
 
             corners_field: List[List[float]] = []
             for corner in self.single_tag_obj_points:
-                offset = Translation3d(float(corner[0]), float(corner[1]), float(corner[2]))
-                corner_pose = tag_pose_field.transformBy(Transform3d(offset, Rotation3d()))
+                offset = Translation3d(
+                    float(corner[0]), float(corner[1]), float(corner[2])
+                )
+                corner_pose = tag_pose_field.transformBy(
+                    Transform3d(offset, Rotation3d())
+                )
                 trans = corner_pose.translation()
                 corners_field.append(
                     [float(trans.X()), float(trans.Y()), float(trans.Z())]
@@ -772,7 +780,12 @@ class AprilTagPipeline:
             return None, None
 
         projected_error = _project_error(
-            obj[inliers.flatten()], img[inliers.flatten()], rvec, tvec, cam_matrix, dist_coeffs
+            obj[inliers.flatten()],
+            img[inliers.flatten()],
+            rvec,
+            tvec,
+            cam_matrix,
+            dist_coeffs,
         )
 
         tvec_frc, _, _, rmat_frc = _compute_frc_pose(rvec, tvec)
@@ -793,9 +806,7 @@ class AprilTagPipeline:
 
         per_tag_errors: Dict[int, Dict[str, float]] = {}
         residuals = []
-        projected_all, _ = cv2.projectPoints(
-            obj, rvec, tvec, cam_matrix, dist_coeffs
-        )
+        projected_all, _ = cv2.projectPoints(obj, rvec, tvec, cam_matrix, dist_coeffs)
         projected_all = projected_all.reshape(-1, 2)
 
         for tag_id, (start, end) in tag_ranges:
@@ -888,9 +899,13 @@ class AprilTagPipeline:
         for tag in valid_detections:
             result = None
             if self._use_pose_estimator:
-                result = self._solve_single_tag_with_estimator(tag, cam_matrix, dist_coeffs)
+                result = self._solve_single_tag_with_estimator(
+                    tag, cam_matrix, dist_coeffs
+                )
             if result is None:
-                result = self._solve_single_tag_with_opencv(tag, cam_matrix, dist_coeffs)
+                result = self._solve_single_tag_with_opencv(
+                    tag, cam_matrix, dist_coeffs
+                )
             if result is not None:
                 single_tag_results.append(result)
 
