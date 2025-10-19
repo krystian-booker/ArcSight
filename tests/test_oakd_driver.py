@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 import numpy as np
 
 from app.drivers.oakd_driver import OAKDDriver
@@ -28,7 +28,7 @@ def test_initialization(oakd_driver, mock_camera_data):
     assert oakd_driver.identifier == "12345_mxid"
     assert oakd_driver.device is None
     assert oakd_driver.pipeline is None
-    assert oakd_driver.q_rgb is None
+    assert oakd_driver.output_queue is None
 
 
 # --- Test connect ---
@@ -36,53 +36,109 @@ def test_initialization(oakd_driver, mock_camera_data):
 def test_connect_success(mock_dai, oakd_driver):
     """Test a successful connection to an OAK-D camera."""
     # Arrange
+    mock_dai.__version__ = "3.1.0"
     mock_device_info = MagicMock()
     mock_dai.DeviceInfo.return_value = mock_device_info
+
+    mock_device = MagicMock()
+    mock_device.getConnectedCameras.return_value = []
+    mock_dai.Device.return_value = mock_device
 
     mock_pipeline = MagicMock()
     mock_dai.Pipeline.return_value = mock_pipeline
 
-    mock_device = MagicMock()
-    mock_dai.Device.return_value = mock_device
-
+    mock_dai.node = MagicMock()
+    mock_dai.node.Camera = MagicMock(name="CameraNode")
+    mock_camera_builder = MagicMock()
+    mock_pipeline.create.return_value = mock_camera_builder
+    mock_camera = MagicMock()
+    mock_camera_builder.build.return_value = mock_camera
+    mock_stream = MagicMock()
+    mock_camera.requestFullResolutionOutput.return_value = mock_stream
     mock_queue = MagicMock()
-    mock_device.getOutputQueue.return_value = mock_queue
+    mock_stream.createOutputQueue.return_value = mock_queue
+
+    mock_socket = MagicMock(name="CAM_A")
+    mock_dai.CameraBoardSocket = MagicMock()
+    mock_dai.CameraBoardSocket.CAM_A = mock_socket
 
     # Act
     oakd_driver.connect()
 
     # Assert
     mock_dai.DeviceInfo.assert_called_once_with("12345_mxid")
-    mock_dai.Pipeline.assert_called_once()
-    mock_dai.Device.assert_called_once_with(mock_pipeline, mock_device_info)
-    mock_device.getOutputQueue.assert_called_once_with(
-        name="rgb", maxSize=4, blocking=False
+    mock_dai.Device.assert_called_once_with(mock_device_info)
+    mock_dai.Pipeline.assert_called_once_with(mock_device)
+    mock_pipeline.create.assert_called_once_with(mock_dai.node.Camera)
+    mock_camera_builder.build.assert_called_once_with(mock_socket)
+    mock_camera.requestFullResolutionOutput.assert_called_once_with(
+        useHighestResolution=True
     )
+    mock_stream.createOutputQueue.assert_called_once_with(maxSize=4, blocking=False)
+    mock_pipeline.start.assert_called_once()
 
     assert oakd_driver.device == mock_device
     assert oakd_driver.pipeline == mock_pipeline
-    assert oakd_driver.q_rgb == mock_queue
+    assert oakd_driver.output_queue == mock_queue
 
 
 @patch("app.drivers.oakd_driver.dai")
 def test_connect_device_raises_exception(mock_dai, oakd_driver):
     """Test that ConnectionError is raised when dai.Device fails."""
     # Arrange
+    mock_dai.__version__ = "3.1.0"
     mock_dai.DeviceInfo.return_value = MagicMock()
-    mock_dai.Pipeline.return_value = MagicMock()
-    mock_dai.Device.side_effect = RuntimeError("Device not found")
+    mock_device = MagicMock()
+    mock_dai.Device.return_value = mock_device
+    mock_dai.Pipeline.side_effect = RuntimeError("Pipeline creation failed")
 
     # Act & Assert
     with pytest.raises(
         ConnectionError,
-        match="Failed to connect to OAK-D camera 12345_mxid: Device not found",
+        match="Failed to connect to OAK-D camera 12345_mxid: Pipeline creation failed",
     ):
         oakd_driver.connect()
 
     # Ensure cleanup was performed
+    mock_device.close.assert_called_once()
     assert oakd_driver.device is None
     assert oakd_driver.pipeline is None
-    assert oakd_driver.q_rgb is None
+    assert oakd_driver.output_queue is None
+
+
+@patch("app.drivers.oakd_driver.dai")
+def test_connect_retries_pipeline_start_signature(mock_dai, oakd_driver):
+    """Test that start(self.device) is attempted when start() TypeErrors."""
+    mock_dai.__version__ = "3.1.0"
+    mock_device_info = MagicMock()
+    mock_dai.DeviceInfo.return_value = mock_device_info
+
+    mock_device = MagicMock()
+    mock_device.getConnectedCameras.return_value = []
+    mock_dai.Device.return_value = mock_device
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.start.side_effect = [TypeError("needs device"), None]
+    mock_dai.Pipeline.return_value = mock_pipeline
+
+    mock_dai.node = MagicMock()
+    mock_dai.node.Camera = MagicMock()
+    mock_camera_builder = MagicMock()
+    mock_pipeline.create.return_value = mock_camera_builder
+    mock_camera = MagicMock()
+    mock_camera_builder.build.return_value = mock_camera
+    mock_stream = MagicMock()
+    mock_camera.requestFullResolutionOutput.return_value = mock_stream
+    mock_stream.createOutputQueue.return_value = MagicMock()
+
+    mock_socket = MagicMock()
+    mock_dai.CameraBoardSocket = MagicMock()
+    mock_dai.CameraBoardSocket.CAM_A = mock_socket
+
+    oakd_driver.connect()
+
+    assert mock_pipeline.start.call_args_list == [call(), call(mock_device)]
+    assert oakd_driver.pipeline == mock_pipeline
 
 
 @patch("app.drivers.oakd_driver.dai", None)
@@ -103,17 +159,20 @@ def test_disconnect_when_connected(mock_dai, oakd_driver):
     # Arrange
     mock_device = MagicMock()
     oakd_driver.device = mock_device
-    oakd_driver.pipeline = "dummy_pipeline"
-    oakd_driver.q_rgb = "dummy_queue"
+    mock_pipeline = MagicMock()
+    mock_pipeline.isRunning.return_value = True
+    oakd_driver.pipeline = mock_pipeline
+    oakd_driver.output_queue = "dummy_queue"
 
     # Act
     oakd_driver.disconnect()
 
     # Assert
     mock_device.close.assert_called_once()
+    mock_pipeline.stop.assert_called_once()
     assert oakd_driver.device is None
     assert oakd_driver.pipeline is None
-    assert oakd_driver.q_rgb is None
+    assert oakd_driver.output_queue is None
 
 
 def test_disconnect_when_not_connected(oakd_driver):
@@ -133,7 +192,7 @@ def test_get_frame_success(oakd_driver):
 
     mock_queue = MagicMock()
     mock_queue.tryGet.return_value = mock_dai_frame
-    oakd_driver.q_rgb = mock_queue
+    oakd_driver.output_queue = mock_queue
 
     # Act
     frame = oakd_driver.get_frame()
@@ -148,14 +207,14 @@ def test_get_frame_no_frame_available(oakd_driver):
     """Test get_frame when the queue's tryGet returns None."""
     mock_queue = MagicMock()
     mock_queue.tryGet.return_value = None
-    oakd_driver.q_rgb = mock_queue
+    oakd_driver.output_queue = mock_queue
     frame = oakd_driver.get_frame()
     assert frame is None
 
 
 def test_get_frame_not_connected(oakd_driver):
-    """Test get_frame when the driver is not connected (q_rgb is None)."""
-    assert oakd_driver.q_rgb is None
+    """Test get_frame when the driver is not connected (no output queue)."""
+    assert oakd_driver.output_queue is None
     frame = oakd_driver.get_frame()
     assert frame is None
 
@@ -170,10 +229,11 @@ def test_list_devices_success(mock_dai):
     mock_dev_info2 = MagicMock()
     mock_dev_info2.getDeviceId.return_value = "mxid_2"
 
-    mock_dai.Device.getAllAvailableDevices.return_value = [
+    mock_devices = [
         mock_dev_info1,
         mock_dev_info2,
     ]
+    mock_dai.Device.getAllAvailableDevices.return_value = mock_devices
 
     # Act
     devices = OAKDDriver.list_devices()
@@ -200,6 +260,15 @@ def test_list_devices_raises_exception(mock_dai):
     )
     devices = OAKDDriver.list_devices()
     assert devices == []
+
+
+@patch("app.drivers.oakd_driver.dai")
+def test_connect_rejects_old_depthai(mock_dai, oakd_driver):
+    mock_dai.__version__ = "2.21.0"
+    mock_dai.Device = MagicMock()
+    with pytest.raises(ConnectionError, match="DepthAI 3.1.0 or newer is required"):
+        oakd_driver.connect()
+    mock_dai.Device.assert_not_called()
 
 
 @patch("app.drivers.oakd_driver.dai", None)

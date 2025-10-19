@@ -13,8 +13,10 @@ export function registerCamerasComponents(Alpine) {
     }
 
     Alpine.data('camerasApp', (config = {}) => ({
-        cameras: normaliseCameras(config.cameras || []),
+        cameras: [],
         genicamEnabled: Boolean(config.genicam_enabled),
+        camerasLoading: false,
+        camerasError: '',
         status: {},
         nodePanels: {},
         statusInterval: null,
@@ -34,16 +36,8 @@ export function registerCamerasComponents(Alpine) {
         },
 
         init() {
-            this.cameras.forEach((camera) => {
-                this.status[camera.id] = { loading: true, connected: null };
-                if (camera.camera_type === 'GenICam') {
-                    this.nodePanels[camera.id] = this.createNodePanelState();
-                }
-            });
-
             this.$watch('addModal.camera_type', (value) => this.onAddCameraTypeChange(value));
-
-            this.startStatusPolling();
+            this.bootstrapCameras();
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') {
                     this.startStatusPolling();
@@ -51,6 +45,46 @@ export function registerCamerasComponents(Alpine) {
                     this.stopStatusPolling();
                 }
             });
+        },
+
+        bootstrapCameras() {
+            this.reloadCameras();
+        },
+
+        onCamerasUpdated() {
+            this.status = {};
+            this.nodePanels = {};
+            this.cameras.forEach((camera) => {
+                this.status[camera.id] = { loading: true, connected: null };
+                if (camera.camera_type === 'GenICam') {
+                    this.nodePanels[camera.id] = this.createNodePanelState();
+                }
+            });
+            if (document.visibilityState !== 'hidden') {
+                this.startStatusPolling();
+            }
+        },
+
+        async reloadCameras() {
+            if (this.camerasLoading) {
+                return;
+            }
+            this.camerasLoading = true;
+            this.camerasError = '';
+            try {
+                const payload = await fetchJson('/api/cameras');
+                this.cameras = normaliseCameras(payload || []);
+                this.onCamerasUpdated();
+            } catch (error) {
+                this.camerasError = error.message || 'Failed to load cameras';
+                if (!this.cameras.length) {
+                    this.status = {};
+                    this.nodePanels = {};
+                    this.stopStatusPolling();
+                }
+            } finally {
+                this.camerasLoading = false;
+            }
         },
 
         createNodePanelState() {
@@ -68,6 +102,9 @@ export function registerCamerasComponents(Alpine) {
 
         startStatusPolling() {
             this.stopStatusPolling();
+            if (!this.cameras.length) {
+                return;
+            }
             this.refreshStatuses();
             this.statusInterval = window.setInterval(() => this.refreshStatuses(), 5000);
         },

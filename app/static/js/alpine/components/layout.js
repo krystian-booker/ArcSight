@@ -35,6 +35,25 @@ export function registerLayoutComponents(Alpine) {
             top: 0,
         },
 
+        registerCleanup(callback) {
+            if (typeof callback !== 'function') {
+                return;
+            }
+            if (typeof this.$cleanup === 'function') {
+                this.$cleanup(callback);
+                return;
+            }
+            const target = this.$el;
+            if (!target || typeof target.addEventListener !== 'function') {
+                return;
+            }
+            const handler = () => {
+                callback();
+                target.removeEventListener('alpine:destroy', handler);
+            };
+            target.addEventListener('alpine:destroy', handler);
+        },
+
         init() {
             this.isHandheld = window.matchMedia(HANDHELD_QUERY).matches;
             this.setupMediaWatcher();
@@ -68,7 +87,7 @@ export function registerLayoutComponents(Alpine) {
                 mql.addListener(handler);
             }
             this.mediaQuery = { mql, handler };
-            this.$cleanup(() => {
+            this.registerCleanup(() => {
                 if (this.mediaQuery) {
                     const { mql: query, handler: listener } = this.mediaQuery;
                     if (typeof query.removeEventListener === 'function') {

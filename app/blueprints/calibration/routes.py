@@ -32,7 +32,7 @@ def create_error_image(message, width=640, height=480):
 @calibration.route("/")
 def calibration_page():
     """Renders the camera calibration page."""
-    cameras = Camera.query.all()
+    cameras = [camera.to_dict() for camera in Camera.query.all()]
     return render_template("pages/calibration.html", cameras=cameras)
 
 

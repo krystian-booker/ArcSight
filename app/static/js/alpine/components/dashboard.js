@@ -73,7 +73,7 @@ export function registerDashboardComponents(Alpine) {
     }
 
     Alpine.data('dashboardApp', (config = {}) => ({
-        cameras: config.cameras || [],
+        cameras: [],
         endpoints: Object.assign(
             {
                 cameraStatus: (cameraId) => `/cameras/status/${cameraId}`,
@@ -173,9 +173,7 @@ export function registerDashboardComponents(Alpine) {
             this.debouncedPipelineSave = debounce(() => this.savePipelineConfig(), 600);
             this.debouncedControlSave = debounce(() => this.saveControls(), 400);
 
-            if (this.hasCamera) {
-                this.refreshCameraData();
-            }
+            this.loadCameras();
 
             this.$watch('selectedCameraId', async (value, previous) => {
                 if (value === previous) return;
@@ -190,6 +188,19 @@ export function registerDashboardComponents(Alpine) {
             this.$watch('feedType', () => {
                 this.updateFeedSource();
             });
+        },
+
+        async loadCameras() {
+            try {
+                const cameras = await fetchJson('/api/cameras');
+                this.cameras = cameras || [];
+                if (this.hasCamera) {
+                    await this.refreshCameraData();
+                }
+            } catch (error) {
+                console.error('Failed to load cameras:', error);
+                this.cameras = [];
+            }
         },
 
         async onCameraChanged() {

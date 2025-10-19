@@ -23,6 +23,13 @@ APP_AUTHOR = "User"
 data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
 
 
+@pipelines.route("/cameras", methods=["GET"])
+def list_cameras():
+    """Returns all registered cameras."""
+    cameras = Camera.query.order_by(Camera.id.asc()).all()
+    return jsonify([camera.to_dict() for camera in cameras])
+
+
 def _remove_file(path: Optional[str]) -> None:
     if path and os.path.exists(path):
         try:

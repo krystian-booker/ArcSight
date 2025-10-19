@@ -3,8 +3,7 @@
 {% block content %}
 <div
     x-data="camerasApp({
-        cameras: {{ cameras|tojson|safe }},
-        genicam_enabled: {{ 'true' if genicam_enabled else 'false' }}
+        genicam_enabled: {{ genicam_enabled | tojson }}
     })"
     x-cloak
     class="stack stack-2xl"
@@ -46,8 +45,24 @@
                     </tr>
                 </thead>
                 <tbody>
+                    <template x-if="camerasError">
+                        <tr>
+                            <td colspan="5">
+                                <div class="callout callout-danger" x-text="camerasError"></div>
+                            </td>
+                        </tr>
+                    </template>
+                    <template x-if="camerasLoading && !camerasError">
+                        <tr>
+                            <td colspan="5" class="muted text-center">Loading cameras…</td>
+                        </tr>
+                    </template>
+                    <template x-if="!camerasLoading && !camerasError && !cameras.length">
+                        <tr>
+                            <td colspan="5" class="muted text-center">No cameras registered yet.</td>
+                        </tr>
+                    </template>
                     <template x-for="camera in cameras" :key="camera.id">
-                        <template>
                             <tr x-init="camera.camera_type === 'GenICam' && ensureNodePanel(camera.id)">
                                 <td>
                                     <div class="stack stack-xs">
@@ -240,11 +255,7 @@
                                     </div>
                                 </td>
                             </tr>
-                        </template>
                     </template>
-                    <tr x-show="!cameras.length">
-                        <td colspan="5" class="muted text-center text-small">No cameras configured yet.</td>
-                    </tr>
                 </tbody>
             </table>
         </div>
@@ -298,7 +309,7 @@
                         class="form-control"
                         x-model="addModal.selections.usb"
                         :disabled="addModal.loading"
-                        required
+                        :required="addModal.camera_type === 'USB'"
                     >
                         <option value="" x-show="!(addModal.options.usb && addModal.options.usb.length)">No USB cameras found</option>
                         <template x-for="device in addModal.options.usb" :key="device.identifier">
@@ -315,7 +326,7 @@
                         class="form-control"
                         x-model="addModal.selections.genicam"
                         :disabled="addModal.loading"
-                        required
+                        :required="addModal.camera_type === 'GenICam'"
                     >
                         <option value="" x-show="!(addModal.options.genicam && addModal.options.genicam.length)">No GenICam cameras found</option>
                         <template x-for="device in addModal.options.genicam" :key="device.identifier">
@@ -332,7 +343,7 @@
                         class="form-control"
                         x-model="addModal.selections.oakd"
                         :disabled="addModal.loading"
-                        required
+                        :required="addModal.camera_type === 'OAK-D'"
                     >
                         <option value="" x-show="!(addModal.options.oakd && addModal.options.oakd.length)">No OAK-D cameras found</option>
                         <template x-for="device in addModal.options.oakd" :key="device.identifier">

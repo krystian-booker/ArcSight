@@ -10,11 +10,9 @@ from . import cameras
 @cameras.route("/")
 def cameras_page():
     """Renders the camera management page."""
-    cameras_list = Camera.query.all()
     genicam_setting = db.session.get(Setting, "genicam_cti_path")
     return render_template(
         "pages/cameras.html",
-        cameras=cameras_list,
         genicam_enabled=bool(genicam_setting and genicam_setting.value),
     )
 

@@ -3,7 +3,7 @@
 
 {% block content %}
 <div
-    x-data="dashboardApp({ cameras: {{ cameras|tojson|safe }} })"
+    x-data="dashboardApp({})"
     x-cloak
     class="stack stack-2xl"
 >
@@ -32,11 +32,9 @@
                     class="form-control"
                     x-model="selectedCameraId"
                 >
-                    {% if cameras %}
-                    <option value="">Select a camera…</option>
-                    {% else %}
-                    <option value="" disabled>No cameras configured</option>
-                    {% endif %}
+                    <option value="">
+                        <span x-text="cameras.length ? 'Select a camera…' : 'No cameras configured'"></span>
+                    </option>
                     <template x-for="camera in cameras" :key="camera.id">
                         <option :value="String(camera.id)" x-text="camera.name"></option>
                     </template>
