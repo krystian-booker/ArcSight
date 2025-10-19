@@ -99,8 +99,8 @@ class OAKDDriver(BaseDriver):
             for device_info in dai.Device.getAllAvailableDevices():
                 devices.append(
                     {
-                        "identifier": device_info.getMxId(),  # The unique identifier for OAK-D
-                        "name": f"OAK-D {device_info.getMxId()}",
+                        "identifier": device_info.getDeviceId(),  # The unique identifier for OAK-D
+                        "name": f"OAK-D {device_info.getDeviceId()}",
                         "camera_type": "OAK-D",
                     }
                 )

@@ -49,3 +49,4 @@ dependencies:
 
       # Code quality
       - ruff
+      - python-dotenv

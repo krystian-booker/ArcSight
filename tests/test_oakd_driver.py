@@ -166,9 +166,9 @@ def test_list_devices_success(mock_dai):
     """Test listing available OAK-D devices."""
     # Arrange
     mock_dev_info1 = MagicMock()
-    mock_dev_info1.getMxId.return_value = "mxid_1"
+    mock_dev_info1.getDeviceId.return_value = "mxid_1"
     mock_dev_info2 = MagicMock()
-    mock_dev_info2.getMxId.return_value = "mxid_2"
+    mock_dev_info2.getDeviceId.return_value = "mxid_2"
 
     mock_dai.Device.getAllAvailableDevices.return_value = [
         mock_dev_info1,
