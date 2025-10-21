@@ -1,0 +1,118 @@
+{% extends "layouts/base.html" %}
+{% block title %}Monitoring{% endblock %}
+
+{% block content %}
+<div
+    id="monitoring-app"
+    class="stack stack-2xl"
+    data-refresh="{{ refresh_interval_ms }}"
+    data-enabled="{{ 'true' if metrics_enabled else 'false' }}"
+>
+    <header class="stack stack-lg">
+        <div class="stack stack-sm">
+            <h1>Monitoring</h1>
+            <p class="muted text-small">
+                Track live pipeline health including latency, queue utilization, FPS, and dropped frames.
+            </p>
+        </div>
+    </header>
+
+    {% if not metrics_enabled %}
+    <section class="panel stack stack-md callout callout-warning">
+        <h2 class="panel-title">Metrics disabled</h2>
+        <p>
+            Runtime metrics are currently disabled via configuration. Set
+            <code>METRICS_ENABLED=1</code> in your environment and restart the service to enable the monitoring view.
+        </p>
+    </section>
+    {% else %}
+    <section class="grid-3 grid-loose align-start">
+        <article class="panel stack stack-md">
+            <header class="stack stack-2xs">
+                <h2 class="panel-title">System Overview</h2>
+                <p class="panel-hint">Aggregates memory usage and pipeline activity.</p>
+            </header>
+            <div class="stack stack-sm">
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Process RSS</span>
+                    <strong data-field="memory-rss">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Active pipelines</span>
+                    <strong data-field="pipeline-count">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Drops per minute</span>
+                    <strong data-field="drops-per-minute">—</strong>
+                </div>
+            </div>
+        </article>
+
+        <article class="panel stack stack-md">
+            <header class="stack stack-2xs">
+                <h2 class="panel-title">Latency Thresholds</h2>
+                <p class="panel-hint">Configured guardrails for pipeline performance.</p>
+            </header>
+            <div class="stack stack-sm">
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Latency alert</span>
+                    <strong data-field="latency-threshold">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Queue high water</span>
+                    <strong data-field="queue-threshold">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Window size</span>
+                    <strong data-field="window-size">—</strong>
+                </div>
+            </div>
+        </article>
+
+        <article class="panel stack stack-md">
+            <header class="stack stack-2xs">
+                <h2 class="panel-title">Last Update</h2>
+                <p class="panel-hint">Snapshot timing for current metrics payload.</p>
+            </header>
+            <div class="stack stack-sm">
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Generated at</span>
+                    <strong data-field="generated-at">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Refresh cadence</span>
+                    <strong>{{ refresh_interval_ms }} ms</strong>
+                </div>
+            </div>
+        </article>
+    </section>
+
+    <section class="panel stack stack-lg">
+        <header class="stack stack-sm">
+            <h2 class="panel-title">Pipeline Metrics</h2>
+            <p class="panel-hint">Each entry represents a running pipeline consumer.</p>
+        </header>
+        <div style="overflow-x:auto;">
+            <table class="table table--compact table-muted">
+                <thead>
+                    <tr>
+                        <th scope="col">Pipeline</th>
+                        <th scope="col">FPS</th>
+                        <th scope="col">Latency (avg / p95 / max)</th>
+                        <th scope="col">Queue</th>
+                        <th scope="col">Drops</th>
+                        <th scope="col">Status</th>
+                    </tr>
+                </thead>
+                <tbody data-table-body>
+                    <tr>
+                        <td colspan="6" class="muted text-center">Awaiting first sample…</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+</div>
+<script defer src="{{ url_for('static', filename='js/monitoring.js') }}"></script>
+{% endblock %}

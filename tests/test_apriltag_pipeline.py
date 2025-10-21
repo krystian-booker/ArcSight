@@ -1,28 +1,14 @@
 import pytest
 import numpy as np
-import math
 from unittest.mock import MagicMock, patch
 from app.pipelines.apriltag_pipeline import AprilTagPipeline
 
 
 @pytest.fixture
-def mock_libs():
-    """
-    This fixture provides mocks for the C++ backed libraries (robotpy_apriltag, wpimath)
-    for a single test function's scope. It uses `patch` to replace the libraries
-    where they are imported in the pipeline module.
-
-    The target for patch should be where the object is looked up. In this case,
-    'robotpy_apriltag' and 'Transform3d' are both looked up in the
-    'app.pipelines.apriltag_pipeline' module's namespace.
-    """
-    with (
-        patch("app.pipelines.apriltag_pipeline.robotpy_apriltag") as mock_rpa,
-        patch(
-            "app.pipelines.apriltag_pipeline.Transform3d", new_callable=MagicMock
-        ) as mock_transform3d,
-    ):
-        yield mock_rpa, mock_transform3d
+def mock_detector():
+    """Provides a mock robotpy-apriltag detector (detection only, not pose)."""
+    with patch("app.pipelines.apriltag_pipeline.robotpy_apriltag") as mock_rpa:
+        yield mock_rpa
 
 
 @pytest.fixture
@@ -35,6 +21,12 @@ def default_config():
 def default_cam_matrix():
     """Provides a default 3x3 camera intrinsic matrix."""
     return np.array([[1000, 0, 640], [0, 1000, 360], [0, 0, 1]], dtype=np.float32)
+
+
+@pytest.fixture
+def default_dist_coeffs():
+    """Provides default distortion coefficients (zero distortion)."""
+    return np.zeros((4, 1), dtype=np.float32)
 
 
 def create_mock_detection(tag_id, hamming=0, margin=50.0):
@@ -54,50 +46,23 @@ def create_mock_detection(tag_id, hamming=0, margin=50.0):
     return mock_detection
 
 
-def create_mock_pose_estimate():
-    """Helper function to create a mock AprilTagPoseEstimate object with nested mocks."""
-    mock_rotation = MagicMock()
-    mock_rotation.toMatrix.return_value = np.eye(3)
-    # FRC standard: rotation.X()=Roll, rotation.Y()=Pitch, rotation.Z()=Yaw
-    mock_rotation.X.return_value = 0.1  # roll_rad = 0.1
-    mock_rotation.Y.return_value = 0.2  # pitch_rad = 0.2
-    mock_rotation.Z.return_value = 0.3  # yaw_rad = 0.3
-
-    mock_transform = MagicMock()
-    mock_transform.rotation.return_value = mock_rotation
-    # FRC standard: X=forward, Y=left, Z=up
-    mock_transform.X.return_value = 2.0  # x_ui = 2.0
-    mock_transform.Y.return_value = 0.5  # y_ui = 0.5
-    mock_transform.Z.return_value = 0.8  # z_ui = 0.8
-
-    mock_estimate = MagicMock()
-    mock_estimate.pose1 = mock_transform
-    mock_estimate.error1 = 0.01
-
-    return mock_estimate
-
-
-def test_initialization(mock_libs, default_config):
+def test_initialization(mock_detector, default_config):
     """Test that the pipeline initializes correctly with a standard config."""
-    mock_rpa, _ = mock_libs
     mock_detector_instance = MagicMock()
-    mock_rpa.AprilTagDetector.return_value = mock_detector_instance
+    mock_detector.AprilTagDetector.return_value = mock_detector_instance
 
     pipeline = AprilTagPipeline(default_config)
 
-    mock_rpa.AprilTagDetector.assert_called_once()
+    mock_detector.AprilTagDetector.assert_called_once()
     mock_detector_instance.addFamily.assert_called_once_with("tag36h11", 2)
-
-    mock_rpa.AprilTagPoseEstimator.Config.assert_called_once_with(0.15, 0, 0, 0, 0)
-    mock_rpa.AprilTagPoseEstimator.assert_not_called()
-    assert pipeline.pose_estimator is None
+    assert pipeline.tag_size_m == 0.15
+    assert pipeline.single_tag_obj_points.shape == (4, 3)
 
 
-def test_initialization_family_hack(mock_libs):
+def test_initialization_family_hack(mock_detector):
     """Test the family name 'hack' for adding the 'tag' prefix if it's missing."""
-    mock_rpa, _ = mock_libs
     mock_detector_instance = MagicMock()
-    mock_rpa.AprilTagDetector.return_value = mock_detector_instance
+    mock_detector.AprilTagDetector.return_value = mock_detector_instance
     config = {"family": "16h5"}
 
     AprilTagPipeline(config)
@@ -105,66 +70,89 @@ def test_initialization_family_hack(mock_libs):
     mock_detector_instance.addFamily.assert_called_once_with("tag16h5", 2)
 
 
-def test_process_frame_no_tags(mock_libs, default_config, default_cam_matrix):
+def test_process_frame_no_tags(
+    mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+):
     """Test processing a frame where no tags are detected."""
-    mock_rpa, _ = mock_libs
     mock_detector_instance = MagicMock()
     mock_detector_instance.detect.return_value = []
-    mock_rpa.AprilTagDetector.return_value = mock_detector_instance
+    mock_detector.AprilTagDetector.return_value = mock_detector_instance
 
     pipeline = AprilTagPipeline(default_config)
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    results = pipeline.process_frame(frame, default_cam_matrix)
+    result = pipeline.process_frame(frame, default_cam_matrix, default_dist_coeffs)
 
-    assert results == []
+    assert result["single_tags"] == []
+    assert result["multi_tag"] is None
     mock_detector_instance.detect.assert_called_once()
 
 
-def test_process_frame_with_tags(mock_libs, default_config, default_cam_matrix):
-    """Test processing a frame with a valid AprilTag detection."""
-    mock_rpa, _ = mock_libs
-
+@patch("app.pipelines.apriltag_pipeline.cv2.solvePnP")
+@patch("app.pipelines.apriltag_pipeline.cv2.projectPoints")
+def test_process_frame_with_tags(
+    mock_project,
+    mock_solve,
+    mock_detector,
+    default_config,
+    default_cam_matrix,
+    default_dist_coeffs,
+):
+    """Test processing a frame with a valid AprilTag detection using OpenCV solvePnP."""
     mock_detection = create_mock_detection(tag_id=1)
-    mock_pose = create_mock_pose_estimate()
 
     mock_detector_instance = MagicMock()
     mock_detector_instance.detect.return_value = [mock_detection]
-    mock_rpa.AprilTagDetector.return_value = mock_detector_instance
+    mock_detector.AprilTagDetector.return_value = mock_detector_instance
 
-    mock_estimator_instance = MagicMock()
-    mock_estimator_instance.estimateOrthogonalIteration.return_value = mock_pose
-    mock_rpa.AprilTagPoseEstimator.return_value = mock_estimator_instance
+    # Mock solvePnP to return success and some rvec/tvec in OpenCV coordinates
+    # OpenCV: X=right, Y=down, Z=forward
+    mock_rvec = np.array([[0.1], [0.2], [0.3]], dtype=np.float32)
+    mock_tvec = np.array(
+        [[0.5], [0.3], [2.0]], dtype=np.float32
+    )  # X=right, Y=down, Z=forward
+    mock_solve.return_value = (True, mock_rvec, mock_tvec)
+
+    # Mock projectPoints for reprojection error calculation
+    mock_project.return_value = (
+        np.array(
+            [[[100, 200]], [[110, 210]], [[120, 220]], [[130, 230]]], dtype=np.float32
+        ),
+        None,
+    )
 
     pipeline = AprilTagPipeline(default_config)
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    results = pipeline.process_frame(frame, default_cam_matrix)
+    result = pipeline.process_frame(frame, default_cam_matrix, default_dist_coeffs)
 
-    assert len(results) == 1
-    mock_rpa.AprilTagPoseEstimator.assert_called_once()
-    mock_estimator_instance.estimateOrthogonalIteration.assert_called_once_with(
-        mock_detection, 40
-    )
+    single_tags = result["single_tags"]
+    assert len(single_tags) == 1
+    assert result["multi_tag"] is None
 
-    ui_data = results[0]["ui_data"]
+    mock_solve.assert_called_once()
+    args = mock_solve.call_args[0]
+    assert args[2] is default_cam_matrix
+    assert np.array_equal(args[3], default_dist_coeffs)
+
+    ui_data = single_tags[0]["ui_data"]
     assert ui_data["id"] == 1
-    assert ui_data["pose_error"] == 0.01
-    assert pytest.approx(ui_data["x_m"]) == 2.0
-    assert pytest.approx(ui_data["y_m"]) == 0.5
-    assert pytest.approx(ui_data["z_m"]) == 0.8
-    assert pytest.approx(ui_data["roll_deg"]) == math.degrees(0.1)
-    assert pytest.approx(ui_data["pitch_deg"]) == math.degrees(0.2)
-    assert pytest.approx(ui_data["yaw_deg"]) == math.degrees(0.3)
+    # FRC transformation: FRC_X = OpenCV_Z, FRC_Y = -OpenCV_X, FRC_Z = -OpenCV_Y
+    # OpenCV tvec: [0.5, 0.3, 2.0]
+    # FRC tvec: [2.0, -0.5, -0.3]
+    assert pytest.approx(ui_data["x_m"], abs=0.01) == 2.0
+    assert pytest.approx(ui_data["y_m"], abs=0.01) == -0.5
+    assert pytest.approx(ui_data["z_m"], abs=0.01) == -0.3
 
-    drawing_data = results[0]["drawing_data"]
+    drawing_data = single_tags[0]["drawing_data"]
     assert "rvec" in drawing_data
     assert "tvec" in drawing_data
     assert drawing_data["corners"].shape == (4, 2)
     assert drawing_data["id"] == 1
 
 
-def test_tag_filtering(mock_libs, default_config, default_cam_matrix):
+def test_tag_filtering(
+    mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+):
     """Test that tags are filtered based on hamming distance and decision margin."""
-    mock_rpa, _ = mock_libs
     good_tag = create_mock_detection(tag_id=1)
     bad_hamming_tag = create_mock_detection(tag_id=2, hamming=2)
     bad_margin_tag = create_mock_detection(tag_id=3, margin=20.0)
@@ -175,54 +163,153 @@ def test_tag_filtering(mock_libs, default_config, default_cam_matrix):
         bad_hamming_tag,
         bad_margin_tag,
     ]
-    mock_rpa.AprilTagDetector.return_value = mock_detector_instance
+    mock_detector.AprilTagDetector.return_value = mock_detector_instance
 
-    mock_estimator_instance = MagicMock()
-    mock_estimator_instance.estimateOrthogonalIteration.return_value = (
-        create_mock_pose_estimate()
-    )
-    mock_rpa.AprilTagPoseEstimator.return_value = mock_estimator_instance
+    with patch("app.pipelines.apriltag_pipeline.cv2.solvePnP") as mock_solve:
+        mock_solve.return_value = (True, np.zeros((3, 1)), np.ones((3, 1)))
 
-    pipeline = AprilTagPipeline(default_config)
-    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    results = pipeline.process_frame(frame, default_cam_matrix)
+        with patch("app.pipelines.apriltag_pipeline.cv2.projectPoints") as mock_project:
+            mock_project.return_value = (np.zeros((4, 1, 2)), None)
 
-    assert len(results) == 1
-    assert results[0]["ui_data"]["id"] == 1
-    mock_estimator_instance.estimateOrthogonalIteration.assert_called_once()
+            pipeline = AprilTagPipeline(default_config)
+            frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+            result = pipeline.process_frame(
+                frame, default_cam_matrix, default_dist_coeffs
+            )
 
-
-def test_pose_estimator_recreation(mock_libs, default_config, default_cam_matrix):
-    """Test that the pose estimator is only recreated when camera intrinsics change."""
-    mock_rpa, _ = mock_libs
-    pipeline = AprilTagPipeline(default_config)
-    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-
-    pipeline.process_frame(frame, default_cam_matrix)
-    mock_rpa.AprilTagPoseEstimator.assert_called_once()
-
-    pipeline.process_frame(frame, default_cam_matrix)
-    mock_rpa.AprilTagPoseEstimator.assert_called_once()
-
-    new_cam_matrix = default_cam_matrix.copy()
-    new_cam_matrix[0, 0] = 1200
-    pipeline.process_frame(frame, new_cam_matrix)
-    assert mock_rpa.AprilTagPoseEstimator.call_count == 2
+            single_tags = result["single_tags"]
+            assert len(single_tags) == 1
+            assert single_tags[0]["ui_data"]["id"] == 1
+            mock_solve.assert_called_once()
 
 
 @patch("app.pipelines.apriltag_pipeline.cv2.cvtColor")
 def test_grayscale_conversion(
-    mock_cvt_color, mock_libs, default_config, default_cam_matrix
+    mock_cvt_color,
+    mock_detector,
+    default_config,
+    default_cam_matrix,
+    default_dist_coeffs,
 ):
     """Test that frames are correctly converted to grayscale only when necessary."""
-    mock_rpa, _ = mock_libs
     pipeline = AprilTagPipeline(default_config)
 
     bgr_frame = np.zeros((100, 200, 3), dtype=np.uint8)
-    pipeline.process_frame(bgr_frame, default_cam_matrix)
+    pipeline.process_frame(bgr_frame, default_cam_matrix, default_dist_coeffs)
     mock_cvt_color.assert_called_once()
 
     mock_cvt_color.reset_mock()
     gray_frame = np.zeros((100, 200), dtype=np.uint8)
-    pipeline.process_frame(gray_frame, default_cam_matrix)
+    pipeline.process_frame(gray_frame, default_cam_matrix, default_dist_coeffs)
     mock_cvt_color.assert_not_called()
+
+
+@patch("app.pipelines.apriltag_pipeline.load_field_layout_by_name")
+@patch("app.pipelines.apriltag_pipeline.get_selected_field_name")
+@patch("app.pipelines.apriltag_pipeline.cv2.solvePnP")
+@patch("app.pipelines.apriltag_pipeline.cv2.projectPoints")
+def test_multi_tag_sqpnp(
+    mock_project,
+    mock_solve,
+    mock_get_selected,
+    mock_load_layout,
+    mock_detector,
+    default_cam_matrix,
+    default_dist_coeffs,
+):
+    """Test multi-tag pose estimation using SQPNP with field layout."""
+    # Create config with multi-tag enabled and field layout
+    field_layout_data = {
+        "field": {"length": 16.54, "width": 8.21},
+        "tags": [
+            {
+                "ID": 1,
+                "pose": {
+                    "translation": {"x": 1.0, "y": 0.0, "z": 0.5},
+                    "rotation": {
+                        "quaternion": {"W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0}
+                    },
+                },
+            },
+            {
+                "ID": 2,
+                "pose": {
+                    "translation": {"x": 2.0, "y": 0.0, "z": 0.5},
+                    "rotation": {
+                        "quaternion": {"W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0}
+                    },
+                },
+            },
+        ],
+    }
+    mock_get_selected.return_value = "test-field.json"
+    mock_load_layout.return_value = field_layout_data
+    config = {
+        "family": "tag36h11",
+        "tag_size_m": 0.15,
+        "multi_tag_enabled": True,
+    }
+
+    mock_detection1 = create_mock_detection(tag_id=1)
+    mock_detection2 = create_mock_detection(tag_id=2)
+
+    mock_detector_instance = MagicMock()
+    mock_detector_instance.detect.return_value = [mock_detection1, mock_detection2]
+    mock_detector.AprilTagDetector.return_value = mock_detector_instance
+
+    # Mock solvePnP to return success for both single tags and multi-tag
+    def solvepnp_side_effect(obj_pts, img_pts, cam_mat, dist, flags=0):
+        # Return appropriate success based on number of points
+        return (True, np.zeros((3, 1)), np.ones((3, 1)))
+
+    mock_solve.side_effect = solvepnp_side_effect
+
+    # Mock projectPoints to return the same number of points as input
+    def projectpoints_side_effect(obj_pts, rvec, tvec, cam_mat, dist):
+        num_points = obj_pts.shape[0]
+        return (np.zeros((num_points, 1, 2)), None)
+
+    mock_project.side_effect = projectpoints_side_effect
+
+    pipeline = AprilTagPipeline(config)
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    result = pipeline.process_frame(frame, default_cam_matrix, default_dist_coeffs)
+
+    # Should have 2 single tag results
+    assert len(result["single_tags"]) == 2
+
+    # Should have multi-tag result
+    assert result["multi_tag"] is not None
+    assert result["multi_tag"]["num_tags"] == 2
+
+    mock_get_selected.assert_called_once()
+    mock_load_layout.assert_called_once_with("test-field.json")
+
+    # Verify SQPNP was called (last call should be SQPNP for multi-tag)
+    assert mock_solve.call_count >= 3  # 2 single tags + 1 multi-tag
+    last_call_kwargs = mock_solve.call_args[1]
+    assert last_call_kwargs["flags"] == 8  # cv2.SOLVEPNP_SQPNP = 8
+
+
+@patch("app.pipelines.apriltag_pipeline.cv2.solvePnP")
+def test_single_tag_uses_ippe(
+    mock_solve, mock_detector, default_config, default_cam_matrix, default_dist_coeffs
+):
+    """Test that single tags use SOLVEPNP_IPPE method."""
+    mock_detection = create_mock_detection(tag_id=1)
+    mock_detector_instance = MagicMock()
+    mock_detector_instance.detect.return_value = [mock_detection]
+    mock_detector.AprilTagDetector.return_value = mock_detector_instance
+
+    mock_solve.return_value = (True, np.zeros((3, 1)), np.ones((3, 1)))
+
+    with patch("app.pipelines.apriltag_pipeline.cv2.projectPoints") as mock_project:
+        mock_project.return_value = (np.zeros((4, 1, 2)), None)
+
+        pipeline = AprilTagPipeline(default_config)
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        pipeline.process_frame(frame, default_cam_matrix, default_dist_coeffs)
+
+        # Verify IPPE flag was used
+        call_kwargs = mock_solve.call_args[1]
+        assert call_kwargs["flags"] == 6  # cv2.SOLVEPNP_IPPE = 6

@@ -8,6 +8,7 @@ from . import camera_manager
 from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
 from .models import Setting
+from .metrics import metrics_registry
 
 
 def create_app(config_overrides=None):
@@ -47,6 +48,19 @@ def create_app(config_overrides=None):
         app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
     db.init_app(app)
+    metrics_registry.configure(
+        enabled=app.config.get("METRICS_ENABLED", True),
+        window_seconds=app.config.get("METRICS_WINDOW_SECONDS", 300.0),
+        fps_window_seconds=app.config.get("METRICS_FPS_WINDOW_SECONDS", 10.0),
+        memory_sampler_interval=app.config.get("METRICS_MEMORY_SAMPLE_SECONDS", 2.0),
+        queue_high_utilization_pct=app.config.get(
+            "PIPELINE_QUEUE_HIGH_UTILIZATION_PCT", 80.0
+        ),
+        latency_warn_ms=app.config.get("PIPELINE_LATENCY_WARN_MS", 150.0),
+    )
+    if app.config.get("METRICS_ENABLED", True):
+        metrics_registry.start_memory_sampler()
+        atexit.register(metrics_registry.shutdown)
 
     # Import and register the new blueprints
     from .blueprints.dashboard import dashboard as dashboard_blueprint
@@ -54,12 +68,14 @@ def create_app(config_overrides=None):
     from .blueprints.calibration import calibration as calibration_blueprint
     from .blueprints.settings import settings as settings_blueprint
     from .blueprints.pipelines import pipelines as pipelines_blueprint
+    from .blueprints.monitoring import monitoring as monitoring_blueprint
 
     app.register_blueprint(dashboard_blueprint)
     app.register_blueprint(cameras_blueprint)
     app.register_blueprint(calibration_blueprint)
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(pipelines_blueprint)
+    app.register_blueprint(monitoring_blueprint)
 
     with app.app_context():
         db.create_all()

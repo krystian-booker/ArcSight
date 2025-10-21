@@ -5,6 +5,18 @@ from app.models import Camera, Pipeline
 from app.extensions import db
 
 
+def test_ml_availability_endpoint(client):
+    """Ensure ML availability endpoint returns expected structure."""
+    response = client.get("/api/pipelines/ml/availability")
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert "onnx" in data
+    assert "providers" in data["onnx"]
+    assert "tflite" in data
+    assert "delegates" in data["tflite"]
+    assert "accelerators" in data
+
+
 def test_update_pipeline_config_valid(client):
     """Test updating pipeline config with valid data."""
     # Create a test camera and pipeline
@@ -75,6 +87,61 @@ def test_update_pipeline_config_invalid(client):
     assert response.status_code == 400
     data = json.loads(response.data)
     assert "error" in data
+
+
+def test_get_pipeline_labels_empty(client):
+    """Requesting labels for pipeline without file returns empty list."""
+    camera = Camera(
+        name="Labels Camera",
+        identifier="labels_empty",
+        camera_type="USB",
+        orientation=0,
+    )
+    db.session.add(camera)
+    db.session.commit()
+
+    pipeline = Pipeline(
+        name="ML Pipeline",
+        pipeline_type="Object Detection (ML)",
+        config=json.dumps({}),
+        camera_id=camera.id,
+    )
+    db.session.add(pipeline)
+    db.session.commit()
+
+    response = client.get(f"/api/pipelines/{pipeline.id}/labels")
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data["labels"] == []
+
+
+def test_get_pipeline_labels_with_file(client, tmp_path):
+    """Pipeline labels endpoint returns parsed lines when file exists."""
+    labels_file = tmp_path / "labels.txt"
+    labels_file.write_text("person\ncar\n\n", encoding="utf-8")
+
+    camera = Camera(
+        name="Labels Camera",
+        identifier="labels_present",
+        camera_type="USB",
+        orientation=0,
+    )
+    db.session.add(camera)
+    db.session.commit()
+
+    pipeline = Pipeline(
+        name="ML Pipeline",
+        pipeline_type="Object Detection (ML)",
+        config=json.dumps({"labels_path": str(labels_file)}),
+        camera_id=camera.id,
+    )
+    db.session.add(pipeline)
+    db.session.commit()
+
+    response = client.get(f"/api/pipelines/{pipeline.id}/labels")
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data["labels"] == ["person", "car"]
     assert "Invalid configuration" in data["error"]
     assert "details" in data
     assert "tag_size_m" in data["details"]

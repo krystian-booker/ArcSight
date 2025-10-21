@@ -23,7 +23,16 @@ dependencies:
       - harvesters
       - genicam
       - robotpy-apriltag
+      - robotpy-wpimath
       - depthai
+      
+      # ML inference and conversion
+      - onnxruntime
+      - onnx
+      - tensorflow
+      - ultralytics
+      - pycoral ; sys_platform != 'win32'
+      - rknn-toolkit2 ; sys_platform == 'linux' and platform_machine == 'aarch64'
 
       # Utilities
       - appdirs
@@ -40,3 +49,4 @@ dependencies:
 
       # Code quality
       - ruff
+      - python-dotenv

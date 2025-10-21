@@ -31,6 +31,15 @@ class Config:
 
     # Application settings
     CAMERA_THREADS_ENABLED = True
+    BRAND_NAME = os.environ.get('BRAND_NAME', 'ArcSight')
+    BRAND_TAGLINE = os.environ.get('BRAND_TAGLINE', 'Industrial computer vision, engineered in the open.')
+    METRICS_ENABLED = os.environ.get('METRICS_ENABLED', '1').lower() not in ('0', 'false', 'no')
+    METRICS_WINDOW_SECONDS = float(os.environ.get('METRICS_WINDOW_SECONDS', 300))
+    METRICS_FPS_WINDOW_SECONDS = float(os.environ.get('METRICS_FPS_WINDOW_SECONDS', 10))
+    METRICS_MEMORY_SAMPLE_SECONDS = float(os.environ.get('METRICS_MEMORY_SAMPLE_SECONDS', 2))
+    PIPELINE_QUEUE_HIGH_UTILIZATION_PCT = float(os.environ.get('PIPELINE_QUEUE_HIGH_UTILIZATION_PCT', 80))
+    PIPELINE_LATENCY_WARN_MS = float(os.environ.get('PIPELINE_LATENCY_WARN_MS', 150))
+    METRICS_REFRESH_INTERVAL_MS = int(os.environ.get('METRICS_REFRESH_INTERVAL_MS', 2000))
 
 
 class DevelopmentConfig(Config):
@@ -58,6 +67,7 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     # Disable camera threads in tests
     CAMERA_THREADS_ENABLED = False
+    METRICS_ENABLED = False
 
 
 # Configuration dictionary

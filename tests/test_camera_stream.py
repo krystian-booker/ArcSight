@@ -250,7 +250,7 @@ def test_get_camera_feed_waits_for_frame(mock_camera, mock_active_threads):
         frame = next(feed_generator)
 
         assert b"--frame" in frame
-        mock_sleep.assert_called_once_with(0.033)
+        mock_sleep.assert_called_once_with(0.001)
 
 
 def test_get_processed_camera_feed_waits_for_frame(mock_active_threads):
@@ -282,4 +282,4 @@ def test_get_processed_camera_feed_waits_for_frame(mock_active_threads):
         frame = next(feed_generator)
 
         assert b"--frame" in frame
-        mock_sleep.assert_called_once_with(0.033)
+        mock_sleep.assert_called_once_with(0.001)
