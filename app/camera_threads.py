@@ -13,6 +13,10 @@ from .pipelines.coloured_shape_pipeline import ColouredShapePipeline
 from .pipelines.object_detection_ml_pipeline import ObjectDetectionMLPipeline
 from .camera_discovery import get_driver
 from .metrics import metrics_registry
+from .pipeline_validators import (
+    get_default_config,
+    recommended_apriltag_threads,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -313,34 +317,56 @@ class VisionProcessingThread(threading.Thread):
         pipeline_config = {}
         if pipeline_config_json:
             try:
-                pipeline_config = json.loads(pipeline_config_json)
+                parsed_config = json.loads(pipeline_config_json)
+                if isinstance(parsed_config, dict):
+                    pipeline_config = parsed_config
+                else:
+                    print(
+                        f"[{self.identifier}] Pipeline config was not a JSON object. Using default."
+                    )
             except (json.JSONDecodeError, TypeError):
                 print(
                     f"[{self.identifier}] Failed to parse pipeline config from DB. Using default."
                 )
 
-        # Merge with default config to ensure all keys are present
-        default_config = {
-            "family": "tag36h11",
-            "threads": 1,
-            "decimate": 1.0,
-            "blur": 0.0,
-            "refine_edges": True,
-            "tag_size_m": 0.165,
-            "decision_margin": 35.0,
-            "pose_iterations": 40,
-            "decode_sharpening": 0.25,
-            "multi_tag_enabled": False,
-            "ransac_reproj_threshold": 1.2,
-            "ransac_confidence": 0.999,
-            "min_inliers": 12,
-            "use_prev_guess": True,
-            "publish_field_pose": True,
-            "output_quaternion": True,
-            "multi_tag_error_threshold": 6.0,
-        }
+        default_config = get_default_config(self.pipeline_type) or {}
+        if not isinstance(default_config, dict):
+            default_config = {}
+        else:
+            default_config = default_config.copy()
+
         # This ensures user settings override defaults, but defaults are there as a fallback
         final_config = {**default_config, **pipeline_config}
+
+        self._auto_threads_enabled = False
+        self._detector_threads = None
+        if self.pipeline_type == "AprilTag":
+            recommended_threads = recommended_apriltag_threads()
+            auto_threads = final_config.get("auto_threads", True)
+            auto_threads_enabled = bool(auto_threads)
+            configured_threads = final_config.get("threads")
+
+            if auto_threads_enabled:
+                if configured_threads != recommended_threads:
+                    logger.info(
+                        "Auto-scaling AprilTag detector threads for pipeline %s on camera %s: %s -> %s",
+                        self.pipeline_id,
+                        self.identifier,
+                        configured_threads,
+                        recommended_threads,
+                    )
+                final_config["threads"] = recommended_threads
+            else:
+                try:
+                    manual_threads = int(configured_threads)
+                except (TypeError, ValueError):
+                    manual_threads = 1
+                if manual_threads < 1:
+                    manual_threads = 1
+                final_config["threads"] = manual_threads
+
+            self._auto_threads_enabled = auto_threads_enabled
+            self._detector_threads = final_config["threads"]
 
         if self.pipeline_type == "AprilTag":
             self.pipeline_instance = AprilTagPipeline(final_config)

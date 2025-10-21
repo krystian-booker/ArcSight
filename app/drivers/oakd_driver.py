@@ -26,6 +26,11 @@ class OAKDDriver(BaseDriver):
         self.output_queue: Optional["dai.DataOutputQueue"] = None
         self._camera_socket = None
 
+    _STREAM_NAME = "oakd_rgb"
+    _OUTPUT_QUEUE_SIZE = 4
+    _DEFAULT_FPS = 30
+    _DEFAULT_RESOLUTION = "THE_1080_P"
+
     def connect(self):
         if dai is None:
             raise ConnectionError(
@@ -41,25 +46,50 @@ class OAKDDriver(BaseDriver):
 
             self.device = dai.Device(device_info) if device_info else dai.Device()
 
-            try:
-                self.pipeline = dai.Pipeline(self.device)
-            except TypeError:
-                self.pipeline = dai.Pipeline()
+            self.pipeline = dai.Pipeline()
 
-            camera_builder = self.pipeline.create(dai.node.Camera)
+            color_camera = self.pipeline.create(dai.node.ColorCamera)
             self._camera_socket = self._select_camera_socket(self.device)
-            camera = camera_builder.build(self._camera_socket)
+            self._configure_camera_socket(color_camera, self._camera_socket)
+            self._configure_color_camera(color_camera)
 
-            stream = camera.requestFullResolutionOutput(useHighestResolution=True)
-            try:
-                self.output_queue = stream.createOutputQueue(maxSize=4, blocking=False)
-            except TypeError:
-                self.output_queue = stream.createOutputQueue()
+            xlink_out = self.pipeline.create(dai.node.XLinkOut)
+            xlink_out.setStreamName(self._STREAM_NAME)
+            xlink_input = getattr(xlink_out, "input", None)
+            if xlink_input is None:
+                raise RuntimeError("XLinkOut node is missing an input interface.")
+            if hasattr(xlink_input, "setBlocking"):
+                xlink_input.setBlocking(False)
+
+            stream_source = getattr(color_camera, "video", None)
+            if stream_source is None:
+                stream_source = getattr(color_camera, "isp", None)
+            if stream_source is None:
+                raise RuntimeError("ColorCamera node does not expose a video/isp output.")
+            stream_source.link(xlink_input)
 
             try:
-                self.pipeline.start()
+                self.device.startPipeline(self.pipeline)
             except TypeError:
-                self.pipeline.start(self.device)
+                # Older DepthAI releases expect the pipeline to be passed at construction time.
+                # Recreate the device with the pipeline if startPipeline signature mismatches.
+                self.device.close()
+                self.device = (
+                    dai.Device(self.pipeline, device_info)
+                    if device_info
+                    else dai.Device(self.pipeline)
+                )
+
+            try:
+                self.output_queue = self.device.getOutputQueue(
+                    self._STREAM_NAME,
+                    maxSize=self._OUTPUT_QUEUE_SIZE,
+                    blocking=False,
+                )
+            except TypeError:
+                self.output_queue = self.device.getOutputQueue(self._STREAM_NAME)
+                if hasattr(self.output_queue, "setBlocking"):
+                    self.output_queue.setBlocking(False)
 
             print(
                 f"Successfully connected to OAK-D camera {self.identifier} at {self._camera_socket}"
@@ -74,22 +104,57 @@ class OAKDDriver(BaseDriver):
         if self.output_queue is not None:
             self.output_queue = None
 
-        if self.pipeline is not None:
-            try:
-                if hasattr(self.pipeline, "isRunning") and self.pipeline.isRunning():
-                    self.pipeline.stop()
-                else:
-                    self.pipeline.stop()
-            except Exception:
-                pass
-            self.pipeline = None
-
         if self.device is not None:
             try:
+                if hasattr(self.device, "stopPipeline"):
+                    self.device.stopPipeline()
                 self.device.close()
             except Exception:
                 pass
             self.device = None
+
+        self.pipeline = None
+
+    def _configure_camera_socket(self, color_camera, socket):
+        if socket is None or color_camera is None:
+            return
+
+        for setter_name in ("setBoardSocket", "setSocket", "setCameraSocket"):
+            setter = getattr(color_camera, setter_name, None)
+            if callable(setter):
+                setter(socket)
+                return
+
+    def _configure_color_camera(self, color_camera):
+        if color_camera is None:
+            return
+
+        color_props = getattr(dai, "ColorCameraProperties", None)
+        if color_props is None:
+            return
+
+        sensor_resolution = getattr(color_props, "SensorResolution", None)
+        if sensor_resolution is not None and hasattr(color_camera, "setResolution"):
+            resolution_enum = getattr(sensor_resolution, self._DEFAULT_RESOLUTION, None)
+            if resolution_enum is not None:
+                color_camera.setResolution(resolution_enum)
+                if hasattr(color_camera, "setVideoSize"):
+                    color_camera.setVideoSize(1920, 1080)
+
+        if hasattr(color_camera, "setFps"):
+            color_camera.setFps(self._DEFAULT_FPS)
+
+        color_order = getattr(color_props, "ColorOrder", None)
+        if color_order is not None and hasattr(color_camera, "setColorOrder"):
+            bgr_order = getattr(color_order, "BGR", None)
+            if bgr_order is not None:
+                color_camera.setColorOrder(bgr_order)
+
+        if hasattr(color_camera, "setInterleaved"):
+            color_camera.setInterleaved(False)
+
+        if hasattr(color_camera, "setPreviewKeepAspectRatio"):
+            color_camera.setPreviewKeepAspectRatio(False)
 
     def get_frame(self):
         if self.output_queue is None:

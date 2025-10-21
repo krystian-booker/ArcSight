@@ -3,6 +3,7 @@
 from app.pipeline_validators import (
     validate_pipeline_config,
     get_default_config,
+    recommended_apriltag_threads,
 )
 
 
@@ -292,6 +293,8 @@ def test_apriltag_default_config():
     assert is_valid is True
     assert "family" in default
     assert "tag_size_m" in default
+    assert "auto_threads" in default
+    assert default["threads"] >= 1
 
 
 def test_ml_detection_default_config():
@@ -313,6 +316,14 @@ def test_unknown_pipeline_default_config():
     """Test default config for unknown pipeline type."""
     default = get_default_config("NonExistent")
     assert default == {}
+
+
+def test_recommended_threads_cap_and_floor():
+    """Recommended thread helper should clamp to safe range."""
+    assert recommended_apriltag_threads(cpu_count=0) == 1
+    assert recommended_apriltag_threads(cpu_count=1) == 1
+    assert recommended_apriltag_threads(cpu_count=2) == 2
+    assert recommended_apriltag_threads(cpu_count=16) == 4
 
 
 # --- Edge Cases ---

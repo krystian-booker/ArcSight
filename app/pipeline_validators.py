@@ -5,6 +5,7 @@ Provides JSON schema validation for each pipeline type to prevent
 malicious or malformed configurations from crashing vision processing threads.
 """
 
+import os
 from typing import Dict, Any, Tuple, Optional
 
 # Enumerations for ML pipeline configuration
@@ -18,6 +19,28 @@ ONNX_EXECUTION_PROVIDERS = [
 ]
 TFLITE_DELEGATES = ["CPU", "GPU", "EdgeTPU"]
 ML_ACCELERATORS = ["none", "rknn"]
+
+
+def recommended_apriltag_threads(
+    cpu_count: Optional[int] = None, cap: int = 4
+) -> int:
+    """
+    Return a safe default thread count for AprilTag detection based on host CPU.
+
+    Args:
+        cpu_count: Optional override primarily used in tests.
+        cap: Upper bound to prevent exhausting compute resources.
+    """
+    detected = cpu_count if cpu_count is not None else os.cpu_count()
+    try:
+        detected_int = int(detected) if detected is not None else 1
+    except (TypeError, ValueError):
+        detected_int = 1
+
+    if detected_int < 1:
+        detected_int = 1
+
+    return max(1, min(cap, detected_int))
 
 
 # Define schemas for each pipeline type
@@ -63,6 +86,10 @@ APRILTAG_SCHEMA = {
             "minimum": 1,
             "maximum": 16,
             "description": "Number of detector threads",
+        },
+        "auto_threads": {
+            "type": "boolean",
+            "description": "Automatically scale threads based on host CPU",
         },
         "decimate": {
             "type": "number",
@@ -472,12 +499,14 @@ def get_default_config(pipeline_type: str) -> Dict[str, Any]:
     Returns:
         A dictionary containing safe default values
     """
+    recommended_threads = recommended_apriltag_threads()
     defaults = {
         "AprilTag": {
             "family": "tag36h11",
             "error_correction": 2,
             "tag_size_m": 0.165,
-            "threads": 1,
+            "threads": recommended_threads,
+            "auto_threads": True,
             "decimate": 1.0,
             "blur": 0.0,
             "refine_edges": True,

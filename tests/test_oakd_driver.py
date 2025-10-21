@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, call
 import numpy as np
 
@@ -41,26 +42,34 @@ def test_connect_success(mock_dai, oakd_driver):
     mock_dai.DeviceInfo.return_value = mock_device_info
 
     mock_device = MagicMock()
-    mock_device.getConnectedCameras.return_value = []
+    mock_socket = MagicMock(name="CAM_A")
+    mock_device.getConnectedCameras.return_value = [mock_socket]
     mock_dai.Device.return_value = mock_device
 
     mock_pipeline = MagicMock()
     mock_dai.Pipeline.return_value = mock_pipeline
 
     mock_dai.node = MagicMock()
-    mock_dai.node.Camera = MagicMock(name="CameraNode")
-    mock_camera_builder = MagicMock()
-    mock_pipeline.create.return_value = mock_camera_builder
-    mock_camera = MagicMock()
-    mock_camera_builder.build.return_value = mock_camera
-    mock_stream = MagicMock()
-    mock_camera.requestFullResolutionOutput.return_value = mock_stream
-    mock_queue = MagicMock()
-    mock_stream.createOutputQueue.return_value = mock_queue
+    mock_dai.node.ColorCamera = MagicMock(name="ColorCameraNode")
+    mock_dai.node.XLinkOut = MagicMock(name="XLinkOutNode")
 
-    mock_socket = MagicMock(name="CAM_A")
+    mock_color_camera = MagicMock()
+    mock_color_camera.video = MagicMock()
+    mock_color_camera.video.link = MagicMock()
+    mock_xout = MagicMock()
+    mock_xout.input = MagicMock()
+    mock_pipeline.create.side_effect = [mock_color_camera, mock_xout]
+
     mock_dai.CameraBoardSocket = MagicMock()
     mock_dai.CameraBoardSocket.CAM_A = mock_socket
+
+    mock_dai.ColorCameraProperties = SimpleNamespace(
+        SensorResolution=SimpleNamespace(THE_1080_P="1080p"),
+        ColorOrder=SimpleNamespace(BGR="BGR"),
+    )
+
+    mock_queue = MagicMock()
+    mock_device.getOutputQueue.return_value = mock_queue
 
     # Act
     oakd_driver.connect()
@@ -68,14 +77,25 @@ def test_connect_success(mock_dai, oakd_driver):
     # Assert
     mock_dai.DeviceInfo.assert_called_once_with("12345_mxid")
     mock_dai.Device.assert_called_once_with(mock_device_info)
-    mock_dai.Pipeline.assert_called_once_with(mock_device)
-    mock_pipeline.create.assert_called_once_with(mock_dai.node.Camera)
-    mock_camera_builder.build.assert_called_once_with(mock_socket)
-    mock_camera.requestFullResolutionOutput.assert_called_once_with(
-        useHighestResolution=True
+    mock_dai.Pipeline.assert_called_once()
+    assert mock_pipeline.create.call_args_list == [
+        call(mock_dai.node.ColorCamera),
+        call(mock_dai.node.XLinkOut),
+    ]
+    mock_color_camera.setBoardSocket.assert_called_once_with(mock_socket)
+    mock_color_camera.setResolution.assert_called_once_with("1080p")
+    mock_color_camera.setVideoSize.assert_called_once_with(1920, 1080)
+    mock_color_camera.setFps.assert_called_once_with(oakd_driver._DEFAULT_FPS)
+    mock_color_camera.setColorOrder.assert_called_once_with("BGR")
+    mock_color_camera.setInterleaved.assert_called_once_with(False)
+    mock_color_camera.setPreviewKeepAspectRatio.assert_called_once_with(False)
+    mock_xout.setStreamName.assert_called_once_with(oakd_driver._STREAM_NAME)
+    mock_xout.input.setBlocking.assert_called_once_with(False)
+    mock_color_camera.video.link.assert_called_once_with(mock_xout.input)
+    mock_device.startPipeline.assert_called_once_with(mock_pipeline)
+    mock_device.getOutputQueue.assert_called_once_with(
+        oakd_driver._STREAM_NAME, maxSize=oakd_driver._OUTPUT_QUEUE_SIZE, blocking=False
     )
-    mock_stream.createOutputQueue.assert_called_once_with(maxSize=4, blocking=False)
-    mock_pipeline.start.assert_called_once()
 
     assert oakd_driver.device == mock_device
     assert oakd_driver.pipeline == mock_pipeline
@@ -100,6 +120,7 @@ def test_connect_device_raises_exception(mock_dai, oakd_driver):
         oakd_driver.connect()
 
     # Ensure cleanup was performed
+    mock_device.stopPipeline.assert_called_once()
     mock_device.close.assert_called_once()
     assert oakd_driver.device is None
     assert oakd_driver.pipeline is None
@@ -113,31 +134,49 @@ def test_connect_retries_pipeline_start_signature(mock_dai, oakd_driver):
     mock_device_info = MagicMock()
     mock_dai.DeviceInfo.return_value = mock_device_info
 
-    mock_device = MagicMock()
-    mock_device.getConnectedCameras.return_value = []
-    mock_dai.Device.return_value = mock_device
+    first_device = MagicMock(name="DeviceWithoutPipeline")
+    first_device.getConnectedCameras.return_value = []
+    first_device.startPipeline.side_effect = TypeError("needs pipeline")
+
+    second_device = MagicMock(name="DeviceWithPipeline")
+    second_device.getOutputQueue.return_value = MagicMock()
+
+    mock_dai.Device.side_effect = [first_device, second_device]
 
     mock_pipeline = MagicMock()
-    mock_pipeline.start.side_effect = [TypeError("needs device"), None]
     mock_dai.Pipeline.return_value = mock_pipeline
 
     mock_dai.node = MagicMock()
-    mock_dai.node.Camera = MagicMock()
-    mock_camera_builder = MagicMock()
-    mock_pipeline.create.return_value = mock_camera_builder
-    mock_camera = MagicMock()
-    mock_camera_builder.build.return_value = mock_camera
-    mock_stream = MagicMock()
-    mock_camera.requestFullResolutionOutput.return_value = mock_stream
-    mock_stream.createOutputQueue.return_value = MagicMock()
+    mock_dai.node.ColorCamera = MagicMock(name="ColorCameraNode")
+    mock_dai.node.XLinkOut = MagicMock(name="XLinkOutNode")
 
-    mock_socket = MagicMock()
+    mock_color_camera = MagicMock()
+    mock_color_camera.video = MagicMock()
+    mock_color_camera.video.link = MagicMock()
+    mock_xout = MagicMock()
+    mock_xout.input = MagicMock()
+    mock_pipeline.create.side_effect = [mock_color_camera, mock_xout]
+
+    mock_dai.ColorCameraProperties = SimpleNamespace(
+        SensorResolution=SimpleNamespace(THE_1080_P="1080p"),
+        ColorOrder=SimpleNamespace(BGR="BGR"),
+    )
+
     mock_dai.CameraBoardSocket = MagicMock()
-    mock_dai.CameraBoardSocket.CAM_A = mock_socket
+    mock_dai.CameraBoardSocket.CAM_A = MagicMock()
 
     oakd_driver.connect()
 
-    assert mock_pipeline.start.call_args_list == [call(), call(mock_device)]
+    assert mock_dai.Device.call_args_list == [
+        call(mock_device_info),
+        call(mock_pipeline, mock_device_info),
+    ]
+    first_device.startPipeline.assert_called_once_with(mock_pipeline)
+    first_device.close.assert_called_once()
+    second_device.getOutputQueue.assert_called_once_with(
+        oakd_driver._STREAM_NAME, maxSize=oakd_driver._OUTPUT_QUEUE_SIZE, blocking=False
+    )
+    assert oakd_driver.device == second_device
     assert oakd_driver.pipeline == mock_pipeline
 
 
@@ -159,17 +198,15 @@ def test_disconnect_when_connected(mock_dai, oakd_driver):
     # Arrange
     mock_device = MagicMock()
     oakd_driver.device = mock_device
-    mock_pipeline = MagicMock()
-    mock_pipeline.isRunning.return_value = True
-    oakd_driver.pipeline = mock_pipeline
+    oakd_driver.pipeline = MagicMock()
     oakd_driver.output_queue = "dummy_queue"
 
     # Act
     oakd_driver.disconnect()
 
     # Assert
+    mock_device.stopPipeline.assert_called_once()
     mock_device.close.assert_called_once()
-    mock_pipeline.stop.assert_called_once()
     assert oakd_driver.device is None
     assert oakd_driver.pipeline is None
     assert oakd_driver.output_queue is None

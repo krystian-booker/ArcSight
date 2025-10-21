@@ -1,9 +1,20 @@
 import { fetchJson, postJson, debounce, safeJsonParse } from '../helpers.js';
 
+const APRILTAG_THREAD_CAP = 4;
+
+function recommendedAprilTagThreads() {
+    if (typeof navigator === 'undefined' || typeof navigator.hardwareConcurrency !== 'number') {
+        return APRILTAG_THREAD_CAP;
+    }
+    const detected = Math.max(1, Math.floor(navigator.hardwareConcurrency));
+    return Math.max(1, Math.min(APRILTAG_THREAD_CAP, detected));
+}
+
 const APRILTAG_DEFAULTS = {
     family: 'tag36h11',
     tag_size_m: 0.165,
-    threads: 1,
+    threads: recommendedAprilTagThreads(),
+    auto_threads: true,
     decimate: 1,
     blur: 0,
     refine_edges: true,
@@ -519,7 +530,8 @@ export function registerDashboardComponents(Alpine) {
                 return {
                     family: form.family || 'tag36h11',
                     tag_size_m: toNumber(form.tag_size_m, 0.165),
-                    threads: toNumber(form.threads, 1),
+                    threads: toNumber(form.threads, recommendedAprilTagThreads()),
+                    auto_threads: form.auto_threads === undefined ? true : Boolean(form.auto_threads),
                     decimate: toNumber(form.decimate, 1),
                     blur: toNumber(form.blur, 0),
                     refine_edges: Boolean(form.refine_edges),
