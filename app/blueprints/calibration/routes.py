@@ -32,7 +32,7 @@ def create_error_image(message, width=640, height=480):
 @calibration.route("/")
 def calibration_page():
     """Renders the camera calibration page."""
-    cameras = Camera.query.all()
+    cameras = [camera.to_dict() for camera in Camera.query.all()]
     return render_template("pages/calibration.html", cameras=cameras)
 
 
@@ -189,7 +189,10 @@ def calibration_save():
 
     # Restart the camera thread to apply the new calibration
     camera_manager.stop_camera_thread(camera.identifier)
-    camera_manager.start_camera_thread(camera, current_app._get_current_object())
+    camera_manager.start_camera_thread(
+        camera_manager.build_camera_thread_config(camera),
+        current_app._get_current_object(),
+    )
 
     return jsonify({"success": True})
 

@@ -22,8 +22,7 @@ def create_error_image(message, width=640, height=480):
 @dashboard.route("/")
 def dashboard_page():
     """Renders the main dashboard."""
-    cameras = Camera.query.all()
-    return render_template("pages/dashboard.html", cameras=cameras)
+    return render_template("pages/dashboard.html")
 
 
 @dashboard.route("/video_feed/<int:camera_id>")

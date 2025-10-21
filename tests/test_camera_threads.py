@@ -393,17 +393,21 @@ def mock_pipeline_instances():
         # Provide valid numpy arrays for rvec and tvec to prevent cv2.error
         rvec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         tvec = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        mock_at.return_value.process_frame.return_value = [
-            {
-                "ui_data": "apriltag_data",
-                "drawing_data": {
-                    "rvec": rvec,
-                    "tvec": tvec,
-                    "corners": np.array([[0, 0]]),
-                    "id": 1,
-                },
-            }
-        ]
+        # AprilTag pipeline now returns {"single_tags": [...], "multi_tag": ...}
+        mock_at.return_value.process_frame.return_value = {
+            "single_tags": [
+                {
+                    "ui_data": "apriltag_data",
+                    "drawing_data": {
+                        "rvec": rvec,
+                        "tvec": tvec,
+                        "corners": np.array([[0, 0]]),
+                        "id": 1,
+                    },
+                }
+            ],
+            "multi_tag": None,
+        }
         mock_cs.return_value.process_frame.return_value = "coloured_shape_data"
         mock_ml.return_value.process_frame.return_value = "ml_data"
 
@@ -452,6 +456,7 @@ def test_vision_processing_thread_initialization(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -475,6 +480,7 @@ def test_vision_processing_thread_initialization_all_types(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -493,6 +499,7 @@ def test_vision_processing_thread_init_invalid_pipeline_type(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
     assert thread.pipeline_instance is None
@@ -509,6 +516,7 @@ def test_vision_processing_thread_init_bad_json_config(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -524,23 +532,30 @@ def test_vision_processing_thread_init_no_camera_matrix(
 ):
     """Test that a default camera matrix is created if none is in the DB."""
     mock_camera.camera_matrix_json = None
+    frame_queue = queue.Queue()
     thread = VisionProcessingThread(
         identifier=mock_camera.identifier,
         pipeline_id=mock_pipeline.id,
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
-        frame_queue=queue.Queue(),
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
+        frame_queue=frame_queue,
     )
 
-    # The run method will create the default matrix
-    thread.start()
-    time.sleep(0.1)  # Give thread time to start and check for matrix
-    thread.stop()
-    thread.join()
+    frame_data = np.zeros((720, 1280, 3), dtype=np.uint8)
+    mock_rc_frame = MagicMock(spec=RefCountedFrame)
+    mock_rc_frame.data = frame_data
+    frame_queue.put(mock_rc_frame)
+
+    with patch("cv2.imencode", return_value=(False, None)):
+        thread.start()
+        time.sleep(0.1)  # Give thread time to process the queued frame
+        thread.stop()
+        thread.join()
 
     assert thread.cam_matrix is not None
-    assert thread.cam_matrix[0, 0] == 600.0  # Check a default value
+    assert thread.cam_matrix[0, 0] == pytest.approx(frame_data.shape[1] * 0.9)
 
 
 def test_vision_processing_thread_run_loop(
@@ -554,6 +569,7 @@ def test_vision_processing_thread_run_loop(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -600,6 +616,7 @@ def test_vision_processing_thread_run_loop_empty_queue(mock_camera, mock_pipelin
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -621,6 +638,7 @@ def test_vision_processing_thread_stop_method(mock_camera, mock_pipeline):
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
     thread.start()
@@ -651,6 +669,7 @@ def test_vision_processing_thread_draw_3d_box(mock_camera, mock_pipeline):
             pipeline_type=mock_pipeline.pipeline_type,
             pipeline_config_json=mock_pipeline.config,
             camera_matrix_json=mock_camera.camera_matrix_json,
+            dist_coeffs_json=mock_camera.dist_coeffs_json,
             frame_queue=queue.Queue(),
         )
         # Manually set a valid camera matrix
@@ -681,6 +700,7 @@ def test_vision_processing_thread_run_loop_ml_pipeline(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -713,6 +733,7 @@ def test_vision_processing_thread_run_loop_coloured_shape_pipeline(
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -740,6 +761,7 @@ def test_vision_processing_thread_run_exits_if_no_pipeline(mock_camera, mock_pip
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=queue.Queue(),
     )
 
@@ -758,6 +780,7 @@ def test_vision_processing_thread_imencode_failure(mock_camera, mock_pipeline):
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
         frame_queue=frame_queue,
     )
 
@@ -770,9 +793,8 @@ def test_vision_processing_thread_imencode_failure(mock_camera, mock_pipeline):
         thread.start()
         time.sleep(0.2)
 
-        # The frame should not have been set
-        with thread.processed_frame_lock:
-            assert thread.latest_processed_frame is None
+        # The legacy processed frame attribute should no longer exist
+        assert not hasattr(thread, "latest_processed_frame")
 
         thread.stop()
         thread.join()
@@ -785,23 +807,31 @@ def test_vision_processing_thread_init_bad_camera_matrix_json(
     mock_camera.camera_matrix_json = "this is not json"
 
     # The thread should still initialize
+    frame_queue = queue.Queue()
     thread = VisionProcessingThread(
         identifier=mock_camera.identifier,
         pipeline_id=mock_pipeline.id,
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=mock_camera.camera_matrix_json,
-        frame_queue=queue.Queue(),
+        dist_coeffs_json=mock_camera.dist_coeffs_json,
+        frame_queue=frame_queue,
     )
     assert thread.cam_matrix is None
 
     # And the run loop should create a default one
-    thread.start()
-    time.sleep(0.1)
-    thread.stop()
-    thread.join()
+    frame_data = np.zeros((720, 1280, 3), dtype=np.uint8)
+    mock_rc_frame = MagicMock(spec=RefCountedFrame)
+    mock_rc_frame.data = frame_data
+    frame_queue.put(mock_rc_frame)
+
+    with patch("cv2.imencode", return_value=(False, None)):
+        thread.start()
+        time.sleep(0.1)
+        thread.stop()
+        thread.join()
     assert thread.cam_matrix is not None
-    assert thread.cam_matrix[0, 0] == 600.0
+    assert thread.cam_matrix[0, 0] == pytest.approx(frame_data.shape[1] * 0.9)
 
 
 # --- Tests for CameraAcquisitionThread ---
@@ -934,6 +964,7 @@ def test_acquisition_loop(mock_get_driver, mock_driver, mock_camera, mock_app):
         camera_type=mock_camera.camera_type,
         orientation=mock_camera.orientation,
         app=mock_app,
+        camera_id=mock_camera.id,
     )
     thread.driver = mock_driver  # Manually set driver since we're not calling run()
 
@@ -974,7 +1005,8 @@ def test_acquisition_loop(mock_get_driver, mock_driver, mock_camera, mock_app):
 
     # Check latest frames
     with thread.raw_frame_lock:
-        assert thread.latest_raw_frame is not None
+        # Raw frame caching is disabled without an active calibration session
+        assert thread.latest_raw_frame is None
     with thread.frame_lock:
         assert thread.latest_display_frame_raw is not None
 
@@ -985,6 +1017,60 @@ def test_acquisition_loop(mock_get_driver, mock_driver, mock_camera, mock_app):
 
     # Check FPS calculation
     assert thread.fps > 0
+
+
+@patch("app.camera_threads.get_driver")
+def test_acquisition_loop_caches_raw_frame_when_session_active(
+    mock_get_driver, mock_driver, mock_camera, mock_app
+):
+    """Raw frame caching should only run when a calibration session is active."""
+    mock_get_driver.return_value = mock_driver
+    mock_app.calibration_manager.start_session(
+        mock_camera.id,
+        "Chessboard",
+        {"rows": 7, "cols": 9, "square_size": 0.025},
+    )
+
+    thread = CameraAcquisitionThread(
+        identifier=mock_camera.identifier,
+        camera_type=mock_camera.camera_type,
+        orientation=mock_camera.orientation,
+        app=mock_app,
+        camera_id=mock_camera.id,
+    )
+    thread.driver = mock_driver
+
+    proc_q = MagicMock(spec=queue.Queue)
+    thread.add_pipeline_queue(101, proc_q)
+
+    time_side_effects = [
+        0,
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+        1.5,
+        1.6,
+        1.7,
+        1.8,
+        1.9,
+        2.0,
+        2.1,
+    ]
+    with patch("time.time", side_effect=time_side_effects):
+        thread._acquisition_loop()
+
+    with thread.raw_frame_lock:
+        assert thread.latest_raw_frame is not None
+        thread.latest_raw_frame.release()
+        thread.latest_raw_frame = None
+
+    mock_app.calibration_manager.end_session(mock_camera.id)
 
 
 def test_acquisition_loop_fails_first_frame():
@@ -1009,7 +1095,7 @@ def test_acquisition_loop_fails_first_frame():
 
     # The loop should return immediately, and no frames should be processed
     assert thread.latest_raw_frame is None
-    assert thread.latest_frame_for_display is None
+    assert not hasattr(thread, "latest_frame_for_display")
 
 
 @pytest.mark.parametrize(

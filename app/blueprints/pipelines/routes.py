@@ -4,6 +4,14 @@ from app.extensions import db
 from app import camera_manager
 from app.models import Camera, Pipeline
 from app.pipeline_validators import validate_pipeline_config, get_default_config
+from app.hw.accel import get_ml_availability
+from app.ml import (
+    convert_yolo_weights_to_onnx,
+    convert_onnx_to_rknn,
+    validate_onnx_model,
+    infer_model_type,
+)
+from typing import Any, Dict, List, Optional, Tuple
 import json
 import os
 from appdirs import user_data_dir
@@ -13,6 +21,176 @@ from . import pipelines
 APP_NAME = "VisionTools"
 APP_AUTHOR = "User"
 data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
+
+
+@pipelines.route("/cameras", methods=["GET"])
+def list_cameras():
+    """Returns all registered cameras."""
+    cameras = Camera.query.order_by(Camera.id.asc()).all()
+    return jsonify([camera.to_dict() for camera in cameras])
+
+
+def _remove_file(path: Optional[str]) -> None:
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _apply_model_upload(
+    pipeline_id: int,
+    config: Dict[str, Any],
+    safe_filename: str,
+    save_path: str,
+) -> Tuple[bool, Optional[str]]:
+    """Updates pipeline configuration after a model upload."""
+    updated_config = dict(config)
+    updated_config["model_filename"] = safe_filename
+    updated_config["model_path"] = save_path
+    updated_config.setdefault("accelerator", "none")
+
+    inferred_type = infer_model_type(safe_filename) or "yolo"
+    extension = os.path.splitext(safe_filename)[1].lower()
+
+    previous_converted = config.get("converted_onnx_path")
+    previous_rknn = config.get("rknn_path")
+
+    if inferred_type == "tflite":
+        updated_config["model_type"] = "tflite"
+        updated_config["tflite_delegate"] = (
+            updated_config.get("tflite_delegate") or "CPU"
+        )
+        updated_config.pop("onnx_provider", None)
+        updated_config.pop("converted_onnx_path", None)
+        updated_config.pop("converted_onnx_filename", None)
+        updated_config.pop("rknn_path", None)
+        if updated_config.get("accelerator") == "rknn":
+            updated_config["accelerator"] = "none"
+    elif inferred_type == "rknn":
+        updated_config["model_type"] = "yolo"
+        updated_config["accelerator"] = "rknn"
+        updated_config["rknn_path"] = save_path
+        updated_config.pop("converted_onnx_path", None)
+        updated_config.pop("converted_onnx_filename", None)
+        updated_config.pop("tflite_delegate", None)
+    else:  # YOLO / ONNX path
+        updated_config["model_type"] = "yolo"
+        updated_config["onnx_provider"] = (
+            updated_config.get("onnx_provider") or "CPUExecutionProvider"
+        )
+        updated_config.pop("tflite_delegate", None)
+
+        if extension == ".onnx":
+            is_valid, message = validate_onnx_model(save_path)
+            if not is_valid:
+                return False, message
+            updated_config["converted_onnx_path"] = save_path
+            updated_config["converted_onnx_filename"] = safe_filename
+        elif extension in [".pt", ".weights"]:
+            base_name = os.path.splitext(safe_filename)[0]
+            converted_filename = f"pipeline_{pipeline_id}_{base_name}.onnx"
+            converted_path = os.path.join(data_dir, converted_filename)
+            success, message, output_path = convert_yolo_weights_to_onnx(
+                save_path,
+                converted_path,
+                img_size=int(updated_config.get("img_size", 640)),
+            )
+            if not success:
+                _remove_file(converted_path)
+                return False, message
+            updated_config["converted_onnx_path"] = output_path
+            updated_config["converted_onnx_filename"] = os.path.basename(output_path)
+        else:
+            return (
+                False,
+                "Unsupported model format. Upload .onnx, .pt, .weights, .tflite, or .rknn files.",
+            )
+
+        availability = get_ml_availability()
+        rknn_supported = availability.get("accelerators", {}).get(
+            "rknn", False
+        ) and updated_config.get("converted_onnx_path")
+        if rknn_supported:
+            converted_name = os.path.splitext(
+                os.path.basename(updated_config["converted_onnx_path"])
+            )[0]
+            rknn_filename = f"{converted_name}.rknn"
+            rknn_path = os.path.join(data_dir, rknn_filename)
+            success, message, output_path = convert_onnx_to_rknn(
+                updated_config["converted_onnx_path"], rknn_path
+            )
+            if success and output_path:
+                updated_config["rknn_path"] = output_path
+                updated_config["accelerator"] = "rknn"
+            else:
+                if message:
+                    print(f"RKNN conversion skipped: {message}")
+                updated_config.pop("rknn_path", None)
+                if updated_config.get("accelerator") == "rknn":
+                    updated_config["accelerator"] = "none"
+        else:
+            updated_config.pop("rknn_path", None)
+            if updated_config.get("accelerator") == "rknn":
+                updated_config["accelerator"] = "none"
+
+    # Apply updates atomically
+    config.clear()
+    config.update(updated_config)
+
+    # Remove stale artefacts
+    if previous_converted and previous_converted != config.get("converted_onnx_path"):
+        _remove_file(previous_converted)
+    if previous_rknn and previous_rknn != config.get("rknn_path"):
+        _remove_file(previous_rknn)
+
+    return True, None
+
+
+@pipelines.route("/pipelines/ml/availability", methods=["GET"])
+def ml_pipeline_availability():
+    """Exposes detected ML runtime capabilities for the frontend."""
+    return jsonify(get_ml_availability())
+
+
+@pipelines.route("/pipelines/<int:pipeline_id>/labels", methods=["GET"])
+def get_pipeline_labels(pipeline_id: int):
+    """Returns the label list for a pipeline, if available."""
+    pipeline = db.session.get(Pipeline, pipeline_id)
+    if not pipeline:
+        return jsonify({"error": "Pipeline not found"}), 404
+
+    config = json.loads(pipeline.config or "{}")
+    labels_path = config.get("labels_path")
+    if not labels_path and config.get("labels_filename"):
+        labels_path = os.path.join(data_dir, config["labels_filename"])
+
+    labels: List[str] = []
+    if labels_path and os.path.exists(labels_path):
+        try:
+            with open(labels_path, "r", encoding="utf-8") as handle:
+                labels = [line.strip() for line in handle if line.strip()]
+        except OSError:
+            labels = []
+
+    response: Dict[str, Any] = {"labels": labels}
+
+    is_valid, error_message = validate_pipeline_config(pipeline.pipeline_type, config)
+    if not is_valid:
+        response["error"] = "Invalid configuration"
+        response["details"] = error_message
+    elif (
+        pipeline.pipeline_type == "Object Detection (ML)"
+        and labels
+        and not config.get("model_path")
+    ):
+        response["error"] = "Invalid configuration"
+        response["details"] = (
+            "Model path missing for ML pipeline; upload a model and ensure calibration "
+            "values such as tag_size_m are set before deploying."
+        )
+
+    return jsonify(response)
 
 
 @pipelines.route("/cameras/<int:camera_id>/pipelines", methods=["GET"])
@@ -56,6 +234,7 @@ def add_pipeline(camera_id):
         pipeline_type=new_pipeline.pipeline_type,
         pipeline_config_json=new_pipeline.config,
         camera_matrix_json=camera.camera_matrix_json,
+        dist_coeffs_json=camera.dist_coeffs_json,
     )
     return jsonify({"success": True, "pipeline": new_pipeline.to_dict()})
 
@@ -86,6 +265,7 @@ def update_pipeline(pipeline_id):
             pipeline_type=pipeline.pipeline_type,
             pipeline_config_json=pipeline.config,
             camera_matrix_json=camera.camera_matrix_json,
+            dist_coeffs_json=camera.dist_coeffs_json,
         )
 
     return jsonify({"success": True})
@@ -120,6 +300,7 @@ def update_pipeline_config(pipeline_id):
             pipeline_type=pipeline.pipeline_type,
             pipeline_config_json=pipeline.config,
             camera_matrix_json=camera.camera_matrix_json,
+            dist_coeffs_json=camera.dist_coeffs_json,
         )
 
     return jsonify({"success": True})
@@ -163,8 +344,26 @@ def upload_pipeline_file(pipeline_id):
         file.save(save_path)
 
         config = json.loads(pipeline.config or "{}")
-        config[f"{file_type}_path"] = save_path  # Store full path
-        config[f"{file_type}_filename"] = safe_filename  # Store filename for reference
+        if file_type == "labels":
+            config["labels_path"] = save_path
+            config["labels_filename"] = safe_filename
+            # Reset target classes selection so UI can refresh from new labels
+            config["target_classes"] = config.get("target_classes", [])
+        else:
+            success, error_message = _apply_model_upload(
+                pipeline_id, config, safe_filename, save_path
+            )
+            if not success:
+                _remove_file(save_path)
+                return (
+                    jsonify(
+                        {
+                            "error": "Model upload failed",
+                            "details": error_message or "Unknown error",
+                        }
+                    ),
+                    400,
+                )
 
         # Validate the updated config
         is_valid, error_message = validate_pipeline_config(
@@ -194,7 +393,14 @@ def upload_pipeline_file(pipeline_id):
                 pipeline_config_json=pipeline.config,
                 camera_matrix_json=camera.camera_matrix_json,
             )
-        return jsonify({"success": True, "filepath": save_path})
+        return jsonify(
+            {
+                "success": True,
+                "filepath": save_path,
+                "filename": safe_filename,
+                "config": config,
+            }
+        )
 
     return jsonify({"error": "File upload failed"}), 500
 
@@ -216,10 +422,36 @@ def delete_pipeline_file(pipeline_id):
     file_path = config.get(filepath_key)
 
     if file_path:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        _remove_file(file_path)
+        config.pop(filepath_key, None)
+        filename_key = f"{file_type}_filename"
+        config.pop(filename_key, None)
 
-        del config[filepath_key]
+        if file_type == "labels":
+            config["target_classes"] = []
+        elif file_type == "model":
+            _remove_file(config.pop("converted_onnx_path", None))
+            config.pop("converted_onnx_filename", None)
+            _remove_file(config.pop("rknn_path", None))
+            config["accelerator"] = "none"
+            config["model_type"] = "yolo"
+            config.pop("tflite_delegate", None)
+            config["onnx_provider"] = "CPUExecutionProvider"
+
+        is_valid, error_message = validate_pipeline_config(
+            pipeline.pipeline_type, config
+        )
+        if not is_valid:
+            return (
+                jsonify(
+                    {
+                        "error": "Invalid configuration after file deletion",
+                        "details": error_message,
+                    }
+                ),
+                400,
+            )
+
         pipeline.config = json.dumps(config)
         db.session.commit()
 
@@ -233,7 +465,7 @@ def delete_pipeline_file(pipeline_id):
                 pipeline_config_json=pipeline.config,
                 camera_matrix_json=camera.camera_matrix_json,
             )
-        return jsonify({"success": True})
+        return jsonify({"success": True, "config": config})
 
     return jsonify({"error": "File not found in config"}), 404
 

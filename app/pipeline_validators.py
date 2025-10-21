@@ -7,6 +7,18 @@ malicious or malformed configurations from crashing vision processing threads.
 
 from typing import Dict, Any, Tuple, Optional
 
+# Enumerations for ML pipeline configuration
+ML_MODEL_TYPES = ["yolo", "tflite"]
+ONNX_EXECUTION_PROVIDERS = [
+    "CPUExecutionProvider",
+    "CUDAExecutionProvider",
+    "TensorrtExecutionProvider",
+    "CoreMLExecutionProvider",
+    "OpenVINOExecutionProvider",
+]
+TFLITE_DELEGATES = ["CPU", "GPU", "EdgeTPU"]
+ML_ACCELERATORS = ["none", "rknn"]
+
 
 # Define schemas for each pipeline type
 APRILTAG_SCHEMA = {
@@ -86,6 +98,46 @@ APRILTAG_SCHEMA = {
             "maximum": 1.0,
             "description": "Sharpening for decode stage",
         },
+        "multi_tag_enabled": {
+            "type": "boolean",
+            "description": "Enable multi-tag pose estimation for improved accuracy",
+        },
+        "ransac_reproj_threshold": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 50.0,
+            "description": "RANSAC reprojection threshold in pixels",
+        },
+        "ransac_confidence": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 0.9999,
+            "description": "Probability that the RANSAC solution is correct",
+        },
+        "min_inliers": {
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 200,
+            "description": "Minimum inlier correspondences required for multi-tag pose",
+        },
+        "use_prev_guess": {
+            "type": "boolean",
+            "description": "Use the previous pose as an initial guess for RANSAC",
+        },
+        "publish_field_pose": {
+            "type": "boolean",
+            "description": "Publish the camera pose in field coordinates when layout is available",
+        },
+        "output_quaternion": {
+            "type": "boolean",
+            "description": "Include quaternion outputs alongside Euler angles",
+        },
+        "multi_tag_error_threshold": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "description": "Per-tag reprojection error threshold before pruning (pixels)",
+        },
     },
     "additionalProperties": False,
 }
@@ -93,6 +145,11 @@ APRILTAG_SCHEMA = {
 ML_DETECTION_SCHEMA = {
     "type": "object",
     "properties": {
+        "model_type": {
+            "type": "string",
+            "enum": ML_MODEL_TYPES,
+            "description": "Indicates the format of the uploaded model",
+        },
         "model_filename": {
             "type": "string",
             "pattern": "^[a-zA-Z0-9_\\-\\.]+$",
@@ -115,11 +172,60 @@ ML_DETECTION_SCHEMA = {
             "maxLength": 1024,
             "description": "Full path to labels file (set by file upload)",
         },
+        "converted_onnx_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Path to converted ONNX model (for YOLO uploads)",
+        },
+        "converted_onnx_filename": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_\\-\\.]+$",
+            "maxLength": 255,
+            "description": "Filename of converted ONNX model stored for pipeline",
+        },
+        "rknn_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Path to RKNN model for Orange Pi NPU execution",
+        },
+        "onnx_provider": {
+            "type": "string",
+            "enum": ONNX_EXECUTION_PROVIDERS,
+            "description": "ONNX Runtime execution provider to use",
+        },
+        "tflite_delegate": {
+            "type": "string",
+            "enum": TFLITE_DELEGATES,
+            "description": "TFLite delegate to use for inference",
+        },
+        "accelerator": {
+            "type": "string",
+            "enum": ML_ACCELERATORS,
+            "description": "Optional accelerator configuration (e.g., RKNN NPU)",
+        },
         "confidence_threshold": {
             "type": "number",
             "minimum": 0.0,
             "maximum": 1.0,
             "description": "Minimum confidence for detections",
+        },
+        "nms_iou_threshold": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "IoU threshold used during non-max suppression",
+        },
+        "max_detections": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Maximum number of detections returned per frame",
+        },
+        "img_size": {
+            "type": "integer",
+            "minimum": 32,
+            "maximum": 2048,
+            "description": "Square input size expected by the model (e.g., 640)",
         },
         "target_classes": {
             "type": "array",
@@ -151,6 +257,66 @@ class ValidationError(Exception):
     """Raised when configuration validation fails."""
 
     pass
+
+
+def _validate_ml_pipeline_relationships(config: Dict[str, Any]) -> None:
+    """Performs cross-field validation for ML object detection pipeline configs."""
+
+    model_type = config.get("model_type")
+    accelerator = config.get("accelerator", "none")
+
+    if model_type and model_type not in ML_MODEL_TYPES:
+        raise ValidationError(
+            f"Unsupported model_type '{model_type}'. Expected one of {ML_MODEL_TYPES}."
+        )
+
+    if accelerator not in ML_ACCELERATORS:
+        raise ValidationError(
+            f"Unsupported accelerator '{accelerator}'. Expected one of {ML_ACCELERATORS}."
+        )
+
+    if model_type == "yolo":
+        # ONNX provider is required for YOLO execution (unless RKNN is selected)
+        if accelerator != "rknn":
+            provider = config.get("onnx_provider")
+            if provider not in ONNX_EXECUTION_PROVIDERS:
+                raise ValidationError(
+                    "onnx_provider must be one of "
+                    f"{ONNX_EXECUTION_PROVIDERS} when using YOLO without RKNN."
+                )
+        if "tflite_delegate" in config:
+            raise ValidationError(
+                "tflite_delegate is not applicable when model_type is 'yolo'."
+            )
+        if "rknn_path" in config and accelerator != "rknn":
+            raise ValidationError(
+                "rknn_path provided but accelerator is not set to 'rknn'."
+            )
+    elif model_type == "tflite":
+        delegate = config.get("tflite_delegate")
+        if delegate not in TFLITE_DELEGATES:
+            raise ValidationError(
+                f"tflite_delegate must be one of {TFLITE_DELEGATES} when using TFLite."
+            )
+        if config.get("onnx_provider"):
+            raise ValidationError(
+                "onnx_provider is not applicable when model_type is 'tflite'."
+            )
+        if accelerator == "rknn":
+            raise ValidationError(
+                "accelerator 'rknn' is only valid for YOLO/ONNX models on Orange Pi 5."
+            )
+
+    if accelerator == "rknn":
+        rknn_path = config.get("rknn_path")
+        if not rknn_path:
+            raise ValidationError(
+                "rknn_path is required when accelerator is set to 'rknn'."
+            )
+        if not config.get("converted_onnx_path"):
+            raise ValidationError(
+                "converted_onnx_path is required when accelerator is 'rknn'."
+            )
 
 
 def validate_type(value: Any, expected_type: str, path: str = "") -> None:
@@ -284,6 +450,9 @@ def validate_pipeline_config(
                     f"Unknown property '{key}' not allowed for {pipeline_type} pipeline",
                 )
 
+        if pipeline_type == "Object Detection (ML)":
+            _validate_ml_pipeline_relationships(config)
+
         # All validations passed
         return True, None
 
@@ -315,8 +484,25 @@ def get_default_config(pipeline_type: str) -> Dict[str, Any]:
             "decision_margin": 35.0,
             "pose_iterations": 40,
             "decode_sharpening": 0.25,
+            "multi_tag_enabled": False,
+            "ransac_reproj_threshold": 1.2,
+            "ransac_confidence": 0.999,
+            "min_inliers": 12,
+            "use_prev_guess": True,
+            "publish_field_pose": True,
+            "output_quaternion": True,
+            "multi_tag_error_threshold": 6.0,
         },
-        "Object Detection (ML)": {"confidence_threshold": 0.5, "target_classes": []},
+        "Object Detection (ML)": {
+            "model_type": "yolo",
+            "confidence_threshold": 0.5,
+            "nms_iou_threshold": 0.45,
+            "target_classes": [],
+            "onnx_provider": "CPUExecutionProvider",
+            "accelerator": "none",
+            "max_detections": 100,
+            "img_size": 640,
+        },
         "Coloured Shape": {},
     }
 

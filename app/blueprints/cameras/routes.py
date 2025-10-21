@@ -10,11 +10,9 @@ from . import cameras
 @cameras.route("/")
 def cameras_page():
     """Renders the camera management page."""
-    cameras_list = Camera.query.all()
     genicam_setting = db.session.get(Setting, "genicam_cti_path")
     return render_template(
         "pages/cameras.html",
-        cameras=cameras_list,
         genicam_enabled=bool(genicam_setting and genicam_setting.value),
     )
 
@@ -61,7 +59,8 @@ def add_camera():
                 # Try to start the camera thread - if this fails, delete the camera from DB
                 try:
                     camera_manager.start_camera_thread(
-                        new_camera, current_app._get_current_object()
+                        camera_manager.build_camera_thread_config(new_camera),
+                        current_app._get_current_object(),
                     )
                 except Exception as thread_error:
                     print(f"Error starting camera thread: {thread_error}")

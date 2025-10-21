@@ -1,0 +1,72 @@
+:root {
+  color-scheme: dark;
+
+  /* Brand palette */
+  --arc-primary: #d42e12;
+  --arc-bg: #141414;
+  --arc-surface: #1c1c1c;
+  --arc-surface-alt: #232323;
+  --arc-panel: #2e2e2e;
+  --arc-accent: #bfc4ca;
+  --arc-teal: #00c2a8;
+
+  /* Core neutrals */
+  --arc-text: #f4f5f6;
+  --arc-muted: #9ca2a6;
+  --arc-subtle: #5c6166;
+
+  /* Status colors */
+  --arc-success: #2bc48a;
+  --arc-warning: #f0b429;
+  --arc-danger: #ff5a4f;
+
+  /* Borders & outlines */
+  --arc-border: #2c2c2c;
+  --arc-border-strong: #3a3a3a;
+  --arc-outline: rgba(0, 194, 168, 0.45);
+
+  /* Typography */
+  --arc-font-sans: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --arc-font-mono: "JetBrains Mono", "Fira Code", "SFMono-Regular", Menlo, monospace;
+
+  /* Radii & shadows */
+  --arc-radius-sm: 6px;
+  --arc-radius-md: 10px;
+  --arc-radius-lg: 16px;
+  --arc-shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.28);
+  --arc-shadow-sharp: 0 0 0 1px rgba(0, 194, 168, 0.2), 0 14px 42px rgba(0, 0, 0, 0.56);
+
+  /* Motion */
+  --arc-speed-fast: 120ms;
+  --arc-speed: 180ms;
+  --arc-speed-slow: 280ms;
+  --arc-ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --arc-ease-in: cubic-bezier(0.6, 0.04, 0.98, 0.335);
+
+  /* Layout */
+  --arc-max-width: 1440px;
+  --arc-sidebar-width: 280px;
+  --arc-sidebar-mobile-width: min(82vw, 320px);
+  --arc-breakpoint-handheld: 1080px;
+  --arc-topbar-height: 64px;
+
+  /* Spacing scale */
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

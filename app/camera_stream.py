@@ -22,42 +22,35 @@ def get_camera_feed(camera):
         return
 
     acq_thread = thread_group["acquisition"]
-    last_frame_id = None
+    last_frame_seq = -1
 
     try:
         while True:
-            # Check if there's a new frame available without encoding
-            # We use the raw frame object's id to detect changes
+            frame_bytes = None
             with acq_thread.frame_lock:
-                current_frame_raw = acq_thread.latest_display_frame_raw
-                current_frame_id = (
-                    id(current_frame_raw) if current_frame_raw is not None else None
-                )
+                current_frame_seq = getattr(acq_thread, "display_frame_seq", -1)
+                latest_frame = acq_thread.latest_display_frame_raw
+                if latest_frame is not None and current_frame_seq != last_frame_seq:
+                    ret, buffer = cv2.imencode(
+                        ".jpg",
+                        latest_frame,
+                        [cv2.IMWRITE_JPEG_QUALITY, acq_thread.jpeg_quality],
+                    )
+                    if ret:
+                        frame_bytes = buffer.tobytes()
+                        last_frame_seq = current_frame_seq
 
-            # Only encode when we have a new frame to send
-            if current_frame_id is not None and current_frame_id != last_frame_id:
-                # Encode the frame only now, when we're about to send it
-                with acq_thread.frame_lock:
-                    if acq_thread.latest_display_frame_raw is not None:
-                        ret, buffer = cv2.imencode(
-                            ".jpg",
-                            acq_thread.latest_display_frame_raw,
-                            [cv2.IMWRITE_JPEG_QUALITY, acq_thread.jpeg_quality],
-                        )
-                        if ret:
-                            yield (
-                                b"--frame\r\n"
-                                b"Content-Type: image/jpeg\r\n\r\n"
-                                + buffer.tobytes()
-                                + b"\r\n"
-                            )
-                            last_frame_id = current_frame_id
+            if frame_bytes is not None:
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+                continue
 
             if not acq_thread.is_alive():
                 print(f"Stopping feed for {identifier} as acquisition thread has died.")
                 break
-            # Reduced from 100 FPS to ~30 FPS for web streaming (sufficient for display)
-            time.sleep(0.033)
+            time.sleep(0.001)
     except GeneratorExit:
         print(f"Client disconnected from camera feed {identifier}.")
 
@@ -81,44 +74,37 @@ def get_processed_camera_feed(pipeline_id):
         )
         return
 
-    last_frame_id = None
+    last_frame_seq = -1
 
     try:
         while True:
-            # Check if there's a new frame available without encoding
-            # We use the raw frame object's id to detect changes
+            frame_bytes = None
             with proc_thread.processed_frame_lock:
-                current_frame_raw = proc_thread.latest_processed_frame_raw
-                current_frame_id = (
-                    id(current_frame_raw) if current_frame_raw is not None else None
-                )
+                current_frame_seq = getattr(proc_thread, "processed_frame_seq", -1)
+                latest_frame = proc_thread.latest_processed_frame_raw
+                if latest_frame is not None and current_frame_seq != last_frame_seq:
+                    ret, buffer = cv2.imencode(
+                        ".jpg",
+                        latest_frame,
+                        [cv2.IMWRITE_JPEG_QUALITY, proc_thread.jpeg_quality],
+                    )
+                    if ret:
+                        frame_bytes = buffer.tobytes()
+                        last_frame_seq = current_frame_seq
 
-            # Only encode when we have a new frame to send
-            if current_frame_id is not None and current_frame_id != last_frame_id:
-                # Encode the frame only now, when we're about to send it
-                with proc_thread.processed_frame_lock:
-                    if proc_thread.latest_processed_frame_raw is not None:
-                        ret, buffer = cv2.imencode(
-                            ".jpg",
-                            proc_thread.latest_processed_frame_raw,
-                            [cv2.IMWRITE_JPEG_QUALITY, proc_thread.jpeg_quality],
-                        )
-                        if ret:
-                            yield (
-                                b"--frame\r\n"
-                                b"Content-Type: image/jpeg\r\n\r\n"
-                                + buffer.tobytes()
-                                + b"\r\n"
-                            )
-                            last_frame_id = current_frame_id
+            if frame_bytes is not None:
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+                continue
 
             if not proc_thread.is_alive():
                 print(
                     f"Stopping processed feed for {pipeline_id} as its thread has died."
                 )
                 break
-            # Reduced from 100 FPS to ~30 FPS for web streaming (sufficient for display)
-            time.sleep(0.033)
+            time.sleep(0.001)
     except GeneratorExit:
         print(f"Client disconnected from processed feed {pipeline_id}.")
 
