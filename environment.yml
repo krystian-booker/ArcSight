@@ -1,4 +1,4 @@
-name: vision-tools
+name: ArcSight
 channels:
   - conda-forge
   - defaults
