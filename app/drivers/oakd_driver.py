@@ -151,7 +151,7 @@ class OAKDDriver(BaseDriver):
     @staticmethod
     def _parse_version(version_str):
         parts = []
-        for piece in version_str.split('.'):
+        for piece in version_str.split("."):
             try:
                 parts.append(int(piece))
             except ValueError:

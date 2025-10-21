@@ -1,4 +1,3 @@
-import json
 import math
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -6,6 +5,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 import robotpy_apriltag
+from app.apriltag_fields import get_selected_field_name, load_field_layout_by_name
 from wpimath.geometry import (
     Pose3d,
     Quaternion,
@@ -266,10 +266,9 @@ class AprilTagPipeline:
         self.publish_field_pose = bool(config.get("publish_field_pose", True))
         self.output_quaternion = bool(config.get("output_quaternion", True))
 
+        self.field_layout_name: Optional[str] = None
         self.field_layout_data: Optional[Dict[int, Pose3d]] = None
-        self._load_layout_if_available(
-            config.get("field_layout", ""), self.multi_tag_enabled
-        )
+        self._load_selected_layout()
 
         self.tag_size_m = float(config.get("tag_size_m", 0.1651))
         self.single_tag_obj_points = _scale_tag_corners(self.tag_size_m)
@@ -295,43 +294,63 @@ class AprilTagPipeline:
             f"multi_tag={self.multi_tag_enabled}",
         )
 
-    def _load_layout_if_available(self, field_layout_json: str, enabled: bool) -> None:
-        if not (enabled and field_layout_json):
+    def _load_selected_layout(self) -> None:
+        if not self.multi_tag_enabled:
             return
 
-        try:
-            layout = json.loads(field_layout_json)
-        except json.JSONDecodeError as exc:
-            print(f"Failed to parse field layout JSON: {exc}")
+        selected = get_selected_field_name()
+        if not selected:
+            print("Multi-tag enabled, but no AprilTag field layout selected")
             return
 
+        layout = load_field_layout_by_name(selected)
+        if not layout:
+            print(f"Failed to load AprilTag field layout '{selected}'")
+            return
+
+        self._apply_layout(selected, layout)
+
+    def _apply_layout(self, name: str, layout: Dict) -> None:
         tag_map: Dict[int, Pose3d] = {}
         for tag in layout.get("tags", []):
-            tag_id = int(tag["ID"])
-            pose = tag["pose"]
-            translation = pose["translation"]
-            rotation = pose["rotation"]["quaternion"]
+            try:
+                tag_id = int(tag["ID"])
+                pose = tag["pose"]
+                translation = pose["translation"]
+                rotation = pose["rotation"]["quaternion"]
 
-            pose3d = Pose3d(
-                Translation3d(
-                    float(translation["x"]),
-                    float(translation["y"]),
-                    float(translation["z"]),
-                ),
-                Rotation3d(
-                    Quaternion(
-                        float(rotation["W"]),
-                        float(rotation["X"]),
-                        float(rotation["Y"]),
-                        float(rotation["Z"]),
-                    )
-                ),
-            )
+                def _q(key: str) -> float:
+                    return float(rotation.get(key, rotation.get(key.lower())))
+
+                pose3d = Pose3d(
+                    Translation3d(
+                        float(translation["x"]),
+                        float(translation["y"]),
+                        float(translation["z"]),
+                    ),
+                    Rotation3d(
+                        Quaternion(
+                            _q("W"),
+                            _q("X"),
+                            _q("Y"),
+                            _q("Z"),
+                        )
+                    ),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
             tag_map[tag_id] = pose3d
 
         if tag_map:
+            self.field_layout_name = name
             self.field_layout_data = tag_map
-            print(f"Loaded field layout with {len(tag_map)} tags")
+            print(
+                f"Loaded AprilTag field '{name}' with {len(tag_map)} tags",
+            )
+        else:
+            self.field_layout_name = None
+            self.field_layout_data = None
+            print(f"AprilTag field '{name}' contained no valid tags")
 
     def _ensure_pose_estimator(self, cam_matrix: np.ndarray) -> None:
         estimator_cls = getattr(robotpy_apriltag, "AprilTagPoseEstimator", None)

@@ -1,7 +1,20 @@
 {% extends "layouts/base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<div x-data="settingsApp()" x-cloak class="stack stack-2xl">
+<div
+    x-data="settingsApp({
+        selectedField: {{ selected_field|tojson }},
+        defaultFields: {{ default_fields|map(attribute='name')|list|tojson }},
+        userFields: {{ user_fields|map(attribute='name')|list|tojson }},
+        endpoints: {
+            select: '{{ url_for("settings.select_apriltag_field") }}',
+            upload: '{{ url_for("settings.upload_apriltag_field") }}',
+            delete: '{{ url_for("settings.delete_apriltag_field") }}',
+        },
+    })"
+    x-cloak
+    class="stack stack-2xl"
+>
     <header class="stack stack-sm">
         <h1>Settings</h1>
         <p class="muted text-small">Configure network identity, GenICam integration, and device-level controls for ArcSight deployments.</p>
@@ -88,6 +101,105 @@
                 </button>
             </div>
         </form>
+    </section>
+
+    <section class="panel stack stack-lg">
+        <h2 class="panel-title">AprilTag Field Layout</h2>
+        <div class="stack stack-lg">
+            <form class="stack stack-sm" @submit.prevent="saveApriltagFieldSelection">
+                <div class="form-field">
+                    <label class="form-label" for="apriltag-field-select">Selected Field</label>
+                    <select
+                        id="apriltag-field-select"
+                        class="form-control"
+                        x-model="apriltag.selectedField"
+                    >
+                        <option value="">No field selected</option>
+                        <template x-if="apriltag.defaultFields.length">
+                            <optgroup label="Defaults">
+                                <template x-for="name in apriltag.defaultFields" :key="`default-${name}`">
+                                    <option :value="name" x-text="name"></option>
+                                </template>
+                            </optgroup>
+                        </template>
+                        <template x-if="apriltag.userFields.length">
+                            <optgroup label="Your Uploads">
+                                <template x-for="name in apriltag.userFields" :key="`user-${name}`">
+                                    <option :value="name" x-text="name"></option>
+                                </template>
+                            </optgroup>
+                        </template>
+                    </select>
+                    <p class="form-hint text-small">
+                        Selection applies to all AprilTag pipelines. Restart ArcSight or camera pipelines to pick up changes.
+                    </p>
+                </div>
+                <div class="cluster justify-end">
+                    <button
+                        type="submit"
+                        class="button button--primary"
+                        :disabled="apriltag.savingSelection"
+                    >
+                        <span x-show="!apriltag.savingSelection">Save Field Selection</span>
+                        <span x-show="apriltag.savingSelection">Saving...</span>
+                    </button>
+                </div>
+            </form>
+
+            <form
+                class="stack stack-sm"
+                @submit.prevent="uploadApriltagField"
+                x-ref="apriltagUploadForm"
+            >
+                <div class="form-field">
+                    <label class="form-label" for="apriltag-field-upload">Upload Field Layout (.json)</label>
+                    <input
+                        type="file"
+                        id="apriltag-field-upload"
+                        class="form-control"
+                        accept=".json,application/json"
+                        x-ref="apriltagUploadInput"
+                    >
+                    <p class="form-hint text-small">
+                        Upload a WPILib AprilTag field layout JSON. Files larger than 1&nbsp;MB are rejected.
+                    </p>
+                </div>
+                <div class="cluster justify-end">
+                    <button
+                        type="submit"
+                        class="button"
+                        :disabled="apriltag.uploading"
+                    >
+                        <span x-show="!apriltag.uploading">Upload Layout</span>
+                        <span x-show="apriltag.uploading">Uploading...</span>
+                    </button>
+                </div>
+            </form>
+
+            <div class="stack stack-sm">
+                <header class="stack stack-2xs">
+                    <h3 class="text-small">Your Uploads</h3>
+                    <p class="muted text-xsmall">Custom layouts live in your VisionTools data directory.</p>
+                </header>
+                <template x-if="!apriltag.userFields.length">
+                    <p class="muted text-small">No user layouts uploaded yet.</p>
+                </template>
+                <template x-for="name in apriltag.userFields" :key="`user-list-${name}`">
+                    <div class="surface surface--subtle cluster justify-between align-center">
+                        <span class="text-small" x-text="name"></span>
+                        <button
+                            type="button"
+                            class="button button--danger button--ghost text-small"
+                            @click="deleteApriltagField(name)"
+                            :disabled="apriltag.deleting === name"
+                        >
+                            <span x-show="apriltag.deleting !== name">Delete</span>
+                            <span x-show="apriltag.deleting === name">Removing...</span>
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
     </section>
 
     <section class="panel stack stack-lg">

@@ -204,15 +204,22 @@ def test_grayscale_conversion(
     mock_cvt_color.assert_not_called()
 
 
+@patch("app.pipelines.apriltag_pipeline.load_field_layout_by_name")
+@patch("app.pipelines.apriltag_pipeline.get_selected_field_name")
 @patch("app.pipelines.apriltag_pipeline.cv2.solvePnP")
 @patch("app.pipelines.apriltag_pipeline.cv2.projectPoints")
 def test_multi_tag_sqpnp(
-    mock_project, mock_solve, mock_detector, default_cam_matrix, default_dist_coeffs
+    mock_project,
+    mock_solve,
+    mock_get_selected,
+    mock_load_layout,
+    mock_detector,
+    default_cam_matrix,
+    default_dist_coeffs,
 ):
     """Test multi-tag pose estimation using SQPNP with field layout."""
     # Create config with multi-tag enabled and field layout
-    field_layout_json = """
-    {
+    field_layout_data = {
         "field": {"length": 16.54, "width": 8.21},
         "tags": [
             {
@@ -221,8 +228,8 @@ def test_multi_tag_sqpnp(
                     "translation": {"x": 1.0, "y": 0.0, "z": 0.5},
                     "rotation": {
                         "quaternion": {"W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0}
-                    }
-                }
+                    },
+                },
             },
             {
                 "ID": 2,
@@ -230,17 +237,17 @@ def test_multi_tag_sqpnp(
                     "translation": {"x": 2.0, "y": 0.0, "z": 0.5},
                     "rotation": {
                         "quaternion": {"W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0}
-                    }
-                }
-            }
-        ]
+                    },
+                },
+            },
+        ],
     }
-    """
+    mock_get_selected.return_value = "test-field.json"
+    mock_load_layout.return_value = field_layout_data
     config = {
         "family": "tag36h11",
         "tag_size_m": 0.15,
         "multi_tag_enabled": True,
-        "field_layout": field_layout_json,
     }
 
     mock_detection1 = create_mock_detection(tag_id=1)
@@ -274,6 +281,9 @@ def test_multi_tag_sqpnp(
     # Should have multi-tag result
     assert result["multi_tag"] is not None
     assert result["multi_tag"]["num_tags"] == 2
+
+    mock_get_selected.assert_called_once()
+    mock_load_layout.assert_called_once_with("test-field.json")
 
     # Verify SQPNP was called (last call should be SQPNP for multi-tag)
     assert mock_solve.call_count >= 3  # 2 single tags + 1 multi-tag

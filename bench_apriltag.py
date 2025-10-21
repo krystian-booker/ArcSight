@@ -35,11 +35,17 @@ def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
     else:
         config = {}
 
-    if args.field_layout:
-        config["field_layout"] = Path(args.field_layout).read_text()
-        config.setdefault("multi_tag_enabled", True)
-
     pipeline = AprilTagPipeline(config)
+
+    if args.field_layout:
+        layout_payload = json.loads(Path(args.field_layout).read_text())
+        from app.apriltag_fields import validate_layout_structure
+
+        is_valid, error = validate_layout_structure(layout_payload)
+        if not is_valid:
+            raise ValueError(f"Invalid field layout JSON: {error}")
+        pipeline._apply_layout(Path(args.field_layout).name, layout_payload)
+        pipeline.multi_tag_enabled = True
 
     source: int | str
     try:

@@ -270,6 +270,8 @@ class VisionProcessingThread(threading.Thread):
         self.latest_processed_frame_raw = None  # Raw annotated frame for lazy encoding
         self.processed_frame_lock = threading.Lock()
         self.jpeg_quality = jpeg_quality
+        self.processed_frame_seq = 0
+        self.latest_processed_frame_timestamp = 0.0
 
         # Initialize the pipeline object
         self.pipeline_instance = None
@@ -329,7 +331,6 @@ class VisionProcessingThread(threading.Thread):
             "pose_iterations": 40,
             "decode_sharpening": 0.25,
             "multi_tag_enabled": False,
-            "field_layout": "",
             "ransac_reproj_threshold": 1.2,
             "ransac_confidence": 0.999,
             "min_inliers": 12,
@@ -524,6 +525,8 @@ class VisionProcessingThread(threading.Thread):
                 # --- Store Processed Frame (raw, for lazy encoding) ---
                 with self.processed_frame_lock:
                     self.latest_processed_frame_raw = annotated_frame
+                    self.processed_frame_seq += 1
+                    self.latest_processed_frame_timestamp = time.perf_counter()
 
                 metrics_registry.record_latencies(
                     camera_identifier=self.identifier,
@@ -719,6 +722,8 @@ class CameraAcquisitionThread(threading.Thread):
         self.buffer_pool = FrameBufferPool(name=self.identifier)
         self.jpeg_quality = jpeg_quality
         self._drop_states: Dict[int, Dict[str, float]] = {}
+        self.display_frame_seq = 0
+        self.latest_display_frame_timestamp = 0.0
 
         # Event-based configuration update
         self.config_update_event = threading.Event()
@@ -977,6 +982,8 @@ class CameraAcquisitionThread(threading.Thread):
                 # Store the raw frame instead of encoding immediately (lazy encoding)
                 with self.frame_lock:
                     self.latest_display_frame_raw = display_frame_with_overlay
+                    self.display_frame_seq += 1
+                    self.latest_display_frame_timestamp = time.perf_counter()
             finally:
                 # Release initial reference - this ensures buffer is returned to pool
                 # when all consumers (pipelines + display) have finished with it

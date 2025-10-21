@@ -1,8 +1,7 @@
-import json
-
 import cv2
 import numpy as np
 import pytest
+from unittest.mock import patch
 
 pytest.importorskip("robotpy_apriltag")
 pytest.importorskip("wpimath.geometry")
@@ -100,14 +99,23 @@ def test_field_layout_corner_projection():
             }
         ]
     }
-    pipeline = AprilTagPipeline(
-        {
-            "family": "tag36h11",
-            "tag_size_m": 1.0,
-            "multi_tag_enabled": True,
-            "field_layout": json.dumps(layout),
-        }
-    )
+    with (
+        patch(
+            "app.pipelines.apriltag_pipeline.get_selected_field_name",
+            return_value="test.json",
+        ),
+        patch(
+            "app.pipelines.apriltag_pipeline.load_field_layout_by_name",
+            return_value=layout,
+        ),
+    ):
+        pipeline = AprilTagPipeline(
+            {
+                "family": "tag36h11",
+                "tag_size_m": 1.0,
+                "multi_tag_enabled": True,
+            }
+        )
 
     corners_image = [
         DummyCorner(100.0, 100.0),

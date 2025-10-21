@@ -102,10 +102,6 @@ APRILTAG_SCHEMA = {
             "type": "boolean",
             "description": "Enable multi-tag pose estimation for improved accuracy",
         },
-        "field_layout": {
-            "type": "string",
-            "description": "JSON string containing AprilTag field layout with tag positions",
-        },
         "ransac_reproj_threshold": {
             "type": "number",
             "minimum": 0.01,
@@ -456,9 +452,6 @@ def validate_pipeline_config(
 
         if pipeline_type == "Object Detection (ML)":
             _validate_ml_pipeline_relationships(config)
-        elif pipeline_type == "AprilTag":
-            if config.get("multi_tag_enabled") and not config.get("field_layout"):
-                return False, "field_layout is required when multi_tag_enabled is true"
 
         # All validations passed
         return True, None
@@ -492,7 +485,6 @@ def get_default_config(pipeline_type: str) -> Dict[str, Any]:
             "pose_iterations": 40,
             "decode_sharpening": 0.25,
             "multi_tag_enabled": False,
-            "field_layout": "",
             "ransac_reproj_threshold": 1.2,
             "ransac_confidence": 0.999,
             "min_inliers": 12,

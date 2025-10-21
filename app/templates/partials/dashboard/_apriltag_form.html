@@ -240,16 +240,9 @@
                     >
                     <span>Enable multi-tag solver</span>
                 </label>
-                <div class="form-field">
-                    <label class="form-label text-small" title="Paste the JSON exported by WPILib describing the AprilTag field layout.">Field Layout JSON</label>
-                    <textarea
-                        rows="4"
-                        class="form-control text-small"
-                        x-model="pipelineForms.apriltag.field_layout"
-                        @change.debounce.500="queuePipelineSave"
-                        :disabled="!pipelineForms.apriltag.multi_tag_enabled"
-                    ></textarea>
-                </div>
+                <p class="muted text-xsmall">
+                    Uses the AprilTag field selected in Settings. Upload or switch layouts from the Settings page.
+                </p>
                 <div class="grid-2 grid-tight">
                     <div class="form-field">
                         <label class="form-label text-small" title="Maximum allowed reprojection error during RANSAC.">RANSAC Threshold (px)</label>
