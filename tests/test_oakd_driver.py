@@ -207,9 +207,42 @@ def test_get_frame_no_frame_available(oakd_driver):
     """Test get_frame when the queue's tryGet returns None."""
     mock_queue = MagicMock()
     mock_queue.tryGet.return_value = None
+    mock_queue.get.side_effect = RuntimeError("Queue is closed")
     oakd_driver.output_queue = mock_queue
     frame = oakd_driver.get_frame()
     assert frame is None
+
+
+def test_get_frame_waits_for_blocking_fetch(oakd_driver, monkeypatch):
+    """Test get_frame retrieves a frame via the blocking queue fetch when tryGet is empty."""
+    mock_frame_data = np.ones((720, 1280, 3), dtype=np.uint8)
+    mock_dai_frame = MagicMock()
+    mock_dai_frame.getCvFrame.return_value = mock_frame_data
+
+    mock_queue = MagicMock()
+    mock_queue.tryGet.return_value = None
+    mock_queue.get.return_value = mock_dai_frame
+
+    # Reduce timeout to keep the test snappy
+    monkeypatch.setattr(
+        OAKDDriver,
+        "_FRAME_ACQUIRE_TIMEOUT_SEC",
+        0.1,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        OAKDDriver,
+        "_FRAME_ACQUIRE_POLL_INTERVAL_SEC",
+        0.01,
+        raising=False,
+    )
+
+    oakd_driver.output_queue = mock_queue
+    frame = oakd_driver.get_frame()
+
+    assert np.array_equal(frame, mock_frame_data)
+    mock_queue.tryGet.assert_called()
+    mock_queue.get.assert_called()
 
 
 def test_get_frame_not_connected(oakd_driver):

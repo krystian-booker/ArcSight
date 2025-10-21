@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 from .base_driver import BaseDriver
@@ -14,6 +15,9 @@ REQUIRED_DAI_VERSION = (3, 1, 0)
 
 class OAKDDriver(BaseDriver):
     """Driver for Luxonis OAK-D series cameras using the DepthAI v3 API."""
+
+    _FRAME_ACQUIRE_TIMEOUT_SEC = 5.0
+    _FRAME_ACQUIRE_POLL_INTERVAL_SEC = 0.05
 
     def __init__(self, camera_db_data):
         super().__init__(camera_db_data)
@@ -91,11 +95,30 @@ class OAKDDriver(BaseDriver):
         if self.output_queue is None:
             return None
 
-        frame = self.output_queue.tryGet()
-        if frame is None:
-            return None
+        deadline = time.monotonic() + self._FRAME_ACQUIRE_TIMEOUT_SEC
 
-        return frame.getCvFrame()
+        while True:
+            try:
+                frame_packet = self.output_queue.tryGet()
+                if frame_packet is None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return None
+                    timeout = min(
+                        self._FRAME_ACQUIRE_POLL_INTERVAL_SEC,
+                        remaining,
+                    )
+                    frame_packet = self.output_queue.get(timeout=timeout)
+
+                if frame_packet is None:
+                    if time.monotonic() >= deadline:
+                        return None
+                    time.sleep(self._FRAME_ACQUIRE_POLL_INTERVAL_SEC)
+                    continue
+
+                return frame_packet.getCvFrame()
+            except RuntimeError:
+                return None
 
     @staticmethod
     def list_devices():
