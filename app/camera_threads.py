@@ -986,13 +986,29 @@ class CameraAcquisitionThread(threading.Thread):
                             )
                         self._reset_drop_state(pipeline_id)
                     except queue.Full:
+                        # Queue is full - drop the oldest frame and add the new one
+                        # This ensures consumers always have the most recent frames
+                        try:
+                            old_frame = frame_queue.get_nowait()
+                            old_frame.release()  # Release the old frame
+                        except queue.Empty:
+                            pass  # Queue was drained by another thread
+
+                        # Now try to add the new frame again
+                        try:
+                            frame_queue.put_nowait(ref_counted_frame)
+                            enqueue_timestamp = time.perf_counter()
+                            ref_counted_frame.mark_enqueued(pipeline_id, enqueue_timestamp)
+                        except queue.Full:
+                            # Still full (shouldn't happen), release the new frame
+                            ref_counted_frame.release()
+
                         metrics_registry.record_drop(
                             camera_identifier=self.identifier,
                             pipeline_id=pipeline_id,
                             queue_size=queue_size_before,
                             queue_max_size=queue_max_size,
                         )
-                        ref_counted_frame.release()
                         self._handle_pipeline_drop(
                             pipeline_id,
                             frame_queue,
