@@ -12,7 +12,7 @@
         <div class="stack stack-sm">
             <h1>Monitoring</h1>
             <p class="muted text-small">
-                Track live pipeline health including latency, queue utilization, FPS, and dropped frames.
+                Track live pipeline health and system performance including CPU, RAM, temperature, latency, queue utilization, FPS, and dropped frames.
             </p>
         </div>
     </header>
@@ -26,11 +26,37 @@
         </p>
     </section>
     {% else %}
-    <section class="grid-3 grid-loose align-start">
+    <!-- Top row: System Resources and Pipeline Activity (2 columns) -->
+    <section class="grid-2 grid-loose align-start">
         <article class="panel stack stack-md">
             <header class="stack stack-2xs">
-                <h2 class="panel-title">System Overview</h2>
-                <p class="panel-hint">Aggregates memory usage and pipeline activity.</p>
+                <h2 class="panel-title">System Resources</h2>
+                <p class="panel-hint">Host CPU, RAM, and temperature sensors.</p>
+            </header>
+            <div class="stack stack-sm">
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">CPU Utilization</span>
+                    <strong data-field="cpu-percent">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">RAM Utilization</span>
+                    <strong data-field="ram-percent">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">RAM Used</span>
+                    <strong data-field="ram-used">—</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">CPU Temperature</span>
+                    <strong data-field="cpu-temp">—</strong>
+                </div>
+            </div>
+        </article>
+
+        <article class="panel stack stack-md">
+            <header class="stack stack-2xs">
+                <h2 class="panel-title">Pipeline Activity</h2>
+                <p class="panel-hint">Process memory and pipeline performance.</p>
             </header>
             <div class="stack stack-sm">
                 <div class="cluster justify-between align-center">
@@ -45,19 +71,22 @@
                     <span class="muted text-small">Drops per minute</span>
                     <strong data-field="drops-per-minute">—</strong>
                 </div>
-            </div>
-        </article>
-
-        <article class="panel stack stack-md">
-            <header class="stack stack-2xs">
-                <h2 class="panel-title">Latency Thresholds</h2>
-                <p class="panel-hint">Configured guardrails for pipeline performance.</p>
-            </header>
-            <div class="stack stack-sm">
                 <div class="cluster justify-between align-center">
                     <span class="muted text-small">Latency alert</span>
                     <strong data-field="latency-threshold">—</strong>
                 </div>
+            </div>
+        </article>
+    </section>
+
+    <!-- Bottom row: Thresholds and Status (2 columns) -->
+    <section class="grid-2 grid-loose align-start">
+        <article class="panel stack stack-md">
+            <header class="stack stack-2xs">
+                <h2 class="panel-title">Performance Thresholds</h2>
+                <p class="panel-hint">Configured guardrails for pipeline health.</p>
+            </header>
+            <div class="stack stack-sm">
                 <div class="cluster justify-between align-center">
                     <span class="muted text-small">Queue high water</span>
                     <strong data-field="queue-threshold">—</strong>
@@ -66,15 +95,6 @@
                     <span class="muted text-small">Window size</span>
                     <strong data-field="window-size">—</strong>
                 </div>
-            </div>
-        </article>
-
-        <article class="panel stack stack-md">
-            <header class="stack stack-2xs">
-                <h2 class="panel-title">Last Update</h2>
-                <p class="panel-hint">Snapshot timing for current metrics payload.</p>
-            </header>
-            <div class="stack stack-sm">
                 <div class="cluster justify-between align-center">
                     <span class="muted text-small">Generated at</span>
                     <strong data-field="generated-at">—</strong>
@@ -82,6 +102,31 @@
                 <div class="cluster justify-between align-center">
                     <span class="muted text-small">Refresh cadence</span>
                     <strong>{{ refresh_interval_ms }} ms</strong>
+                </div>
+            </div>
+        </article>
+
+        <article class="panel stack stack-md">
+            <header class="stack stack-2xs">
+                <h2 class="panel-title">Monitoring Status</h2>
+                <p class="panel-hint">Current metrics collection information.</p>
+            </header>
+            <div class="stack stack-sm">
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Metrics enabled</span>
+                    <strong>Yes</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Auto-refresh</span>
+                    <strong>Active</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Collection interval</span>
+                    <strong>{{ refresh_interval_ms }} ms</strong>
+                </div>
+                <div class="cluster justify-between align-center">
+                    <span class="muted text-small">Last updated</span>
+                    <strong data-field="generated-at">—</strong>
                 </div>
             </div>
         </article>

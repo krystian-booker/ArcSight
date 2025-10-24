@@ -26,7 +26,7 @@
     {
       "label": "Run Dev Server",
       "type": "shell",
-      "command": "conda run -n vision-tools python run.py",
+      "command": "conda run -n ArcSight python run.py",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -41,7 +41,7 @@
     {
       "label": "Run All Tests",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m pytest",
+      "command": "conda run -n ArcSight python -m pytest",
       "problemMatcher": [],
       "group": {
         "kind": "test",
@@ -56,7 +56,7 @@
     {
       "label": "Run Tests (Verbose)",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m pytest -v",
+      "command": "conda run -n ArcSight python -m pytest -v",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -68,7 +68,7 @@
     {
       "label": "Run Tests (No Coverage)",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m pytest --no-cov",
+      "command": "conda run -n ArcSight python -m pytest --no-cov",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -80,7 +80,7 @@
     {
       "label": "Run Current Test File",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m pytest ${relativeFile}",
+      "command": "conda run -n ArcSight python -m pytest ${relativeFile}",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -92,7 +92,7 @@
     {
       "label": "Generate Coverage Report",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m pytest --cov=app --cov-report=html --cov-report=term-missing",
+      "command": "conda run -n ArcSight python -m pytest --cov=app --cov-report=html --cov-report=term-missing",
       "problemMatcher": [],
       "group": "test",
       "presentation": {
@@ -103,7 +103,7 @@
     {
       "label": "Format Code",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m ruff format app tests",
+      "command": "conda run -n ArcSight python -m ruff format app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -114,7 +114,7 @@
     {
       "label": "Check Code Formatting",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m ruff format --check app tests",
+      "command": "conda run -n ArcSight python -m ruff format --check app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -125,7 +125,7 @@
     {
       "label": "Lint Code",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m ruff check app tests",
+      "command": "conda run -n ArcSight python -m ruff check app tests",
       "problemMatcher": [],
       "group": "build",
       "presentation": {
@@ -136,7 +136,7 @@
     {
       "label": "Lint Code (Fix)",
       "type": "shell",
-      "command": "conda run -n vision-tools python -m ruff check app tests --fix",
+      "command": "conda run -n ArcSight python -m ruff check app tests --fix",
       "problemMatcher": [],
       "group": "build",
       "presentation": {

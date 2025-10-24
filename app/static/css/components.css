@@ -244,6 +244,11 @@ body.has-sidebar-open {
   margin: 0 auto;
 }
 
+/* Full-width layout for dashboard page */
+.app-content[data-endpoint="dashboard.dashboard_page"] {
+  max-width: 100%;
+}
+
 .panel {
   background: rgba(33, 33, 33, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.05);

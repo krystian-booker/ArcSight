@@ -18,99 +18,93 @@
         </div>
     </header>
 
-    <section class="grid-3 grid-loose align-start">
+    <!-- Setup and Live Feed side by side -->
+    <section style="display: grid; grid-template-columns: 1fr 2fr; gap: var(--space-lg); align-items: start;">
+        <!-- Pipeline & Camera Setup (1/3 width) -->
         <article class="panel stack stack-lg">
-            <header class="stack stack-sm">
-                <h2 class="panel-title">Pipeline Control</h2>
-                <p class="panel-hint">Select a camera, attach a pipeline, and decide how ArcSight should process frames.</p>
+            <header class="stack stack-xs">
+                <h2 class="panel-title">Pipeline & Camera Setup</h2>
+                <p class="panel-hint">Configure your camera source and detection pipeline.</p>
             </header>
 
-            <div class="form-field">
-                <label for="camera-select" class="form-label">Select Camera</label>
-                <select
-                    id="camera-select"
-                    class="form-control"
-                    x-model="selectedCameraId"
-                >
-                    <option value="">
-                        <span x-text="cameras.length ? 'Select a camera…' : 'No cameras configured'"></span>
-                    </option>
-                    <template x-for="camera in cameras" :key="camera.id">
-                        <option :value="String(camera.id)" x-text="camera.name"></option>
-                    </template>
-                </select>
-            </div>
-
-            <div class="form-field">
-                <label class="form-label">Pipeline</label>
-                <div class="cluster cluster-wrap">
+            <div class="stack stack-md">
+                <div class="form-field">
+                    <label for="camera-select" class="form-label">Camera</label>
                     <select
-                        class="form-control form-control--inline"
-                        :disabled="!pipelines.length"
-                        x-model="selectedPipelineId"
+                        id="camera-select"
+                        class="form-control"
+                        x-model="selectedCameraId"
                     >
-                        <option value="" :disabled="!pipelines.length">Select a pipeline…</option>
-                        <template x-for="pipeline in pipelines" :key="pipeline.id">
-                            <option :value="pipeline.id" x-text="pipeline.name"></option>
+                        <option value="">
+                            <span x-text="cameras.length ? 'Select a camera…' : 'No cameras configured'"></span>
+                        </option>
+                        <template x-for="camera in cameras" :key="camera.id">
+                            <option :value="String(camera.id)" x-text="camera.name"></option>
                         </template>
                     </select>
-                    <button class="button-icon" type="button" :disabled="!hasCamera" @click="addPipeline">
-                        <span class="sr-only">Add pipeline</span>
-                        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 4a1 1 0 0 1 1 1v4h4a1 1 0 0 1 0 2h-4v4a1 1 0 0 1-2 0v-4H5a1 1 0 1 1 0-2h4V5a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
-                    </button>
-                    <button class="button-icon" type="button" :disabled="!selectedPipelineId" @click="renamePipeline">
-                        <span class="sr-only">Rename pipeline</span>
-                        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793Zm-2.207 2.207L4 13.172V16h2.828l7.379-7.379-2.828-2.828Z"/></svg>
-                    </button>
-                    <button class="button-icon" type="button" :disabled="!selectedPipelineId" @click="deletePipeline">
-                        <span class="sr-only">Delete pipeline</span>
-                        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8 2a1 1 0 0 0-.894.553L6.382 4H4a1 1 0 1 0 0 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a1 1 0 1 0 0-2h-2.382l-.724-1.447A1 1 0 0 0 12 2H8Zm2 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V9a1 1 0 0 1 1-1Zm-3 1a1 1 0 0 1 2 0v6a1 1 0 1 1-2 0V9Zm6 0a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V9Z" clip-rule="evenodd"/></svg>
-                    </button>
                 </div>
-                <p class="form-hint" x-show="!pipelines.length">Create a pipeline to enable processed feeds.</p>
-            </div>
 
-            <div class="form-field">
-                <label for="pipeline-type" class="form-label">Pipeline Type</label>
-                <select
-                    id="pipeline-type"
-                    class="form-control"
-                    :disabled="!selectedPipelineId"
-                    x-model="pipelineType"
-                    @change="onPipelineTypeChange($event.target.value)"
-                >
-                    <option value="AprilTag">AprilTag</option>
-                    <option value="Coloured Shape">Coloured Shape</option>
-                    <option value="Object Detection (ML)">Object Detection (ML)</option>
-                </select>
-            </div>
-        </article>
+                <div class="form-field">
+                    <label class="form-label">Pipeline</label>
+                    <div class="cluster cluster-wrap">
+                        <select
+                            class="form-control form-control--inline"
+                            :disabled="!pipelines.length"
+                            x-model="selectedPipelineId"
+                        >
+                            <option value="" :disabled="!pipelines.length">Select pipeline…</option>
+                            <template x-for="pipeline in pipelines" :key="pipeline.id">
+                                <option :value="pipeline.id" x-text="pipeline.name"></option>
+                            </template>
+                        </select>
+                        <button class="button-icon" type="button" :disabled="!hasCamera" @click="addPipeline" title="Add pipeline">
+                            <span class="sr-only">Add pipeline</span>
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 4a1 1 0 0 1 1 1v4h4a1 1 0 0 1 0 2h-4v4a1 1 0 0 1-2 0v-4H5a1 1 0 1 1 0-2h4V5a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+                        </button>
+                        <button class="button-icon" type="button" :disabled="!selectedPipelineId" @click="renamePipeline" title="Rename pipeline">
+                            <span class="sr-only">Rename pipeline</span>
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793Zm-2.207 2.207L4 13.172V16h2.828l7.379-7.379-2.828-2.828Z"/></svg>
+                        </button>
+                        <button class="button-icon" type="button" :disabled="!selectedPipelineId" @click="deletePipeline" title="Delete pipeline">
+                            <span class="sr-only">Delete pipeline</span>
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8 2a1 1 0 0 0-.894.553L6.382 4H4a1 1 0 1 0 0 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a1 1 0 1 0 0-2h-2.382l-.724-1.447A1 1 0 0 0 12 2H8Zm2 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V9a1 1 0 0 1 1-1Zm-3 1a1 1 0 0 1 2 0v6a1 1 0 1 1-2 0V9Zm6 0a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V9Z" clip-rule="evenodd"/></svg>
+                        </button>
+                    </div>
+                </div>
 
-        <article class="panel stack stack-lg">
-            <header class="stack stack-sm">
-                <h2 class="panel-title">Camera Input</h2>
-                <p class="panel-hint">Establish the best feed quality for detection by tuning orientation, exposure, and gain.</p>
-            </header>
+                <div class="form-field">
+                    <label for="pipeline-type" class="form-label">Pipeline Type</label>
+                    <select
+                        id="pipeline-type"
+                        class="form-control"
+                        :disabled="!selectedPipelineId"
+                        x-model="pipelineType"
+                        @change="onPipelineTypeChange($event.target.value)"
+                    >
+                        <option value="AprilTag">AprilTag</option>
+                        <option value="Coloured Shape">Coloured Shape</option>
+                        <option value="Object Detection (ML)">Object Detection (ML)</option>
+                    </select>
+                </div>
 
-            <div class="form-field">
-                <label for="orientation" class="form-label">Orientation</label>
-                <select
-                    id="orientation"
-                    class="form-control"
-                    x-model.number="controls.orientation"
-                    @change="queueControlsSave"
-                    :disabled="!hasCamera"
-                >
-                    <option :value="0">Normal (0°)</option>
-                    <option :value="90">Rotate 90°</option>
-                    <option :value="180">Rotate 180°</option>
-                    <option :value="270">Rotate 270°</option>
-                </select>
-            </div>
+                <div class="form-field">
+                    <label for="orientation" class="form-label">Orientation</label>
+                    <select
+                        id="orientation"
+                        class="form-control"
+                        x-model.number="controls.orientation"
+                        @change="queueControlsSave"
+                        :disabled="!hasCamera"
+                    >
+                        <option :value="0">Normal (0°)</option>
+                        <option :value="90">Rotate 90°</option>
+                        <option :value="180">Rotate 180°</option>
+                        <option :value="270">Rotate 270°</option>
+                    </select>
+                </div>
 
-            <div class="form-field">
-                <label class="form-label">Exposure</label>
-                <div class="stack stack-sm">
+                <div class="form-field">
+                    <label class="form-label">Exposure Mode</label>
                     <select
                         class="form-control"
                         x-model="controls.exposure_mode"
@@ -120,6 +114,10 @@
                         <option value="auto">Auto</option>
                         <option value="manual">Manual</option>
                     </select>
+                </div>
+
+                <div class="form-field">
+                    <label class="form-label">Exposure Value</label>
                     <div class="cluster">
                         <input
                             type="range"
@@ -141,11 +139,9 @@
                         >
                     </div>
                 </div>
-            </div>
 
-            <div class="form-field">
-                <label class="form-label">Gain</label>
-                <div class="stack stack-sm">
+                <div class="form-field">
+                    <label class="form-label">Gain Mode</label>
                     <select
                         class="form-control"
                         x-model="controls.gain_mode"
@@ -155,6 +151,10 @@
                         <option value="auto">Auto</option>
                         <option value="manual">Manual</option>
                     </select>
+                </div>
+
+                <div class="form-field">
+                    <label class="form-label">Gain Value</label>
                     <div class="cluster">
                         <input
                             type="range"
@@ -179,13 +179,26 @@
             </div>
         </article>
 
+        <!-- Live Feed (2/3 width) -->
         <article class="panel stack stack-lg">
-            <header class="stack stack-sm">
-                <h2 class="panel-title">Live Feed</h2>
-                <p class="panel-hint">Inspect the incoming stream or switch to the processed output for verification.</p>
+            <header class="cluster cluster-wrap justify-between align-center">
+                <div class="stack stack-xs">
+                    <h2 class="panel-title">Live Feed</h2>
+                    <p class="panel-hint">Inspect the incoming stream or switch to the processed output for verification.</p>
+                </div>
+                <div class="cluster cluster-wrap">
+                    <label class="cluster muted text-small">
+                        <input type="radio" value="default" x-model="feedType" :disabled="!hasCamera">
+                        <span>Default feed</span>
+                    </label>
+                    <label class="cluster muted text-small">
+                        <input type="radio" value="processed" x-model="feedType" :disabled="!canUseProcessedFeed">
+                        <span>Processed feed</span>
+                    </label>
+                </div>
             </header>
 
-            <div class="video-feed-wrapper">
+            <div class="video-feed-wrapper" style="max-width: 100%;">
                 <template x-if="isCameraConnected && feedSrc">
                     <img :src="feedSrc" alt="Camera Feed" class="w-100">
                 </template>
@@ -203,21 +216,11 @@
                     <div class="stack stack-sm muted text-center" style="padding: var(--space-xl);" x-text="feedError || 'Loading feed…'"></div>
                 </template>
             </div>
-
-            <div class="cluster cluster-wrap">
-                <label class="cluster muted text-small">
-                    <input type="radio" value="default" x-model="feedType" :disabled="!hasCamera">
-                    <span>Default feed</span>
-                </label>
-                <label class="cluster muted text-small">
-                    <input type="radio" value="processed" x-model="feedType" :disabled="!canUseProcessedFeed">
-                    <span>Processed feed</span>
-                </label>
-            </div>
             <p class="callout callout-danger text-small" x-show="feedError" x-text="feedError"></p>
         </article>
     </section>
 
+    <!-- Full-width pipeline settings -->
     <section class="panel stack stack-xl">
         <header class="cluster cluster-wrap justify-between align-start">
             <div class="stack stack-xs">

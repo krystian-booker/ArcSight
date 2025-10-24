@@ -13,6 +13,10 @@
     const tableBody = root.querySelector("[data-table-body]");
 
     const fields = {
+        cpuPercent: root.querySelector('[data-field="cpu-percent"]'),
+        ramPercent: root.querySelector('[data-field="ram-percent"]'),
+        ramUsed: root.querySelector('[data-field="ram-used"]'),
+        cpuTemp: root.querySelector('[data-field="cpu-temp"]'),
         memoryRss: root.querySelector('[data-field="memory-rss"]'),
         pipelineCount: root.querySelector('[data-field="pipeline-count"]'),
         dropsPerMinute: root.querySelector('[data-field="drops-per-minute"]'),
@@ -42,6 +46,48 @@
             return "—";
         }
         return `${value.toFixed(1)}%`;
+    }
+
+    function formatTemperature(value) {
+        if (value === undefined || value === null || Number.isNaN(value)) {
+            return "—";
+        }
+        return `${value.toFixed(1)}°C`;
+    }
+
+    function renderSystemMetrics(systemData) {
+        if (fields.cpuPercent) {
+            fields.cpuPercent.textContent = formatPercent(systemData?.cpu_percent ?? 0);
+        }
+        if (fields.ramPercent) {
+            fields.ramPercent.textContent = formatPercent(systemData?.ram_percent ?? 0);
+        }
+        if (fields.ramUsed) {
+            const totalBytes = systemData?.ram_total_bytes ?? 0;
+            const usedBytes = systemData?.ram_used_bytes ?? 0;
+            fields.ramUsed.textContent = `${formatBytes(usedBytes)} / ${formatBytes(totalBytes)}`;
+        }
+        if (fields.cpuTemp) {
+            const temps = systemData?.temperatures ?? [];
+            if (temps.length > 0) {
+                // Find CPU-related temperature sensor
+                const cpuTemp = temps.find(t =>
+                    t.sensor && (
+                        t.sensor.toLowerCase().includes('cpu') ||
+                        t.sensor.toLowerCase().includes('core') ||
+                        t.sensor.toLowerCase().includes('package')
+                    )
+                );
+                if (cpuTemp) {
+                    fields.cpuTemp.textContent = formatTemperature(cpuTemp.temperature_c);
+                } else {
+                    // Use first available temperature
+                    fields.cpuTemp.textContent = formatTemperature(temps[0].temperature_c);
+                }
+            } else {
+                fields.cpuTemp.textContent = "N/A";
+            }
+        }
     }
 
     function renderSummary(snapshot) {
@@ -185,11 +231,23 @@
 
     async function fetchAndRender() {
         try {
-            const response = await fetch("/api/metrics/summary", { cache: "no-cache" });
-            if (!response.ok) {
-                throw new Error(`Failed to fetch metrics: ${response.status}`);
+            // Fetch both pipeline metrics and system metrics in parallel
+            const [metricsResponse, systemResponse] = await Promise.all([
+                fetch("/api/metrics/summary", { cache: "no-cache" }),
+                fetch("/api/metrics/system", { cache: "no-cache" }),
+            ]);
+
+            if (!metricsResponse.ok) {
+                throw new Error(`Failed to fetch metrics: ${metricsResponse.status}`);
             }
-            const snapshot = await response.json();
+            if (!systemResponse.ok) {
+                throw new Error(`Failed to fetch system metrics: ${systemResponse.status}`);
+            }
+
+            const snapshot = await metricsResponse.json();
+            const systemData = await systemResponse.json();
+
+            renderSystemMetrics(systemData);
             renderSummary(snapshot);
             renderTable(snapshot?.pipelines ?? [], snapshot?.config ?? {});
         } catch (error) {

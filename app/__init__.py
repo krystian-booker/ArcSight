@@ -8,7 +8,7 @@ from . import camera_manager
 from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
 from .models import Setting
-from .metrics import metrics_registry
+from .metrics import metrics_registry, system_metrics_collector
 
 
 def create_app(config_overrides=None):
@@ -60,7 +60,9 @@ def create_app(config_overrides=None):
     )
     if app.config.get("METRICS_ENABLED", True):
         metrics_registry.start_memory_sampler()
+        system_metrics_collector.start()
         atexit.register(metrics_registry.shutdown)
+        atexit.register(system_metrics_collector.stop)
 
     # Import and register the new blueprints
     from .blueprints.dashboard import dashboard as dashboard_blueprint
