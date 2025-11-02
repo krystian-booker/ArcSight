@@ -1,23 +1,16 @@
 {% extends "layouts/base.html" %}
 {% block title %}Cameras{% endblock %}
 {% block content %}
-<div
-    x-data="camerasApp({
+<div x-data="camerasApp({
         genicam_enabled: {{ genicam_enabled | tojson }}
-    })"
-    x-cloak
-    class="stack stack-2xl"
->
+    })" x-cloak class="stack stack-2xl">
     <header class="cluster cluster-wrap justify-between align-start">
         <div class="stack stack-sm">
             <h1>Cameras</h1>
-            <p class="muted text-small">Manage capture devices, inspect driver status, and configure GenICam nodes when available.</p>
+            <p class="muted text-small">Manage capture devices, inspect driver status, and configure GenICam nodes when
+                available.</p>
         </div>
-        <button
-            type="button"
-            class="button button--primary"
-            @click="openAddModal"
-        >
+        <button type="button" class="button button--primary" @click="openAddModal">
             Add Camera
         </button>
     </header>
@@ -63,209 +56,188 @@
                         </tr>
                     </template>
                     <template x-for="camera in cameras" :key="camera.id">
-                            <tr x-init="camera.camera_type === 'GenICam' && ensureNodePanel(camera.id)">
-                                <td>
-                                    <div class="stack stack-xs">
-                                        <span x-text="camera.name"></span>
-                                        <span class="muted text-small" x-text="`ID: ${camera.id}`"></span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="muted text-small" x-text="camera.camera_type"></span>
-                                </td>
-                                <td>
-                                    <span class="muted text-small" x-text="camera.identifier || '—'"></span>
-                                </td>
-                                <td>
-                                    <template x-if="status[camera.id]?.loading">
-                                        <span class="status-pill status-pill--warn">
-                                            <span class="status-pill__dot"></span>
-                                            Checking…
-                                        </span>
-                                    </template>
-                                    <template x-if="status[camera.id] && status[camera.id].connected === true">
-                                        <span class="status-pill status-pill--ok">
-                                            <span class="status-pill__dot"></span>
-                                            Connected
-                                        </span>
-                                    </template>
-                                    <template x-if="status[camera.id] && status[camera.id].connected === false">
-                                        <span class="status-pill status-pill--error">
-                                            <span class="status-pill__dot"></span>
-                                            Disconnected
-                                        </span>
-                                    </template>
-                                    <template x-if="status[camera.id] && status[camera.id].connected === null && !status[camera.id].loading">
-                                        <span class="status-pill status-pill--warn">
-                                            <span class="status-pill__dot"></span>
-                                            Error
-                                        </span>
-                                    </template>
-                                </td>
-                                <td class="text-right">
-                                    <div class="cluster cluster-wrap justify-end">
-                                        <button
-                                            type="button"
-                                            class="button-text"
-                                            x-show="camera.camera_type === 'GenICam'"
-                                            @click="toggleNodePanel(camera.id)"
-                                        >
-                                            <span x-show="!(nodePanels[camera.id]?.open)">Nodes</span>
-                                            <span x-show="nodePanels[camera.id]?.open">Hide</span>
+                        <tr x-init="camera.camera_type === 'GenICam' && ensureNodePanel(camera.id)">
+                            <td>
+                                <div class="stack stack-xs">
+                                    <span x-text="camera.name"></span>
+                                    <span class="muted text-small" x-text="`ID: ${camera.id}`"></span>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="muted text-small" x-text="camera.camera_type"></span>
+                            </td>
+                            <td>
+                                <span class="muted text-small" x-text="camera.identifier || '—'"></span>
+                            </td>
+                            <td>
+                                <template x-if="status[camera.id]?.loading">
+                                    <span class="status-pill status-pill--warn">
+                                        <span class="status-pill__dot"></span>
+                                        Checking…
+                                    </span>
+                                </template>
+                                <template x-if="status[camera.id] && status[camera.id].connected === true">
+                                    <span class="status-pill status-pill--ok">
+                                        <span class="status-pill__dot"></span>
+                                        Connected
+                                    </span>
+                                </template>
+                                <template x-if="status[camera.id] && status[camera.id].connected === false">
+                                    <span class="status-pill status-pill--error">
+                                        <span class="status-pill__dot"></span>
+                                        Disconnected
+                                    </span>
+                                </template>
+                                <template
+                                    x-if="status[camera.id] && status[camera.id].connected === null && !status[camera.id].loading">
+                                    <span class="status-pill status-pill--warn">
+                                        <span class="status-pill__dot"></span>
+                                        Error
+                                    </span>
+                                </template>
+                            </td>
+                            <td class="text-right">
+                                <div class="cluster cluster-wrap justify-end">
+                                    <button type="button" class="button-text" x-show="camera.camera_type === 'GenICam'"
+                                        @click="toggleNodePanel(camera.id)">
+                                        <span x-show="!(nodePanels[camera.id]?.open)">Nodes</span>
+                                        <span x-show="nodePanels[camera.id]?.open">Hide</span>
+                                    </button>
+                                    <button type="button" class="button-text" @click="openEditModal(camera)">
+                                        Rename
+                                    </button>
+                                    <form method="POST" :action="`/cameras/delete/${camera.id}`"
+                                        @submit.prevent="confirm(deleteConfirmationMessage(camera)) && $event.target.submit()">
+                                        <button type="submit" class="button-text" style="color: var(--arc-primary);">
+                                            Delete
                                         </button>
-                                        <button
-                                            type="button"
-                                            class="button-text"
-                                            @click="openEditModal(camera)"
-                                        >
-                                            Rename
-                                        </button>
-                                        <form
-                                            method="POST"
-                                            :action="`/cameras/delete/${camera.id}`"
-                                            @submit.prevent="confirm(deleteConfirmationMessage(camera)) && $event.target.submit()"
-                                        >
-                                            <button
-                                                type="submit"
-                                                class="button-text"
-                                                style="color: var(--arc-primary);"
-                                            >
-                                                Delete
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr x-show="nodePanels[camera.id]?.open" x-cloak>
-                                <td colspan="5">
-                                    <div class="surface stack stack-lg" x-data="{ panel: nodePanels[camera.id] }">
-                                        <div class="cluster cluster-wrap justify-between align-start">
-                                            <div class="stack stack-xs">
-                                                <h4>GenICam Node Map</h4>
-                                                <p class="muted text-small">Filter writable nodes or inspect current values straight from the device.</p>
-                                            </div>
-                                            <div class="cluster cluster-wrap">
-                                                <input
-                                                    type="text"
-                                                    class="form-control"
-                                                    placeholder="Filter nodes"
-                                                    x-model="panel.filter.query"
-                                                >
-                                                <label class="cluster text-small">
-                                                    <input
-                                                        type="checkbox"
-                                                        class="form-checkbox"
-                                                        x-model="panel.filter.showAll"
-                                                    >
-                                                    <span>Show raw nodes</span>
-                                                </label>
-                                                <button
-                                                    type="button"
-                                                    class="button-icon"
-                                                    title="Refresh node map"
-                                                    @click="loadNodeMap(camera.id, { force: true })"
-                                                    :disabled="panel.loading"
-                                                >
-                                                    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M4 5a6 6 0 0 1 10.39-4H11v2h6V1h-2.12A8 8 0 1 0 4 15.9l1.4-1.45A6 6 0 0 1 4 5Zm12 5a6 6 0 0 1-10.39 4H9v-2H3v6h2.12A8 8 0 1 0 16 4.1l-1.4 1.45A6 6 0 0 1 16 10Z"/></svg>
-                                                </button>
-                                            </div>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr x-show="nodePanels[camera.id]?.open" x-cloak>
+                            <td colspan="5">
+                                <div class="surface stack stack-lg" x-data="{ panel: nodePanels[camera.id] }">
+                                    <div class="cluster cluster-wrap justify-between align-start">
+                                        <div class="stack stack-xs">
+                                            <h4>GenICam Node Map</h4>
+                                            <p class="muted text-small">Filter writable nodes or inspect current values
+                                                straight from the device.</p>
                                         </div>
-                                        <div class="callout text-small" x-show="panel.loading">Loading node map…</div>
-                                        <div class="callout callout-danger text-small" x-show="panel.error" x-text="panel.error"></div>
-                                        <div style="overflow-x:auto;">
-                                            <table class="table table--compact">
-                                                <thead>
+                                        <div class="cluster cluster-wrap">
+                                            <input type="text" class="form-control" placeholder="Filter nodes"
+                                                x-model="panel.filter.query">
+                                            <label class="cluster text-small">
+                                                <input type="checkbox" class="form-checkbox"
+                                                    x-model="panel.filter.showAll">
+                                                <span>Show raw nodes</span>
+                                            </label>
+                                            <button type="button" class="button-icon" title="Refresh node map"
+                                                @click="loadNodeMap(camera.id, { force: true })"
+                                                :disabled="panel.loading">
+                                                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                    <path
+                                                        d="M4 5a6 6 0 0 1 10.39-4H11v2h6V1h-2.12A8 8 0 1 0 4 15.9l1.4-1.45A6 6 0 0 1 4 5Zm12 5a6 6 0 0 1-10.39 4H9v-2H3v6h2.12A8 8 0 1 0 16 4.1l-1.4 1.45A6 6 0 0 1 16 10Z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="callout text-small" x-show="panel.loading">Loading node map…</div>
+                                    <div class="callout callout-danger text-small" x-show="panel.error"
+                                        x-text="panel.error"></div>
+                                    <div style="overflow-x:auto;">
+                                        <table class="table table--compact">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Value</th>
+                                                    <th>Interface</th>
+                                                    <th>Write</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <template x-for="node in filteredNodes(camera.id)" :key="node.name">
                                                     <tr>
-                                                        <th>Name</th>
-                                                        <th>Value</th>
-                                                        <th>Interface</th>
-                                                        <th>Write</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <template x-for="node in filteredNodes(camera.id)" :key="node.name">
-                                                        <tr>
-                                                            <td>
-                                                                <div class="stack stack-xs">
-                                                                    <span x-text="node.name"></span>
-                                                                    <span class="muted text-small" x-text="node.display_name || '—'"></span>
-                                                                </div>
-                                                            </td>
-                                                            <td class="muted text-small" x-text="node.value ?? '—'"></td>
-                                                            <td class="muted text-small" x-text="node.interface_type"></td>
-                                                            <td>
-                                                                <template x-if="node.is_writable">
-                                                                    <form class="stack stack-sm" @submit.prevent="submitNode(camera.id, node)">
-                                                                        <div>
-                                                                            <template x-if="node.interface_type === 'boolean'">
-                                                                                <select class="form-control" x-model="node.workingValue">
-                                                                                    <option value="True">True</option>
-                                                                                    <option value="False">False</option>
-                                                                                </select>
-                                                                            </template>
-                                                                            <template x-if="node.interface_type === 'enumeration'">
-                                                                                <select class="form-control" x-model="node.workingValue">
-                                                                                    <template x-for="choice in node.choices || []" :key="choice">
-                                                                                        <option :value="choice" x-text="choice"></option>
-                                                                                    </template>
-                                                                                </select>
-                                                                            </template>
-                                                                            <template x-if="['integer', 'float', 'string'].includes(node.interface_type)">
-                                                                                <input
-                                                                                    class="form-control"
-                                                                                    :type="node.interface_type === 'string' ? 'text' : 'number'"
-                                                                                    :step="node.interface_type === 'float' ? 'any' : 1"
-                                                                                    x-model="node.workingValue"
-                                                                                >
-                                                                            </template>
-                                                                        </div>
-                                                                        <div class="cluster cluster-wrap">
-                                                                            <button
-                                                                                type="submit"
-                                                                                class="button button--primary"
-                                                                                :disabled="node.saving"
-                                                                            >
-                                                                                <span x-show="!node.saving">Update</span>
-                                                                                <span x-show="node.saving">Saving…</span>
-                                                                            </button>
-                                                                            <span
-                                                                                class="badge"
-                                                                                x-show="node.feedback"
-                                                                                :class="{
+                                                        <td>
+                                                            <div class="stack stack-xs">
+                                                                <span x-text="node.name"></span>
+                                                                <span class="muted text-small"
+                                                                    x-text="node.display_name || '—'"></span>
+                                                            </div>
+                                                        </td>
+                                                        <td class="muted text-small" x-text="node.value ?? '—'"></td>
+                                                        <td class="muted text-small" x-text="node.interface_type"></td>
+                                                        <td>
+                                                            <template x-if="node.is_writable">
+                                                                <form class="stack stack-sm"
+                                                                    @submit.prevent="submitNode(camera.id, node)">
+                                                                    <div>
+                                                                        <template
+                                                                            x-if="node.interface_type === 'boolean'">
+                                                                            <select class="form-control"
+                                                                                x-model="node.workingValue">
+                                                                                <option value="True">True</option>
+                                                                                <option value="False">False</option>
+                                                                            </select>
+                                                                        </template>
+                                                                        <template
+                                                                            x-if="node.interface_type === 'enumeration'">
+                                                                            <select class="form-control"
+                                                                                x-model="node.workingValue">
+                                                                                <template
+                                                                                    x-for="choice in node.choices || []"
+                                                                                    :key="choice">
+                                                                                    <option :value="choice"
+                                                                                        x-text="choice"></option>
+                                                                                </template>
+                                                                            </select>
+                                                                        </template>
+                                                                        <template
+                                                                            x-if="['integer', 'float', 'string'].includes(node.interface_type)">
+                                                                            <input class="form-control"
+                                                                                :type="node.interface_type === 'string' ? 'text' : 'number'"
+                                                                                :step="node.interface_type === 'float' ? 'any' : 1"
+                                                                                x-model="node.workingValue">
+                                                                        </template>
+                                                                    </div>
+                                                                    <div class="cluster cluster-wrap">
+                                                                        <button type="submit"
+                                                                            class="button button--primary"
+                                                                            :disabled="node.saving">
+                                                                            <span x-show="!node.saving">Update</span>
+                                                                            <span x-show="node.saving">Saving…</span>
+                                                                        </button>
+                                                                        <span class="badge" x-show="node.feedback"
+                                                                            :class="{
                                                                                     'badge--ok': node.feedbackType === 'success',
                                                                                     'badge--error': node.feedbackType !== 'success'
-                                                                                }"
-                                                                                x-text="node.feedback"
-                                                                            ></span>
-                                                                        </div>
-                                                                    </form>
-                                                                </template>
-                                                                <template x-if="!node.is_writable">
-                                                                    <span class="muted text-small">Read only</span>
-                                                                </template>
-                                                            </td>
-                                                        </tr>
-                                                    </template>
-                                                    <tr x-show="!filteredNodes(camera.id).length">
-                                                        <td colspan="4" class="muted text-center text-small">No configurable nodes match your filters.</td>
+                                                                                }" x-text="node.feedback"></span>
+                                                                    </div>
+                                                                </form>
+                                                            </template>
+                                                            <template x-if="!node.is_writable">
+                                                                <span class="muted text-small">Read only</span>
+                                                            </template>
+                                                        </td>
                                                     </tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                </template>
+                                                <tr x-show="!filteredNodes(camera.id).length">
+                                                    <td colspan="4" class="muted text-center text-small">No configurable
+                                                        nodes match your filters.</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
-                                </td>
-                            </tr>
+                                </div>
+                            </td>
+                        </tr>
                     </template>
                 </tbody>
             </table>
         </div>
     </section>
 
-    <div
-        class="modal-overlay"
-        x-show="addModal.open"
-        x-transition
-    >
+    <div class="modal-overlay" x-show="addModal.open" x-transition>
         <div class="modal-content stack stack-lg" @click.away="closeAddModal">
             <header class="stack stack-xs">
                 <h2>Add Camera</h2>
@@ -274,24 +246,13 @@
             <form method="POST" action="{{ url_for('cameras.add_camera') }}" class="stack stack-lg">
                 <div class="form-field">
                     <label class="form-label" for="camera-name">Camera Name</label>
-                    <input
-                        id="camera-name"
-                        name="camera-name"
-                        type="text"
-                        class="form-control"
-                        x-model="addModal.name"
-                        required
-                    >
+                    <input id="camera-name" name="camera-name" type="text" class="form-control" x-model="addModal.name"
+                        required>
                 </div>
                 <div class="form-field">
                     <label class="form-label" for="camera-type">Camera Type</label>
-                    <select
-                        id="camera-type"
-                        name="camera-type"
-                        class="form-control"
-                        x-model="addModal.camera_type"
-                        required
-                    >
+                    <select id="camera-type" name="camera-type" class="form-control" x-model="addModal.camera_type"
+                        required>
                         <option value="">Select a type…</option>
                         <option value="USB">USB Camera</option>
                         <template x-if="genicamEnabled">
@@ -304,15 +265,11 @@
 
                 <div class="form-field" x-show="addModal.camera_type === 'USB'" x-cloak>
                     <label class="form-label" for="usb-camera-select">USB Cameras</label>
-                    <select
-                        id="usb-camera-select"
-                        name="usb-camera-select"
-                        class="form-control"
-                        x-model="addModal.selections.usb"
-                        :disabled="addModal.loading"
-                        :required="addModal.camera_type === 'USB'"
-                    >
-                        <option value="" x-show="!(addModal.options.usb && addModal.options.usb.length)">No USB cameras found</option>
+                    <select id="usb-camera-select" name="usb-camera-select" class="form-control"
+                        x-model="addModal.selections.usb" :disabled="addModal.loading"
+                        :required="addModal.camera_type === 'USB'">
+                        <option value="" x-show="!(addModal.options.usb && addModal.options.usb.length)">No USB cameras
+                            found</option>
                         <template x-for="device in addModal.options.usb" :key="device.identifier">
                             <option :value="device.identifier" x-text="device.name"></option>
                         </template>
@@ -321,15 +278,11 @@
 
                 <div class="form-field" x-show="addModal.camera_type === 'GenICam'" x-cloak>
                     <label class="form-label" for="genicam-camera-select">GenICam Cameras</label>
-                    <select
-                        id="genicam-camera-select"
-                        name="genicam-camera-select"
-                        class="form-control"
-                        x-model="addModal.selections.genicam"
-                        :disabled="addModal.loading"
-                        :required="addModal.camera_type === 'GenICam'"
-                    >
-                        <option value="" x-show="!(addModal.options.genicam && addModal.options.genicam.length)">No GenICam cameras found</option>
+                    <select id="genicam-camera-select" name="genicam-camera-select" class="form-control"
+                        x-model="addModal.selections.genicam" :disabled="addModal.loading"
+                        :required="addModal.camera_type === 'GenICam'">
+                        <option value="" x-show="!(addModal.options.genicam && addModal.options.genicam.length)">No
+                            GenICam cameras found</option>
                         <template x-for="device in addModal.options.genicam" :key="device.identifier">
                             <option :value="device.identifier" x-text="device.name"></option>
                         </template>
@@ -338,15 +291,11 @@
 
                 <div class="form-field" x-show="addModal.camera_type === 'OAK-D'" x-cloak>
                     <label class="form-label" for="oakd-camera-select">OAK-D Cameras</label>
-                    <select
-                        id="oakd-camera-select"
-                        name="oakd-camera-select"
-                        class="form-control"
-                        x-model="addModal.selections.oakd"
-                        :disabled="addModal.loading"
-                        :required="addModal.camera_type === 'OAK-D'"
-                    >
-                        <option value="" x-show="!(addModal.options.oakd && addModal.options.oakd.length)">No OAK-D cameras found</option>
+                    <select id="oakd-camera-select" name="oakd-camera-select" class="form-control"
+                        x-model="addModal.selections.oakd" :disabled="addModal.loading"
+                        :required="addModal.camera_type === 'OAK-D'">
+                        <option value="" x-show="!(addModal.options.oakd && addModal.options.oakd.length)">No OAK-D
+                            cameras found</option>
                         <template x-for="device in addModal.options.oakd" :key="device.identifier">
                             <option :value="device.identifier" x-text="device.name"></option>
                         </template>
@@ -355,15 +304,11 @@
 
                 <div class="form-field" x-show="addModal.camera_type === 'RealSense'" x-cloak>
                     <label class="form-label" for="realsense-camera-select">RealSense Cameras</label>
-                    <select
-                        id="realsense-camera-select"
-                        name="realsense-camera-select"
-                        class="form-control"
-                        x-model="addModal.selections.realsense"
-                        :disabled="addModal.loading"
-                        :required="addModal.camera_type === 'RealSense'"
-                    >
-                        <option value="" x-show="!(addModal.options.realsense && addModal.options.realsense.length)">No RealSense cameras found</option>
+                    <select id="realsense-camera-select" name="realsense-camera-select" class="form-control"
+                        x-model="addModal.selections.realsense" :disabled="addModal.loading"
+                        :required="addModal.camera_type === 'RealSense'">
+                        <option value="" x-show="!(addModal.options.realsense && addModal.options.realsense.length)">No
+                            RealSense cameras found</option>
                         <template x-for="device in addModal.options.realsense" :key="device.identifier">
                             <option :value="device.identifier" x-text="device.name"></option>
                         </template>
@@ -374,18 +319,11 @@
                 <div class="callout callout-danger text-small" x-show="addModal.error" x-text="addModal.error"></div>
 
                 <div class="cluster justify-end">
-                    <button
-                        type="button"
-                        class="button button--ghost"
-                        @click="closeAddModal"
-                    >
+                    <button type="button" class="button button--ghost" @click="closeAddModal">
                         Cancel
                     </button>
-                    <button
-                        type="submit"
-                        class="button button--primary"
-                        :disabled="!isAddFormValid() || addModal.loading"
-                    >
+                    <button type="submit" class="button button--primary"
+                        :disabled="!isAddFormValid() || addModal.loading">
                         Save
                     </button>
                 </div>
@@ -393,11 +331,7 @@
         </div>
     </div>
 
-    <div
-        class="modal-overlay"
-        x-show="editModal.open"
-        x-transition
-    >
+    <div class="modal-overlay" x-show="editModal.open" x-transition>
         <div class="modal-content stack stack-lg" @click.away="closeEditModal">
             <header class="stack stack-xs">
                 <h2>Edit Camera</h2>
@@ -406,27 +340,14 @@
             <form method="POST" :action="`/cameras/update/${editModal.camera_id}`" class="stack stack-lg">
                 <div class="form-field">
                     <label class="form-label" for="edit-camera-name">Camera Name</label>
-                    <input
-                        id="edit-camera-name"
-                        name="camera-name"
-                        type="text"
-                        class="form-control"
-                        x-model="editModal.name"
-                        required
-                    >
+                    <input id="edit-camera-name" name="camera-name" type="text" class="form-control"
+                        x-model="editModal.name" required>
                 </div>
                 <div class="cluster justify-end">
-                    <button
-                        type="button"
-                        class="button button--ghost"
-                        @click="closeEditModal"
-                    >
+                    <button type="button" class="button button--ghost" @click="closeEditModal">
                         Cancel
                     </button>
-                    <button
-                        type="submit"
-                        class="button button--primary"
-                    >
+                    <button type="submit" class="button button--primary">
                         Save
                     </button>
                 </div>

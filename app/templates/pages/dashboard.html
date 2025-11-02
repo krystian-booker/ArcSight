@@ -2,11 +2,7 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div
-    x-data="dashboardApp({})"
-    x-cloak
-    class="stack stack-2xl"
->
+<div x-data="dashboardApp({})" x-cloak class="stack stack-2xl">
     <header class="stack stack-lg">
         <div class="stack stack-sm">
             <h1>Dashboard</h1>
@@ -30,11 +26,7 @@
             <div class="stack stack-md">
                 <div class="form-field">
                     <label for="camera-select" class="form-label">Camera</label>
-                    <select
-                        id="camera-select"
-                        class="form-control"
-                        x-model="selectedCameraId"
-                    >
+                    <select id="camera-select" class="form-control" x-model="selectedCameraId">
                         <option value="">
                             <span x-text="cameras.length ? 'Select a camera…' : 'No cameras configured'"></span>
                         </option>
@@ -47,40 +39,46 @@
                 <div class="form-field">
                     <label class="form-label">Pipeline</label>
                     <div class="cluster cluster-wrap">
-                        <select
-                            class="form-control form-control--inline"
-                            :disabled="!pipelines.length"
-                            x-model="selectedPipelineId"
-                        >
+                        <select class="form-control form-control--inline" :disabled="!pipelines.length"
+                            x-model="selectedPipelineId">
                             <option value="" :disabled="!pipelines.length">Select pipeline…</option>
                             <template x-for="pipeline in pipelines" :key="pipeline.id">
                                 <option :value="pipeline.id" x-text="pipeline.name"></option>
                             </template>
                         </select>
-                        <button class="button-icon" type="button" :disabled="!hasCamera" @click="addPipeline" title="Add pipeline">
+                        <button class="button-icon" type="button" :disabled="!hasCamera" @click="addPipeline"
+                            title="Add pipeline">
                             <span class="sr-only">Add pipeline</span>
-                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 4a1 1 0 0 1 1 1v4h4a1 1 0 0 1 0 2h-4v4a1 1 0 0 1-2 0v-4H5a1 1 0 1 1 0-2h4V5a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd"
+                                    d="M10 4a1 1 0 0 1 1 1v4h4a1 1 0 0 1 0 2h-4v4a1 1 0 0 1-2 0v-4H5a1 1 0 1 1 0-2h4V5a1 1 0 0 1 1-1Z"
+                                    clip-rule="evenodd" />
+                            </svg>
                         </button>
-                        <button class="button-icon" type="button" :disabled="!selectedPipelineId" @click="renamePipeline" title="Rename pipeline">
+                        <button class="button-icon" type="button" :disabled="!selectedPipelineId"
+                            @click="renamePipeline" title="Rename pipeline">
                             <span class="sr-only">Rename pipeline</span>
-                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793Zm-2.207 2.207L4 13.172V16h2.828l7.379-7.379-2.828-2.828Z"/></svg>
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path
+                                    d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793Zm-2.207 2.207L4 13.172V16h2.828l7.379-7.379-2.828-2.828Z" />
+                            </svg>
                         </button>
-                        <button class="button-icon" type="button" :disabled="!selectedPipelineId" @click="deletePipeline" title="Delete pipeline">
+                        <button class="button-icon" type="button" :disabled="!selectedPipelineId"
+                            @click="deletePipeline" title="Delete pipeline">
                             <span class="sr-only">Delete pipeline</span>
-                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8 2a1 1 0 0 0-.894.553L6.382 4H4a1 1 0 1 0 0 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a1 1 0 1 0 0-2h-2.382l-.724-1.447A1 1 0 0 0 12 2H8Zm2 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V9a1 1 0 0 1 1-1Zm-3 1a1 1 0 0 1 2 0v6a1 1 0 1 1-2 0V9Zm6 0a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V9Z" clip-rule="evenodd"/></svg>
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd"
+                                    d="M8 2a1 1 0 0 0-.894.553L6.382 4H4a1 1 0 1 0 0 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a1 1 0 1 0 0-2h-2.382l-.724-1.447A1 1 0 0 0 12 2H8Zm2 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V9a1 1 0 0 1 1-1Zm-3 1a1 1 0 0 1 2 0v6a1 1 0 1 1-2 0V9Zm6 0a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V9Z"
+                                    clip-rule="evenodd" />
+                            </svg>
                         </button>
                     </div>
                 </div>
 
                 <div class="form-field">
                     <label for="pipeline-type" class="form-label">Pipeline Type</label>
-                    <select
-                        id="pipeline-type"
-                        class="form-control"
-                        :disabled="!selectedPipelineId"
-                        x-model="pipelineType"
-                        @change="onPipelineTypeChange($event.target.value)"
-                    >
+                    <select id="pipeline-type" class="form-control" :disabled="!selectedPipelineId"
+                        x-model="pipelineType" @change="onPipelineTypeChange($event.target.value)">
                         <option value="AprilTag">AprilTag</option>
                         <option value="Coloured Shape">Coloured Shape</option>
                         <option value="Object Detection (ML)">Object Detection (ML)</option>
@@ -89,13 +87,8 @@
 
                 <div class="form-field">
                     <label for="orientation" class="form-label">Orientation</label>
-                    <select
-                        id="orientation"
-                        class="form-control"
-                        x-model.number="controls.orientation"
-                        @change="queueControlsSave"
-                        :disabled="!hasCamera"
-                    >
+                    <select id="orientation" class="form-control" x-model.number="controls.orientation"
+                        @change="queueControlsSave" :disabled="!hasCamera">
                         <option :value="0">Normal (0°)</option>
                         <option :value="90">Rotate 90°</option>
                         <option :value="180">Rotate 180°</option>
@@ -105,12 +98,8 @@
 
                 <div class="form-field">
                     <label class="form-label">Exposure Mode</label>
-                    <select
-                        class="form-control"
-                        x-model="controls.exposure_mode"
-                        :disabled="!hasCamera"
-                        @change="onExposureModeChange($event.target.value)"
-                    >
+                    <select class="form-control" x-model="controls.exposure_mode" :disabled="!hasCamera"
+                        @change="onExposureModeChange($event.target.value)">
                         <option value="auto">Auto</option>
                         <option value="manual">Manual</option>
                     </select>
@@ -119,35 +108,19 @@
                 <div class="form-field">
                     <label class="form-label">Exposure Value</label>
                     <div class="cluster">
-                        <input
-                            type="range"
-                            min="0"
-                            max="1000"
-                            class="form-range"
-                            x-model.number="controls.exposure_value"
-                            :disabled="!exposureManual"
-                            @input.debounce.300="queueControlsSave"
-                        >
-                        <input
-                            type="number"
-                            min="0"
-                            max="1000"
-                            class="form-control form-control--small"
-                            x-model.number="controls.exposure_value"
-                            :disabled="!exposureManual"
-                            @change.debounce.300="queueControlsSave"
-                        >
+                        <input type="range" min="0" max="1000" class="form-range"
+                            x-model.number="controls.exposure_value" :disabled="!exposureManual"
+                            @input.debounce.300="queueControlsSave">
+                        <input type="number" min="0" max="1000" class="form-control form-control--small"
+                            x-model.number="controls.exposure_value" :disabled="!exposureManual"
+                            @change.debounce.300="queueControlsSave">
                     </div>
                 </div>
 
                 <div class="form-field">
                     <label class="form-label">Gain Mode</label>
-                    <select
-                        class="form-control"
-                        x-model="controls.gain_mode"
-                        :disabled="!hasCamera"
-                        @change="onGainModeChange($event.target.value)"
-                    >
+                    <select class="form-control" x-model="controls.gain_mode" :disabled="!hasCamera"
+                        @change="onGainModeChange($event.target.value)">
                         <option value="auto">Auto</option>
                         <option value="manual">Manual</option>
                     </select>
@@ -156,24 +129,11 @@
                 <div class="form-field">
                     <label class="form-label">Gain Value</label>
                     <div class="cluster">
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            class="form-range"
-                            x-model.number="controls.gain_value"
-                            :disabled="!gainManual"
-                            @input.debounce.300="queueControlsSave"
-                        >
-                        <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            class="form-control form-control--small"
-                            x-model.number="controls.gain_value"
-                            :disabled="!gainManual"
-                            @change.debounce.300="queueControlsSave"
-                        >
+                        <input type="range" min="0" max="100" class="form-range" x-model.number="controls.gain_value"
+                            :disabled="!gainManual" @input.debounce.300="queueControlsSave">
+                        <input type="number" min="0" max="100" class="form-control form-control--small"
+                            x-model.number="controls.gain_value" :disabled="!gainManual"
+                            @change.debounce.300="queueControlsSave">
                     </div>
                 </div>
             </div>
@@ -184,7 +144,8 @@
             <header class="cluster cluster-wrap justify-between align-center">
                 <div class="stack stack-xs">
                     <h2 class="panel-title">Live Feed</h2>
-                    <p class="panel-hint">Inspect the incoming stream or switch to the processed output for verification.</p>
+                    <p class="panel-hint">Inspect the incoming stream or switch to the processed output for
+                        verification.</p>
                 </div>
                 <div class="cluster cluster-wrap">
                     <label class="cluster muted text-small">
@@ -213,7 +174,8 @@
                     </div>
                 </template>
                 <template x-if="hasCamera && isCameraConnected && !feedSrc">
-                    <div class="stack stack-sm muted text-center" style="padding: var(--space-xl);" x-text="feedError || 'Loading feed…'"></div>
+                    <div class="stack stack-sm muted text-center" style="padding: var(--space-xl);"
+                        x-text="feedError || 'Loading feed…'"></div>
                 </template>
             </div>
             <p class="callout callout-danger text-small" x-show="feedError" x-text="feedError"></p>
@@ -225,7 +187,8 @@
         <header class="cluster cluster-wrap justify-between align-start">
             <div class="stack stack-xs">
                 <h2 class="panel-title">Pipeline Settings</h2>
-                <p class="panel-hint">Adjust parameters for the selected pipeline. Changes apply live while the feed runs.</p>
+                <p class="panel-hint">Adjust parameters for the selected pipeline. Changes apply live while the feed
+                    runs.</p>
             </div>
             <div class="status-pill" :class="{ 'status-pill--ok': !!pipeline, 'status-pill--warn': !pipeline }">
                 <span class="status-pill__dot"></span>
@@ -239,35 +202,23 @@
         </div>
     </section>
 
-    <div
-        class="modal-overlay"
-        x-show="pipelineModal.open"
-        x-transition
-        x-cloak
-    >
+    <div class="modal-overlay" x-show="pipelineModal.open" x-transition x-cloak>
         <div class="modal-content stack stack-lg">
             <header class="stack stack-xs">
                 <h3>Pipeline</h3>
-                <p class="panel-hint" x-text="pipelineModal.mode === 'add' ? 'Define a fresh pipeline for the selected camera.' : 'Update the current pipeline.'"></p>
+                <p class="panel-hint"
+                    x-text="pipelineModal.mode === 'add' ? 'Define a fresh pipeline for the selected camera.' : 'Update the current pipeline.'">
+                </p>
             </header>
             <div class="stack stack-md">
                 <div class="form-field">
                     <label class="form-label" for="pipeline-name">Name</label>
-                    <input
-                        id="pipeline-name"
-                        type="text"
-                        class="form-control"
-                        x-model="pipelineModal.name"
-                        placeholder="Enter pipeline name"
-                    >
+                    <input id="pipeline-name" type="text" class="form-control" x-model="pipelineModal.name"
+                        placeholder="Enter pipeline name">
                 </div>
                 <div class="form-field">
                     <label class="form-label" for="pipeline-modal-type">Type</label>
-                    <select
-                        id="pipeline-modal-type"
-                        class="form-control"
-                        x-model="pipelineModal.type"
-                    >
+                    <select id="pipeline-modal-type" class="form-control" x-model="pipelineModal.type">
                         <template x-for="type in pipelineTypes" :key="type">
                             <option :value="type" x-text="type"></option>
                         </template>
@@ -278,20 +229,12 @@
                 </div>
             </div>
             <div class="cluster justify-end">
-                <button
-                    type="button"
-                    class="button button--ghost"
-                    @click="closePipelineModal"
-                    :disabled="pipelineModal.saving"
-                >
+                <button type="button" class="button button--ghost" @click="closePipelineModal"
+                    :disabled="pipelineModal.saving">
                     Cancel
                 </button>
-                <button
-                    type="button"
-                    class="button button--primary"
-                    @click="submitPipelineModal"
-                    :disabled="pipelineModal.saving"
-                >
+                <button type="button" class="button button--primary" @click="submitPipelineModal"
+                    :disabled="pipelineModal.saving">
                     <span x-show="!pipelineModal.saving">Save</span>
                     <span x-show="pipelineModal.saving">Saving…</span>
                 </button>
@@ -299,12 +242,7 @@
         </div>
     </div>
 
-    <div
-        class="modal-overlay"
-        x-show="deleteModal.open"
-        x-transition
-        x-cloak
-    >
+    <div class="modal-overlay" x-show="deleteModal.open" x-transition x-cloak>
         <div class="modal-content stack stack-lg">
             <header class="stack stack-xs">
                 <h3>Delete Pipeline</h3>
@@ -312,20 +250,12 @@
             </header>
             <p>Are you sure you want to remove <strong x-text="deleteModal.name"></strong>? This cannot be undone.</p>
             <div class="cluster justify-end">
-                <button
-                    type="button"
-                    class="button button--ghost"
-                    @click="closeDeleteModal"
-                    :disabled="deleteModal.saving"
-                >
+                <button type="button" class="button button--ghost" @click="closeDeleteModal"
+                    :disabled="deleteModal.saving">
                     Cancel
                 </button>
-                <button
-                    type="button"
-                    class="button button--danger"
-                    @click="confirmDeletePipeline"
-                    :disabled="deleteModal.saving"
-                >
+                <button type="button" class="button button--danger" @click="confirmDeletePipeline"
+                    :disabled="deleteModal.saving">
                     <span x-show="!deleteModal.saving">Delete</span>
                     <span x-show="deleteModal.saving">Deleting…</span>
                 </button>

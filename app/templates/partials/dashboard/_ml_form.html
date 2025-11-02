@@ -1,31 +1,19 @@
-<div
-    class="pipeline-form surface stack stack-xl"
-    x-show="pipelineType === 'Object Detection (ML)'"
-    x-transition
-    x-cloak
->
+<div class="pipeline-form surface stack stack-xl" x-show="pipelineType === 'Object Detection (ML)'" x-transition
+    x-cloak>
     <header class="stack stack-xs">
         <h3>Object Detection (ML)</h3>
-        <p class="panel-hint">Attach model artifacts, choose an accelerator, and filter detections for the processed overlay.</p>
+        <p class="panel-hint">Attach model artifacts, choose an accelerator, and filter detections for the processed
+            overlay.</p>
     </header>
     <div class="grid-2">
         <div class="stack stack-lg">
             <div class="form-field">
                 <label class="form-label">ML Model File</label>
                 <div class="cluster cluster-wrap">
-                    <input
-                        type="file"
-                        class="form-control form-control--file"
-                        @change="uploadPipelineFile($event, 'model')"
-                        :disabled="isUploadingFile"
-                    >
-                    <button
-                        class="button button--danger"
-                        type="button"
-                        @click="deletePipelineFile('model')"
-                        :disabled="!pipelineForms.ml.model_filename"
-                        x-show="pipelineForms.ml.model_filename"
-                    >
+                    <input type="file" class="form-control form-control--file"
+                        @change="uploadPipelineFile($event, 'model')" :disabled="isUploadingFile">
+                    <button class="button button--danger" type="button" @click="deletePipelineFile('model')"
+                        :disabled="!pipelineForms.ml.model_filename" x-show="pipelineForms.ml.model_filename">
                         Remove
                     </button>
                 </div>
@@ -37,19 +25,10 @@
             <div class="form-field">
                 <label class="form-label">Labels File</label>
                 <div class="cluster cluster-wrap">
-                    <input
-                        type="file"
-                        class="form-control form-control--file"
-                        @change="uploadPipelineFile($event, 'labels')"
-                        :disabled="isUploadingFile"
-                    >
-                    <button
-                        class="button button--danger"
-                        type="button"
-                        @click="deletePipelineFile('labels')"
-                        :disabled="!pipelineForms.ml.labels_filename"
-                        x-show="pipelineForms.ml.labels_filename"
-                    >
+                    <input type="file" class="form-control form-control--file"
+                        @change="uploadPipelineFile($event, 'labels')" :disabled="isUploadingFile">
+                    <button class="button button--danger" type="button" @click="deletePipelineFile('labels')"
+                        :disabled="!pipelineForms.ml.labels_filename" x-show="pipelineForms.ml.labels_filename">
                         Remove
                     </button>
                 </div>
@@ -61,20 +40,11 @@
             <div class="grid-2 grid-tight">
                 <div class="form-field">
                     <label class="form-label">Model Type</label>
-                    <input
-                        type="text"
-                        class="form-control"
-                        x-model="pipelineForms.ml.model_type"
-                        readonly
-                    >
+                    <input type="text" class="form-control" x-model="pipelineForms.ml.model_type" readonly>
                 </div>
                 <div class="form-field">
                     <label class="form-label">Hardware Accelerator</label>
-                    <select
-                        class="form-control"
-                        x-model="pipelineForms.ml.accelerator"
-                        @change="queuePipelineSave"
-                    >
+                    <select class="form-control" x-model="pipelineForms.ml.accelerator" @change="queuePipelineSave">
                         <option value="none">None</option>
                         <template x-if="mlAvailability?.accelerators?.rknn">
                             <option value="rknn">Orange Pi 5 NPU (RKNN)</option>
@@ -86,12 +56,9 @@
 
             <div class="form-field" x-show="pipelineForms.ml.model_type === 'yolo'" x-cloak>
                 <label class="form-label">ONNX Runtime Provider</label>
-                <select
-                    class="form-control"
-                    x-model="pipelineForms.ml.onnx_provider"
-                    @change="queuePipelineSave"
-                >
-                    <template x-for="provider in (mlAvailability?.onnx?.providers || ['CPUExecutionProvider'])" :key="provider">
+                <select class="form-control" x-model="pipelineForms.ml.onnx_provider" @change="queuePipelineSave">
+                    <template x-for="provider in (mlAvailability?.onnx?.providers || ['CPUExecutionProvider'])"
+                        :key="provider">
                         <option :value="provider" x-text="provider"></option>
                     </template>
                 </select>
@@ -99,11 +66,7 @@
 
             <div class="form-field" x-show="pipelineForms.ml.model_type === 'tflite'" x-cloak>
                 <label class="form-label">TFLite Delegate</label>
-                <select
-                    class="form-control"
-                    x-model="pipelineForms.ml.tflite_delegate"
-                    @change="queuePipelineSave"
-                >
+                <select class="form-control" x-model="pipelineForms.ml.tflite_delegate" @change="queuePipelineSave">
                     <template x-for="delegate in (mlAvailability?.tflite?.delegates || ['None'])" :key="delegate">
                         <option :value="delegate" x-text="delegate"></option>
                     </template>
@@ -113,62 +76,30 @@
             <div class="grid-2 grid-tight">
                 <div class="form-field">
                     <label class="form-label">Confidence Threshold</label>
-                    <input
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        class="form-control"
-                        x-model.number="pipelineForms.ml.confidence_threshold"
-                        @change.debounce.300="queuePipelineSave"
-                    >
+                    <input type="number" min="0" max="1" step="0.01" class="form-control"
+                        x-model.number="pipelineForms.ml.confidence_threshold" @change.debounce.300="queuePipelineSave">
                 </div>
                 <div class="form-field">
                     <label class="form-label">NMS Threshold</label>
-                    <input
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        class="form-control"
-                        x-model.number="pipelineForms.ml.nms_threshold"
-                        @change.debounce.300="queuePipelineSave"
-                    >
+                    <input type="number" min="0" max="1" step="0.01" class="form-control"
+                        x-model.number="pipelineForms.ml.nms_threshold" @change.debounce.300="queuePipelineSave">
                 </div>
                 <div class="form-field">
                     <label class="form-label">Input Image Size (px)</label>
-                    <input
-                        type="number"
-                        min="32"
-                        max="2048"
-                        step="32"
-                        class="form-control"
-                        x-model.number="pipelineForms.ml.img_size"
-                        @change.debounce.300="queuePipelineSave"
-                    >
+                    <input type="number" min="32" max="2048" step="32" class="form-control"
+                        x-model.number="pipelineForms.ml.img_size" @change.debounce.300="queuePipelineSave">
                 </div>
                 <div class="form-field">
                     <label class="form-label">Maximum Detections</label>
-                    <input
-                        type="number"
-                        min="1"
-                        max="500"
-                        class="form-control"
-                        x-model.number="pipelineForms.ml.max_detections"
-                        @change.debounce.300="queuePipelineSave"
-                    >
+                    <input type="number" min="1" max="500" class="form-control"
+                        x-model.number="pipelineForms.ml.max_detections" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
 
             <div class="form-field">
                 <label class="form-label">Target Class Filter</label>
-                <select
-                    class="form-control"
-                    multiple
-                    size="6"
-                    x-model="pipelineForms.ml.target_classes"
-                    @change="queuePipelineSave"
-                >
+                <select class="form-control" multiple size="6" x-model="pipelineForms.ml.target_classes"
+                    @change="queuePipelineSave">
                     <template x-for="label in labelOptions" :key="label">
                         <option :value="label" x-text="label"></option>
                     </template>

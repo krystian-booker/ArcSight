@@ -2,17 +2,14 @@
 {% block title %}Monitoring{% endblock %}
 
 {% block content %}
-<div
-    id="monitoring-app"
-    class="stack stack-2xl"
-    data-refresh="{{ refresh_interval_ms }}"
-    data-enabled="{{ 'true' if metrics_enabled else 'false' }}"
->
+<div id="monitoring-app" class="stack stack-2xl" data-refresh="{{ refresh_interval_ms }}"
+    data-enabled="{{ 'true' if metrics_enabled else 'false' }}">
     <header class="stack stack-lg">
         <div class="stack stack-sm">
             <h1>Monitoring</h1>
             <p class="muted text-small">
-                Track live pipeline health and system performance including CPU, RAM, temperature, latency, queue utilization, FPS, and dropped frames.
+                Track live pipeline health and system performance including CPU, RAM, temperature, latency, queue
+                utilization, FPS, and dropped frames.
             </p>
         </div>
     </header>

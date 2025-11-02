@@ -1,23 +1,18 @@
 {% extends "layouts/base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<div
-    x-data="settingsApp({
+<div x-data="settingsApp({
         selectedField: {{ selected_field|tojson }},
         defaultFields: {{ default_fields|map(attribute='name')|list|tojson }},
         userFields: {{ user_fields|map(attribute='name')|list|tojson }},
         endpoints: {
-            select: '{{ url_for("settings.select_apriltag_field") }}',
-            upload: '{{ url_for("settings.upload_apriltag_field") }}',
-            delete: '{{ url_for("settings.delete_apriltag_field") }}',
-        },
-    })"
-    x-cloak
-    class="stack stack-2xl"
->
+            select: '{{ url_for(" settings.select_apriltag_field") }}',
+    upload: '{{ url_for("settings.upload_apriltag_field") }}' ,
+    delete: '{{ url_for("settings.delete_apriltag_field") }}' , }, })" x-cloak class="stack stack-2xl">
     <header class="stack stack-sm">
         <h1>Settings</h1>
-        <p class="muted text-small">Configure network identity, GenICam integration, and device-level controls for ArcSight deployments.</p>
+        <p class="muted text-small">Configure network identity, GenICam integration, and device-level controls for
+            ArcSight deployments.</p>
     </header>
 
     <section class="panel stack stack-lg">
@@ -26,23 +21,13 @@
             <div class="grid-2 grid-tight">
                 <div class="form-field">
                     <label class="form-label" for="team-number">Team Number</label>
-                    <input
-                        type="number"
-                        name="team_number"
-                        id="team-number"
-                        value="{{ settings.team_number or '' }}"
-                        class="form-control"
-                    >
+                    <input type="number" name="team_number" id="team-number" value="{{ settings.team_number or '' }}"
+                        class="form-control">
                 </div>
                 <div class="form-field">
                     <label class="form-label" for="hostname">Hostname</label>
-                    <input
-                        type="text"
-                        name="hostname"
-                        id="hostname"
-                        value="{{ current_hostname }}"
-                        class="form-control"
-                    >
+                    <input type="text" name="hostname" id="hostname" value="{{ current_hostname }}"
+                        class="form-control">
                 </div>
             </div>
 
@@ -50,23 +35,13 @@
                 <legend class="form-label">IP Assignment Mode</legend>
                 <div class="cluster cluster-wrap">
                     <label class="cluster text-small">
-                        <input
-                            type="radio"
-                            name="ip_mode"
-                            value="DHCP"
-                            class="form-checkbox"
-                            {% if current_network_settings.ip_mode == 'DHCP' %}checked{% endif %}
-                        >
+                        <input type="radio" name="ip_mode" value="DHCP" class="form-checkbox" {% if
+                            current_network_settings.ip_mode=='DHCP' %}checked{% endif %}>
                         <span>DHCP</span>
                     </label>
                     <label class="cluster text-small">
-                        <input
-                            type="radio"
-                            name="ip_mode"
-                            value="Static"
-                            class="form-checkbox"
-                            {% if current_network_settings.ip_mode == 'Static' %}checked{% endif %}
-                        >
+                        <input type="radio" name="ip_mode" value="Static" class="form-checkbox" {% if
+                            current_network_settings.ip_mode=='Static' %}checked{% endif %}>
                         <span>Static</span>
                     </label>
                 </div>
@@ -86,14 +61,10 @@
             <div class="form-field">
                 <label class="form-label" for="genicam-cti-path">GenTL Producer Path (.cti file)</label>
                 <span class="muted text-small">Current: {{ settings.genicam_cti_path or 'Not set' }}</span>
-                <input
-                    type="text"
-                    id="genicam-cti-path"
-                    name="genicam-cti-path"
-                    placeholder="C:\\path\\to\\your\\genicam.cti"
-                    class="form-control"
-                >
-                <p class="form-hint">Enter the full path to the .cti file from your camera SDK. ArcSight requires this to communicate with GenICam hardware.</p>
+                <input type="text" id="genicam-cti-path" name="genicam-cti-path"
+                    placeholder="C:\\path\\to\\your\\genicam.cti" class="form-control">
+                <p class="form-hint">Enter the full path to the .cti file from your camera SDK. ArcSight requires this
+                    to communicate with GenICam hardware.</p>
             </div>
             <div class="cluster justify-end">
                 <button type="submit" class="button button--primary">
@@ -109,11 +80,7 @@
             <form class="stack stack-sm" @submit.prevent="saveApriltagFieldSelection">
                 <div class="form-field">
                     <label class="form-label" for="apriltag-field-select">Selected Field</label>
-                    <select
-                        id="apriltag-field-select"
-                        class="form-control"
-                        x-model="apriltag.selectedField"
-                    >
+                    <select id="apriltag-field-select" class="form-control" x-model="apriltag.selectedField">
                         <option value="">No field selected</option>
                         <template x-if="apriltag.defaultFields.length">
                             <optgroup label="Defaults">
@@ -131,45 +98,29 @@
                         </template>
                     </select>
                     <p class="form-hint text-small">
-                        Selection applies to all AprilTag pipelines. Restart ArcSight or camera pipelines to pick up changes.
+                        Selection applies to all AprilTag pipelines. Restart ArcSight or camera pipelines to pick up
+                        changes.
                     </p>
                 </div>
                 <div class="cluster justify-end">
-                    <button
-                        type="submit"
-                        class="button button--primary"
-                        :disabled="apriltag.savingSelection"
-                    >
+                    <button type="submit" class="button button--primary" :disabled="apriltag.savingSelection">
                         <span x-show="!apriltag.savingSelection">Save Field Selection</span>
                         <span x-show="apriltag.savingSelection">Saving...</span>
                     </button>
                 </div>
             </form>
 
-            <form
-                class="stack stack-sm"
-                @submit.prevent="uploadApriltagField"
-                x-ref="apriltagUploadForm"
-            >
+            <form class="stack stack-sm" @submit.prevent="uploadApriltagField" x-ref="apriltagUploadForm">
                 <div class="form-field">
                     <label class="form-label" for="apriltag-field-upload">Upload Field Layout (.json)</label>
-                    <input
-                        type="file"
-                        id="apriltag-field-upload"
-                        class="form-control"
-                        accept=".json,application/json"
-                        x-ref="apriltagUploadInput"
-                    >
+                    <input type="file" id="apriltag-field-upload" class="form-control" accept=".json,application/json"
+                        x-ref="apriltagUploadInput">
                     <p class="form-hint text-small">
                         Upload a WPILib AprilTag field layout JSON. Files larger than 1&nbsp;MB are rejected.
                     </p>
                 </div>
                 <div class="cluster justify-end">
-                    <button
-                        type="submit"
-                        class="button"
-                        :disabled="apriltag.uploading"
-                    >
+                    <button type="submit" class="button" :disabled="apriltag.uploading">
                         <span x-show="!apriltag.uploading">Upload Layout</span>
                         <span x-show="apriltag.uploading">Uploading...</span>
                     </button>
@@ -187,12 +138,8 @@
                 <template x-for="name in apriltag.userFields" :key="`user-list-${name}`">
                     <div class="surface surface--subtle cluster justify-between align-center">
                         <span class="text-small" x-text="name"></span>
-                        <button
-                            type="button"
-                            class="button button--danger button--ghost text-small"
-                            @click="deleteApriltagField(name)"
-                            :disabled="apriltag.deleting === name"
-                        >
+                        <button type="button" class="button button--danger button--ghost text-small"
+                            @click="deleteApriltagField(name)" :disabled="apriltag.deleting === name">
                             <span x-show="apriltag.deleting !== name">Delete</span>
                             <span x-show="apriltag.deleting === name">Removing...</span>
                         </button>
@@ -205,10 +152,12 @@
     <section class="panel stack stack-lg">
         <h2 class="panel-title">Device Control</h2>
         <div class="grid-2 grid-tight">
-            <button type="button" class="button button--primary" @click="submitPost('{{ url_for('settings.restart_app') }}')">
+            <button type="button" class="button button--primary"
+                @click="submitPost('{{ url_for('settings.restart_app') }}')">
                 Restart ArcSight
             </button>
-            <button type="button" class="button button--primary" @click="submitPost('{{ url_for('settings.reboot_device') }}')">
+            <button type="button" class="button button--primary"
+                @click="submitPost('{{ url_for('settings.reboot_device') }}')">
                 Restart Device
             </button>
             <a href="{{ url_for('settings.export_db') }}" class="button">
@@ -221,23 +170,13 @@
         <button type="button" class="button button--danger w-100" @click="openFactoryResetModal">
             Factory Reset
         </button>
-        <form
-            id="import-db-form"
-            action="{{ url_for('settings.import_db') }}"
-            method="POST"
-            enctype="multipart/form-data"
-            hidden
-        >
+        <form id="import-db-form" action="{{ url_for('settings.import_db') }}" method="POST"
+            enctype="multipart/form-data" hidden>
             <input type="file" name="database" id="import-db-input" x-ref="importInput" @change="handleImportChange">
         </form>
     </section>
 
-    <div
-        class="modal-overlay"
-        id="factoryResetModal"
-        x-show="factoryResetOpen"
-        x-transition
-    >
+    <div class="modal-overlay" id="factoryResetModal" x-show="factoryResetOpen" x-transition>
         <div class="modal-content stack stack-lg">
             <header class="stack stack-xs">
                 <h3>Confirm Factory Reset</h3>
@@ -248,11 +187,8 @@
                 <button type="button" class="button button--ghost" @click="closeFactoryResetModal">
                     Cancel
                 </button>
-                <button
-                    type="button"
-                    class="button button--danger"
-                    @click="confirmFactoryReset('{{ url_for('settings.factory_reset') }}')"
-                >
+                <button type="button" class="button button--danger"
+                    @click="confirmFactoryReset('{{ url_for('settings.factory_reset') }}')">
                     Factory Reset
                 </button>
             </div>

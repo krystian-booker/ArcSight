@@ -1,9 +1,4 @@
-<div
-    class="pipeline-form surface stack stack-xl"
-    x-show="pipelineType === 'Coloured Shape'"
-    x-transition
-    x-cloak
->
+<div class="pipeline-form surface stack stack-xl" x-show="pipelineType === 'Coloured Shape'" x-transition x-cloak>
     <header class="stack stack-xs">
         <h3>Coloured Shape Configuration</h3>
         <p class="panel-hint">Define HSV thresholds and contour filters to isolate coloured targets.</p>
@@ -14,43 +9,55 @@
             <div class="form-field">
                 <label class="form-label">Hue Min (0-179)</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="179" class="form-range" x-model.number="pipelineForms.coloured.hue_min" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="179" class="form-control form-control--small" x-model.number="pipelineForms.coloured.hue_min" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="179" class="form-range"
+                        x-model.number="pipelineForms.coloured.hue_min" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="179" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.hue_min" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Hue Max (0-179)</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="179" class="form-range" x-model.number="pipelineForms.coloured.hue_max" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="179" class="form-control form-control--small" x-model.number="pipelineForms.coloured.hue_max" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="179" class="form-range"
+                        x-model.number="pipelineForms.coloured.hue_max" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="179" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.hue_max" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Saturation Min (0-255)</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="255" class="form-range" x-model.number="pipelineForms.coloured.saturation_min" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="255" class="form-control form-control--small" x-model.number="pipelineForms.coloured.saturation_min" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="255" class="form-range"
+                        x-model.number="pipelineForms.coloured.saturation_min" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="255" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.saturation_min" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Saturation Max (0-255)</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="255" class="form-range" x-model.number="pipelineForms.coloured.saturation_max" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="255" class="form-control form-control--small" x-model.number="pipelineForms.coloured.saturation_max" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="255" class="form-range"
+                        x-model.number="pipelineForms.coloured.saturation_max" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="255" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.saturation_max" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Value Min (0-255)</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="255" class="form-range" x-model.number="pipelineForms.coloured.value_min" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="255" class="form-control form-control--small" x-model.number="pipelineForms.coloured.value_min" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="255" class="form-range"
+                        x-model.number="pipelineForms.coloured.value_min" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="255" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.value_min" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Value Max (0-255)</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="255" class="form-range" x-model.number="pipelineForms.coloured.value_max" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="255" class="form-control form-control--small" x-model.number="pipelineForms.coloured.value_max" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="255" class="form-range"
+                        x-model.number="pipelineForms.coloured.value_max" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="255" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.value_max" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
         </div>
@@ -60,40 +67,55 @@
             <div class="form-field">
                 <label class="form-label">Min Area</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="10000" class="form-range" x-model.number="pipelineForms.coloured.min_area" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="10000" class="form-control form-control--small" x-model.number="pipelineForms.coloured.min_area" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="10000" class="form-range"
+                        x-model.number="pipelineForms.coloured.min_area" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="10000" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.min_area" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Max Area</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="100000" class="form-range" x-model.number="pipelineForms.coloured.max_area" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="100000" class="form-control form-control--small" x-model.number="pipelineForms.coloured.max_area" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="100000" class="form-range"
+                        x-model.number="pipelineForms.coloured.max_area" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="100000" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.max_area" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Min Aspect Ratio</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="20" step="0.1" class="form-range" x-model.number="pipelineForms.coloured.min_aspect_ratio" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="20" step="0.1" class="form-control form-control--small" x-model.number="pipelineForms.coloured.min_aspect_ratio" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="20" step="0.1" class="form-range"
+                        x-model.number="pipelineForms.coloured.min_aspect_ratio"
+                        @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="20" step="0.1" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.min_aspect_ratio"
+                        @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Max Aspect Ratio</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="20" step="0.1" class="form-range" x-model.number="pipelineForms.coloured.max_aspect_ratio" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="20" step="0.1" class="form-control form-control--small" x-model.number="pipelineForms.coloured.max_aspect_ratio" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="20" step="0.1" class="form-range"
+                        x-model.number="pipelineForms.coloured.max_aspect_ratio"
+                        @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="20" step="0.1" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.max_aspect_ratio"
+                        @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <div class="form-field">
                 <label class="form-label">Min Fullness</label>
                 <div class="cluster">
-                    <input type="range" min="0" max="1" step="0.01" class="form-range" x-model.number="pipelineForms.coloured.min_fullness" @input.debounce.300="queuePipelineSave">
-                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control--small" x-model.number="pipelineForms.coloured.min_fullness" @change.debounce.300="queuePipelineSave">
+                    <input type="range" min="0" max="1" step="0.01" class="form-range"
+                        x-model.number="pipelineForms.coloured.min_fullness" @input.debounce.300="queuePipelineSave">
+                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control--small"
+                        x-model.number="pipelineForms.coloured.min_fullness" @change.debounce.300="queuePipelineSave">
                 </div>
             </div>
             <p class="muted text-small">
-                Processed feed overlay highlights detected contours in real time. Numerical outputs will be added in an upcoming release.
+                Processed feed overlay highlights detected contours in real time. Numerical outputs will be added in an
+                upcoming release.
             </p>
         </div>
     </div>
