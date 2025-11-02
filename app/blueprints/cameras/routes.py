@@ -33,6 +33,9 @@ def add_camera():
     elif camera_type == "OAK-D":
         identifier = request.form.get("oakd-camera-select")
         device_info_json = None
+    elif camera_type == "RealSense":
+        identifier = request.form.get("realsense-camera-select")
+        device_info_json = None
     else:
         return redirect(url_for("cameras.cameras_page"))
 
@@ -125,7 +128,7 @@ def get_camera_results(camera_id):
 
 @cameras.route("/discover")
 def discover_cameras():
-    """Discovers available USB, GenICam, and OAK-D cameras."""
+    """Discovers available USB, GenICam, OAK-D, and RealSense cameras."""
     existing_identifiers = request.args.get("existing", "").split(",")
     discovered = camera_discovery.discover_cameras(existing_identifiers)
     return jsonify(discovered)

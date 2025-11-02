@@ -25,6 +25,7 @@ dependencies:
       - robotpy-apriltag
       - robotpy-wpimath
       - depthai
+      - pyrealsense2
       
       # ML inference and conversion
       - onnxruntime

@@ -24,6 +24,13 @@ class CameraThreadConfig(TypedDict):
     orientation: int
     camera_matrix_json: Optional[str]
     dist_coeffs_json: Optional[str]
+    resolution_json: Optional[str]
+    framerate: Optional[int]
+    depth_enabled: bool
+    exposure_mode: str
+    exposure_value: int
+    gain_mode: str
+    gain_value: int
     pipelines: List[PipelineThreadConfig]
 
 
@@ -37,6 +44,13 @@ def build_camera_thread_config(camera: Camera) -> CameraThreadConfig:
         "orientation": camera.orientation or 0,
         "camera_matrix_json": camera.camera_matrix_json,
         "dist_coeffs_json": camera.dist_coeffs_json,
+        "resolution_json": camera.resolution_json,
+        "framerate": camera.framerate,
+        "depth_enabled": camera.depth_enabled or False,
+        "exposure_mode": camera.exposure_mode or "auto",
+        "exposure_value": camera.exposure_value or 500,
+        "gain_mode": camera.gain_mode or "auto",
+        "gain_value": camera.gain_value or 50,
         "pipelines": [
             {
                 "id": pipeline.id,
@@ -70,6 +84,13 @@ def start_camera_thread(camera_config: CameraThreadConfig, app):
                 orientation=camera_config["orientation"],
                 app=app,
                 jpeg_quality=85,
+                depth_enabled=camera_config["depth_enabled"],
+                resolution_json=camera_config["resolution_json"],
+                framerate=camera_config["framerate"],
+                exposure_mode=camera_config["exposure_mode"],
+                exposure_value=camera_config["exposure_value"],
+                gain_mode=camera_config["gain_mode"],
+                gain_value=camera_config["gain_value"],
             )
 
             # Pipelines are loaded via the relationship

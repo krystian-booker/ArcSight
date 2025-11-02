@@ -26,8 +26,8 @@ export function registerCamerasComponents(Alpine) {
             error: '',
             name: '',
             camera_type: '',
-            options: { usb: [], genicam: [], oakd: [] },
-            selections: { usb: '', genicam: '', oakd: '' },
+            options: { usb: [], genicam: [], oakd: [], realsense: [] },
+            selections: { usb: '', genicam: '', oakd: '', realsense: '' },
         },
         editModal: {
             open: false,
@@ -238,8 +238,8 @@ export function registerCamerasComponents(Alpine) {
                 error: '',
                 name: '',
                 camera_type: '',
-                options: { usb: [], genicam: [], oakd: [] },
-                selections: { usb: '', genicam: '', oakd: '' },
+                options: { usb: [], genicam: [], oakd: [], realsense: [] },
+                selections: { usb: '', genicam: '', oakd: '', realsense: '' },
             };
             this.fetchDiscovery();
         },
@@ -261,6 +261,7 @@ export function registerCamerasComponents(Alpine) {
                     usb: payload?.usb || [],
                     genicam: payload?.genicam || [],
                     oakd: payload?.oakd || [],
+                    realsense: payload?.realsense || [],
                 };
                 this.onAddCameraTypeChange(this.addModal.camera_type);
             } catch (error) {
@@ -272,7 +273,7 @@ export function registerCamerasComponents(Alpine) {
 
         onAddCameraTypeChange(type) {
             if (!type) {
-                this.addModal.selections = { usb: '', genicam: '', oakd: '' };
+                this.addModal.selections = { usb: '', genicam: '', oakd: '', realsense: '' };
                 return;
             }
             const options = this.getDiscoveryOptions(type);
@@ -288,6 +289,7 @@ export function registerCamerasComponents(Alpine) {
             if (type === 'USB') return this.addModal.options.usb || [];
             if (type === 'GenICam') return this.addModal.options.genicam || [];
             if (type === 'OAK-D') return this.addModal.options.oakd || [];
+            if (type === 'RealSense') return this.addModal.options.realsense || [];
             return [];
         },
 
@@ -298,6 +300,8 @@ export function registerCamerasComponents(Alpine) {
                 this.addModal.selections.genicam = identifier;
             } else if (type === 'OAK-D') {
                 this.addModal.selections.oakd = identifier;
+            } else if (type === 'RealSense') {
+                this.addModal.selections.realsense = identifier;
             }
         },
 
@@ -310,6 +314,7 @@ export function registerCamerasComponents(Alpine) {
             if (type === 'USB') return Boolean(this.addModal.selections.usb);
             if (type === 'GenICam') return Boolean(this.addModal.selections.genicam);
             if (type === 'OAK-D') return Boolean(this.addModal.selections.oakd);
+            if (type === 'RealSense') return Boolean(this.addModal.selections.realsense);
             return false;
         },
 

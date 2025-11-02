@@ -34,8 +34,22 @@ class BaseDriver(ABC):
 
     @abstractmethod
     def get_frame(self):  # pragma: no cover
-        """Retrieves a single frame from the camera."""
+        """Retrieves a single frame from the camera.
+
+        Returns:
+            For standard cameras: numpy array (BGR format) or None if failed
+            For depth-capable cameras: tuple (color_frame, depth_frame) where
+                                      depth_frame can be None if depth disabled
+        """
         pass
+
+    def supports_depth(self):
+        """Indicates whether this driver supports depth data.
+
+        Returns:
+            bool: True if the driver can provide depth frames, False otherwise
+        """
+        return False
 
     @staticmethod
     @abstractmethod

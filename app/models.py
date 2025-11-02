@@ -27,6 +27,13 @@ class Camera(db.Model):
     device_info_json = db.Column(
         db.String, nullable=True
     )  # Stores USB VID/PID/Serial metadata
+    resolution_json = db.Column(
+        db.String, nullable=True
+    )  # Stores resolution settings (e.g., {"width": 1920, "height": 1080})
+    framerate = db.Column(db.Integer, nullable=True)  # FPS setting
+    depth_enabled = db.Column(
+        db.Boolean, default=False
+    )  # Enable depth stream for depth-capable cameras
 
     pipelines = db.relationship(
         "Pipeline", back_populates="camera", cascade="all, delete-orphan"
@@ -47,6 +54,9 @@ class Camera(db.Model):
             "dist_coeffs_json": self.dist_coeffs_json,
             "reprojection_error": self.reprojection_error,
             "device_info_json": self.device_info_json,
+            "resolution_json": self.resolution_json,
+            "framerate": self.framerate,
+            "depth_enabled": self.depth_enabled,
         }
 
 

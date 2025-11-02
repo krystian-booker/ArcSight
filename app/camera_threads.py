@@ -5,6 +5,7 @@ import queue
 import numpy as np
 import json
 import logging
+import inspect
 from typing import Dict, Optional
 from numbers import Real
 
@@ -41,11 +42,16 @@ def _coerce_int(value) -> Optional[int]:
 
 # --- Frame Buffer and Reference Counting ---
 class RefCountedFrame:
-    """A thread-safe wrapper for a numpy frame buffer that manages reference counts."""
+    """A thread-safe wrapper for a numpy frame buffer that manages reference counts.
 
-    def __init__(self, frame_buffer, release_callback):
+    Supports optional depth buffer for depth-capable cameras (e.g., Intel RealSense).
+    """
+
+    def __init__(self, frame_buffer, release_callback, depth_buffer=None, depth_release_callback=None):
         self.frame_buffer = frame_buffer
+        self.depth_buffer = depth_buffer
         self._release_callback = release_callback
+        self._depth_release_callback = depth_release_callback
         self._ref_count = 0
         self._lock = threading.Lock()
         self._created_time = time.perf_counter()
@@ -61,13 +67,25 @@ class RefCountedFrame:
         with self._lock:
             if self._ref_count > 0:
                 self._ref_count -= 1
-                if self._ref_count == 0 and self._release_callback:
-                    self._release_callback(self.frame_buffer)
+                if self._ref_count == 0:
+                    if self._release_callback:
+                        self._release_callback(self.frame_buffer)
+                    if self._depth_release_callback and self.depth_buffer is not None:
+                        self._depth_release_callback(self.depth_buffer)
 
     @property
     def data(self):
         """Returns the read-only numpy array."""
         return self.frame_buffer
+
+    @property
+    def depth_data(self):
+        """Returns the read-only depth array if available, else None."""
+        return self.depth_buffer
+
+    def has_depth(self):
+        """Check if depth data is available."""
+        return self.depth_buffer is not None
 
     def get_writable_copy(self):
         """Returns a deep copy of the frame for pipelines that need to modify it."""
@@ -116,6 +134,8 @@ class FrameBufferPool:
     - Starts with initial_buffers (default: 5)
     - Can grow up to max_buffers (default: 10) during high load
     - Shrinks back to initial_buffers when pool size exceeds high_water_mark and is idle
+
+    Supports optional depth buffers for depth-capable cameras (e.g., Intel RealSense).
     """
 
     def __init__(
@@ -125,11 +145,17 @@ class FrameBufferPool:
         initial_buffers=5,
         high_water_mark=8,
         shrink_idle_seconds=10.0,
+        enable_depth=False,
     ):
         self._pool = queue.Queue()
+        self._depth_pool = queue.Queue() if enable_depth else None
         self._buffer_shape = None
         self._buffer_dtype = None
+        self._depth_buffer_shape = None
+        self._depth_buffer_dtype = None
         self._allocated = 0
+        self._depth_allocated = 0
+        self._enable_depth = enable_depth
         self._name = name
         self._max_buffers = max_buffers
         self._initial_buffers = initial_buffers
@@ -139,12 +165,23 @@ class FrameBufferPool:
         self._last_allocation_time = None
         self._shrink_check_counter = 0
 
-    def initialize(self, frame, num_buffers=None):
-        """Initializes the pool with buffers matching the shape and type of a sample frame."""
+    def initialize(self, frame, num_buffers=None, depth_frame=None):
+        """Initializes the pool with buffers matching the shape and type of a sample frame.
+
+        Args:
+            frame: Sample color frame to determine buffer shape
+            num_buffers: Number of buffers to pre-allocate (default: initial_buffers)
+            depth_frame: Optional sample depth frame for depth-capable cameras
+        """
 
         # Already initialized with correct shape
         if self._buffer_shape is not None and self._buffer_shape == frame.shape:
-            return
+            # Check if depth shape also matches (if applicable)
+            if self._enable_depth and depth_frame is not None:
+                if self._depth_buffer_shape is not None and self._depth_buffer_shape == depth_frame.shape:
+                    return
+            elif not self._enable_depth:
+                return
 
         # If shape is different, we need to re-initialize.
         if num_buffers is None:
@@ -163,11 +200,29 @@ class FrameBufferPool:
             f"[{self._name}] Buffer pool initialized with {num_buffers} buffers (max: {self._max_buffers})."
         )
 
+        # Initialize depth pool if enabled and depth frame provided
+        if self._enable_depth and depth_frame is not None:
+            print(f"[{self._name}] Initializing depth buffer pool for shape {depth_frame.shape}...")
+            self._depth_pool = queue.Queue()
+            self._depth_buffer_shape = depth_frame.shape
+            self._depth_buffer_dtype = depth_frame.dtype
+            for _ in range(num_buffers):
+                self._depth_pool.put(np.empty(self._depth_buffer_shape, dtype=self._depth_buffer_dtype))
+            self._depth_allocated = num_buffers
+            print(
+                f"[{self._name}] Depth buffer pool initialized with {num_buffers} buffers."
+            )
+
     def get_buffer(self):
-        """Retrieves a buffer from the pool, allocating a new one if the pool is empty.
-        Returns None if the maximum buffer limit is reached to prevent memory leaks."""
+        """Retrieves buffers from the pool, allocating new ones if pools are empty.
+
+        Returns:
+            tuple: (color_buffer, depth_buffer) if depth enabled, otherwise just color_buffer
+            Returns (None, None) or None if the maximum buffer limit is reached.
+        """
+        # Get color buffer
         try:
-            return self._pool.get_nowait()
+            color_buffer = self._pool.get_nowait()
         except queue.Empty:
             if self._buffer_shape is not None:
                 with self._lock:
@@ -177,22 +232,57 @@ class FrameBufferPool:
                         print(
                             f"[{self._name}] Pool empty, allocating new buffer. Total allocated: {self._allocated}"
                         )
-                        return np.empty(self._buffer_shape, dtype=self._buffer_dtype)
+                        color_buffer = np.empty(self._buffer_shape, dtype=self._buffer_dtype)
                     else:
                         # Max buffers reached - drop frame to prevent memory leak
                         print(
                             f"[{self._name}] Max buffer limit ({self._max_buffers}) reached. Dropping frame."
                         )
-                        return None
-            return None
+                        return (None, None) if self._enable_depth else None
+            else:
+                return (None, None) if self._enable_depth else None
 
-    def release_buffer(self, buffer):
-        """Returns a buffer to the pool for reuse.
+        # Get depth buffer if enabled
+        if self._enable_depth:
+            try:
+                depth_buffer = self._depth_pool.get_nowait()
+            except queue.Empty:
+                if self._depth_buffer_shape is not None:
+                    with self._lock:
+                        if self._depth_allocated < self._max_buffers:
+                            self._depth_allocated += 1
+                            print(
+                                f"[{self._name}] Depth pool empty, allocating new buffer. Total allocated: {self._depth_allocated}"
+                            )
+                            depth_buffer = np.empty(self._depth_buffer_shape, dtype=self._depth_buffer_dtype)
+                        else:
+                            # Max depth buffers reached
+                            print(
+                                f"[{self._name}] Max depth buffer limit ({self._max_buffers}) reached. Dropping frame."
+                            )
+                            # Return color buffer to pool and fail
+                            self._pool.put(color_buffer)
+                            return (None, None)
+                else:
+                    # Depth pool not initialized yet
+                    depth_buffer = None
+            return (color_buffer, depth_buffer)
+        else:
+            return color_buffer
+
+    def release_buffer(self, buffer, depth_buffer=None):
+        """Returns buffer(s) to the pool for reuse.
 
         Implements water-mark based shrinking to prevent unbounded memory growth.
         Periodically checks if the pool should be shrunk back to initial size.
+
+        Args:
+            buffer: Color buffer to return to pool
+            depth_buffer: Optional depth buffer to return to depth pool
         """
         self._pool.put(buffer)
+        if depth_buffer is not None and self._depth_pool is not None:
+            self._depth_pool.put(depth_buffer)
 
         # Check for shrinking periodically (every N releases) to avoid overhead
         self._shrink_check_counter += 1
@@ -245,6 +335,23 @@ class FrameBufferPool:
                     f"[{self._name}] Shrunk pool by {removed} buffers. New size: {self._allocated}/{self._max_buffers}"
                 )
                 self._last_allocation_time = None  # Reset allocation tracking
+
+            # Also shrink depth pool if enabled
+            if self._enable_depth and self._depth_allocated > self._initial_buffers:
+                depth_buffers_to_remove = self._depth_allocated - self._initial_buffers
+                depth_removed = 0
+                for _ in range(depth_buffers_to_remove):
+                    try:
+                        self._depth_pool.get_nowait()
+                        depth_removed += 1
+                    except queue.Empty:
+                        break
+
+                if depth_removed > 0:
+                    self._depth_allocated -= depth_removed
+                    print(
+                        f"[{self._name}] Shrunk depth pool by {depth_removed} buffers. New size: {self._depth_allocated}/{self._max_buffers}"
+                    )
 
 
 # --- Vision Processing Thread (Consumer) ---
@@ -459,8 +566,9 @@ class VisionProcessingThread(threading.Thread):
                 current_results = {}
 
                 if self.pipeline_type == "AprilTag":
-                    result = self.pipeline_instance.process_frame(
-                        raw_frame, self.cam_matrix, self.dist_coeffs
+                    # Check if pipeline supports depth via ref_frame parameter
+                    result = self._call_pipeline_process_frame(
+                        raw_frame, ref_counted_frame, self.cam_matrix, self.dist_coeffs
                     )
 
                     detections_payload = result.get("detections")
@@ -496,8 +604,9 @@ class VisionProcessingThread(threading.Thread):
                         self._draw_3d_box_on_frame(annotated_frame, overlays)
 
                 elif self.pipeline_type == "Object Detection (ML)":
-                    detections = self.pipeline_instance.process_frame(
-                        raw_frame, self.cam_matrix
+                    # Check if pipeline supports depth via ref_frame parameter
+                    detections = self._call_pipeline_process_frame(
+                        raw_frame, ref_counted_frame, self.cam_matrix
                     )
                     for det in detections:
                         box = det["box"]
@@ -522,8 +631,9 @@ class VisionProcessingThread(threading.Thread):
                     current_results = {"detections": detections}
 
                 elif self.pipeline_type == "Coloured Shape":
-                    detections = self.pipeline_instance.process_frame(
-                        raw_frame, self.cam_matrix
+                    # Check if pipeline supports depth via ref_frame parameter
+                    detections = self._call_pipeline_process_frame(
+                        raw_frame, ref_counted_frame, self.cam_matrix
                     )
                     current_results = {"detections": detections}
 
@@ -576,6 +686,37 @@ class VisionProcessingThread(threading.Thread):
         print(
             f"Stopping vision processing thread for pipeline {self.pipeline_id} on camera {self.identifier}"
         )
+
+    def _call_pipeline_process_frame(self, raw_frame, ref_counted_frame, *args):
+        """Call pipeline's process_frame method with depth support if available.
+
+        Uses signature inspection to determine if the pipeline accepts ref_frame parameter
+        for depth-aware processing. Falls back to legacy signature if not supported.
+
+        Args:
+            raw_frame: The color frame (numpy array)
+            ref_counted_frame: RefCountedFrame object that may contain depth data
+            *args: Additional arguments to pass to process_frame (e.g., cam_matrix, dist_coeffs)
+
+        Returns:
+            Result from pipeline's process_frame method
+        """
+        try:
+            # Get the signature of the pipeline's process_frame method
+            sig = inspect.signature(self.pipeline_instance.process_frame)
+            params = sig.parameters
+
+            # Check if pipeline accepts 'ref_frame' parameter
+            if 'ref_frame' in params:
+                # Depth-aware pipeline - pass the ref_counted_frame
+                return self.pipeline_instance.process_frame(raw_frame, *args, ref_frame=ref_counted_frame)
+            else:
+                # Legacy pipeline - just pass the color frame
+                return self.pipeline_instance.process_frame(raw_frame, *args)
+        except Exception as e:
+            # Fallback to legacy call if inspection fails
+            print(f"Warning: Failed to inspect pipeline signature: {e}. Using legacy call.")
+            return self.pipeline_instance.process_frame(raw_frame, *args)
 
     def _ensure_default_cam_matrix(self, frame):
         """Derives a rough pinhole camera matrix from the current frame size when calibration is missing."""
@@ -728,7 +869,9 @@ class CameraAcquisitionThread(threading.Thread):
     """
 
     def __init__(
-        self, identifier, camera_type, orientation, app, jpeg_quality=85, camera_id=None
+        self, identifier, camera_type, orientation, app, jpeg_quality=85, camera_id=None,
+        depth_enabled=False, resolution_json=None, framerate=None,
+        exposure_mode="auto", exposure_value=500, gain_mode="auto", gain_value=50
     ):
         super().__init__()
         self.daemon = True
@@ -745,11 +888,21 @@ class CameraAcquisitionThread(threading.Thread):
         self.queues_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.fps = 0.0
-        self.buffer_pool = FrameBufferPool(name=self.identifier)
+        # Initialize buffer pool with depth support if needed
+        self.depth_enabled = depth_enabled
+        self.buffer_pool = FrameBufferPool(name=self.identifier, enable_depth=depth_enabled)
         self.jpeg_quality = jpeg_quality
         self._drop_states: Dict[int, Dict[str, float]] = {}
         self.display_frame_seq = 0
         self.latest_display_frame_timestamp = 0.0
+
+        # Store camera configuration for driver initialization
+        self.resolution_json = resolution_json
+        self.framerate = framerate
+        self.exposure_mode = exposure_mode
+        self.exposure_value = exposure_value
+        self.gain_mode = gain_mode
+        self.gain_value = gain_value
 
         # Event-based configuration update
         self.config_update_event = threading.Event()
@@ -852,6 +1005,13 @@ class CameraAcquisitionThread(threading.Thread):
                 camera_data = {
                     "camera_type": self.camera_type,
                     "identifier": self.identifier,
+                    "resolution_json": self.resolution_json,
+                    "framerate": self.framerate,
+                    "depth_enabled": self.depth_enabled,
+                    "exposure_mode": self.exposure_mode,
+                    "exposure_value": self.exposure_value,
+                    "gain_mode": self.gain_mode,
+                    "gain_value": self.gain_value,
                 }
                 self.driver = get_driver(camera_data)
                 self.driver.connect()
@@ -885,16 +1045,32 @@ class CameraAcquisitionThread(threading.Thread):
         with self._orientation_lock:
             orientation = self._orientation
 
-        # Initialize buffer pool with the first frame
-        first_frame = self.driver.get_frame()
-        if first_frame is None:
-            print(
-                f"[{self.identifier}] Failed to get first frame, cannot initialize buffer pool."
-            )
-            return  # Exit to trigger reconnection
+        # Check if driver supports depth
+        driver_supports_depth = self.driver.supports_depth()
 
-        oriented_first_frame = self._apply_orientation(first_frame, orientation)
-        self.buffer_pool.initialize(oriented_first_frame)
+        # Initialize buffer pool with the first frame
+        first_frame_data = self.driver.get_frame()
+
+        # Handle both single frame and tuple (color, depth) returns
+        if driver_supports_depth:
+            if first_frame_data is None or (isinstance(first_frame_data, tuple) and first_frame_data[0] is None):
+                print(
+                    f"[{self.identifier}] Failed to get first frame, cannot initialize buffer pool."
+                )
+                return  # Exit to trigger reconnection
+            first_color_frame, first_depth_frame = first_frame_data
+        else:
+            if first_frame_data is None:
+                print(
+                    f"[{self.identifier}] Failed to get first frame, cannot initialize buffer pool."
+                )
+                return  # Exit to trigger reconnection
+            first_color_frame = first_frame_data
+            first_depth_frame = None
+
+        oriented_first_frame = self._apply_orientation(first_color_frame, orientation)
+        oriented_first_depth = self._apply_orientation(first_depth_frame, orientation) if first_depth_frame is not None else None
+        self.buffer_pool.initialize(oriented_first_frame, depth_frame=oriented_first_depth)
 
         start_time, frame_count = time.time(), 0
 
@@ -911,31 +1087,66 @@ class CameraAcquisitionThread(threading.Thread):
                     orientation = new_orientation
                     # Re-initialize buffer pool if orientation changes frame size
                     test_frame = self._apply_orientation(
-                        first_frame.copy(), orientation
+                        first_color_frame.copy(), orientation
                     )
-                    self.buffer_pool.initialize(test_frame)
+                    test_depth = self._apply_orientation(first_depth_frame.copy(), orientation) if first_depth_frame is not None else None
+                    self.buffer_pool.initialize(test_frame, depth_frame=test_depth)
 
-            raw_frame_from_cam = self.driver.get_frame()
-            if raw_frame_from_cam is None:
-                print(f"Lost frame from {self.identifier}, attempting to reconnect.")
-                break  # Exit inner loop to trigger reconnection
+            frame_data = self.driver.get_frame()
 
-            # Apply orientation to the frame right after capture
-            oriented_frame = self._apply_orientation(raw_frame_from_cam, orientation)
+            # Handle both single frame and tuple (color, depth) returns
+            if driver_supports_depth:
+                if frame_data is None or (isinstance(frame_data, tuple) and frame_data[0] is None):
+                    print(f"Lost frame from {self.identifier}, attempting to reconnect.")
+                    break  # Exit inner loop to trigger reconnection
+                raw_color_frame, raw_depth_frame = frame_data
+            else:
+                if frame_data is None:
+                    print(f"Lost frame from {self.identifier}, attempting to reconnect.")
+                    break  # Exit inner loop to trigger reconnection
+                raw_color_frame = frame_data
+                raw_depth_frame = None
 
-            pooled_buffer = self.buffer_pool.get_buffer()
-            if pooled_buffer is None:
-                # Buffer pool exhausted - drain queues to prevent buildup and memory leaks
-                print(
-                    f"[{self.identifier}] Buffer pool exhausted, draining queues to prevent memory buildup"
-                )
-                self._drain_processing_queues()
-                continue
+            # Apply orientation to the frames right after capture
+            oriented_frame = self._apply_orientation(raw_color_frame, orientation)
+            oriented_depth = self._apply_orientation(raw_depth_frame, orientation) if raw_depth_frame is not None else None
 
-            # Copy the oriented frame into the buffer for pipelines.
+            # Get buffer(s) from pool
+            buffer_data = self.buffer_pool.get_buffer()
+            if driver_supports_depth:
+                if buffer_data == (None, None):
+                    # Buffer pool exhausted - drain queues to prevent buildup and memory leaks
+                    print(
+                        f"[{self.identifier}] Buffer pool exhausted, draining queues to prevent memory buildup"
+                    )
+                    self._drain_processing_queues()
+                    continue
+                pooled_buffer, pooled_depth_buffer = buffer_data
+            else:
+                if buffer_data is None:
+                    # Buffer pool exhausted - drain queues to prevent buildup and memory leaks
+                    print(
+                        f"[{self.identifier}] Buffer pool exhausted, draining queues to prevent memory buildup"
+                    )
+                    self._drain_processing_queues()
+                    continue
+                pooled_buffer = buffer_data
+                pooled_depth_buffer = None
+
+            # Copy the oriented frame(s) into the buffer(s) for pipelines
             np.copyto(pooled_buffer, oriented_frame)
+            if pooled_depth_buffer is not None and oriented_depth is not None:
+                np.copyto(pooled_depth_buffer, oriented_depth)
+
+            # Create release callback that handles both buffers
+            def release_callback(color_buf):
+                self.buffer_pool.release_buffer(color_buf, pooled_depth_buffer)
+
             ref_counted_frame = RefCountedFrame(
-                pooled_buffer, release_callback=self.buffer_pool.release_buffer
+                pooled_buffer,
+                release_callback=release_callback,
+                depth_buffer=pooled_depth_buffer,
+                depth_release_callback=None  # Handled by main release_callback
             )
 
             # Acquire initial reference for the acquisition thread to ensure buffer is released

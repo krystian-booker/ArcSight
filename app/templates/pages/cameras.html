@@ -298,6 +298,7 @@
                             <option value="GenICam">GenICam</option>
                         </template>
                         <option value="OAK-D">OAK-D (DepthAI)</option>
+                        <option value="RealSense">Intel RealSense</option>
                     </select>
                 </div>
 
@@ -347,6 +348,23 @@
                     >
                         <option value="" x-show="!(addModal.options.oakd && addModal.options.oakd.length)">No OAK-D cameras found</option>
                         <template x-for="device in addModal.options.oakd" :key="device.identifier">
+                            <option :value="device.identifier" x-text="device.name"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="form-field" x-show="addModal.camera_type === 'RealSense'" x-cloak>
+                    <label class="form-label" for="realsense-camera-select">RealSense Cameras</label>
+                    <select
+                        id="realsense-camera-select"
+                        name="realsense-camera-select"
+                        class="form-control"
+                        x-model="addModal.selections.realsense"
+                        :disabled="addModal.loading"
+                        :required="addModal.camera_type === 'RealSense'"
+                    >
+                        <option value="" x-show="!(addModal.options.realsense && addModal.options.realsense.length)">No RealSense cameras found</option>
+                        <template x-for="device in addModal.options.realsense" :key="device.identifier">
                             <option :value="device.identifier" x-text="device.name"></option>
                         </template>
                     </select>
