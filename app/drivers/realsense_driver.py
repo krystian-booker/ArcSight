@@ -31,15 +31,33 @@ class RealSenseDriver(BaseDriver):
         self.config = None
         self.align = None  # For aligning depth to color frame
         self.color_sensor = None  # For exposure/gain control
+        self.pipeline_started = False  # Track if pipeline.start() succeeded
+
+        # Support both dict and object camera_data
+        if isinstance(camera_data, dict):
+            resolution_json = camera_data.get("resolution_json")
+            framerate = camera_data.get("framerate")
+            depth_enabled = camera_data.get("depth_enabled", False)
+            exposure_mode = camera_data.get("exposure_mode", "auto")
+            exposure_value = camera_data.get("exposure_value", 500)
+            gain_mode = camera_data.get("gain_mode", "auto")
+            gain_value = camera_data.get("gain_value", 50)
+        else:
+            resolution_json = getattr(camera_data, "resolution_json", None)
+            framerate = getattr(camera_data, "framerate", None)
+            depth_enabled = getattr(camera_data, "depth_enabled", False)
+            exposure_mode = getattr(camera_data, "exposure_mode", "auto")
+            exposure_value = getattr(camera_data, "exposure_value", 500)
+            gain_mode = getattr(camera_data, "gain_mode", "auto")
+            gain_value = getattr(camera_data, "gain_value", 50)
 
         # Parse resolution settings from JSON
-        resolution_json = getattr(camera_data, "resolution_json", None)
         if resolution_json:
             try:
-                res_data = json.loads(resolution_json)
+                res_data = json.loads(resolution_json) if isinstance(resolution_json, str) else resolution_json
                 self.width = res_data.get("width", self._DEFAULT_WIDTH)
                 self.height = res_data.get("height", self._DEFAULT_HEIGHT)
-            except (json.JSONDecodeError, AttributeError):
+            except (json.JSONDecodeError, AttributeError, TypeError):
                 self.width = self._DEFAULT_WIDTH
                 self.height = self._DEFAULT_HEIGHT
         else:
@@ -47,16 +65,16 @@ class RealSenseDriver(BaseDriver):
             self.height = self._DEFAULT_HEIGHT
 
         # Get framerate setting
-        self.fps = getattr(camera_data, "framerate", None) or self._DEFAULT_FPS
+        self.fps = framerate or self._DEFAULT_FPS
 
         # Get depth enabled flag
-        self.depth_enabled = getattr(camera_data, "depth_enabled", False)
+        self.depth_enabled = depth_enabled
 
         # Get exposure and gain settings
-        self.exposure_mode = getattr(camera_data, "exposure_mode", "auto")
-        self.exposure_value = getattr(camera_data, "exposure_value", 500)
-        self.gain_mode = getattr(camera_data, "gain_mode", "auto")
-        self.gain_value = getattr(camera_data, "gain_value", 50)
+        self.exposure_mode = exposure_mode
+        self.exposure_value = exposure_value
+        self.gain_mode = gain_mode
+        self.gain_value = gain_value
 
     def connect(self):
         """Establishes connection to the RealSense camera."""
@@ -75,6 +93,9 @@ class RealSenseDriver(BaseDriver):
             self.config.enable_device(self.identifier)
 
             # Enable color stream
+            print(f"[{self.identifier}] Attempting to start RealSense pipeline with:")
+            print(f"  Color: {self.width}x{self.height} @ {self.fps} FPS")
+
             self.config.enable_stream(
                 rs.stream.color,
                 self.width,
@@ -85,6 +106,7 @@ class RealSenseDriver(BaseDriver):
 
             # Enable depth stream if requested
             if self.depth_enabled:
+                print(f"  Depth: {self._DEFAULT_DEPTH_WIDTH}x{self._DEFAULT_DEPTH_HEIGHT} @ {self.fps} FPS")
                 # Use smaller resolution for depth to improve performance
                 self.config.enable_stream(
                     rs.stream.depth,
@@ -98,6 +120,7 @@ class RealSenseDriver(BaseDriver):
 
             # Start pipeline
             pipeline_profile = self.pipeline.start(self.config)
+            self.pipeline_started = True  # Mark pipeline as successfully started
 
             # Get color sensor for exposure/gain control
             device = pipeline_profile.get_device()
@@ -113,6 +136,20 @@ class RealSenseDriver(BaseDriver):
             print(f"  Resolution: {self.width}x{self.height} @ {self.fps} FPS")
             print(f"  Depth enabled: {self.depth_enabled}")
 
+        except RuntimeError as e:
+            # Handle specific RealSense errors with helpful messages
+            self.disconnect()
+            error_msg = str(e)
+            if "Couldn't resolve requests" in error_msg:
+                raise ConnectionError(
+                    f"RealSense camera {self.identifier}: Unsupported resolution/framerate combination. "
+                    f"Requested {self.width}x{self.height} @ {self.fps} FPS. "
+                    f"This may be caused by: (1) USB 2.0 connection (USB 3.0 required for high resolutions), "
+                    f"(2) Unsupported FPS for this resolution, or (3) Camera model limitations. "
+                    f"Try a lower resolution like 1280x720 or 640x480. Original error: {e}"
+                )
+            else:
+                raise ConnectionError(f"Failed to connect to RealSense camera {self.identifier}: {e}")
         except Exception as e:
             self.disconnect()
             raise ConnectionError(
@@ -124,7 +161,10 @@ class RealSenseDriver(BaseDriver):
         if self.pipeline:
             print(f"Disconnecting RealSense camera {self.identifier}")
             try:
-                self.pipeline.stop()
+                # Only stop the pipeline if it was successfully started
+                if self.pipeline_started:
+                    self.pipeline.stop()
+                    self.pipeline_started = False
             except Exception as e:
                 print(f"Error stopping RealSense pipeline: {e}")
             finally:
@@ -137,14 +177,12 @@ class RealSenseDriver(BaseDriver):
         """Retrieves a single frame from the camera.
 
         Returns:
-            tuple: (color_frame, depth_frame) where:
-                - color_frame is numpy array in BGR format
-                - depth_frame is numpy array with uint16 depth values in mm
-                - depth_frame is None if depth_enabled=False
-            Returns (None, None) if frame acquisition fails.
+            - If depth_enabled=True: tuple (color_frame, depth_frame) where both are numpy arrays
+            - If depth_enabled=False: single numpy array (color frame only)
+            - Returns None (or (None, None) if depth enabled) if frame acquisition fails
         """
         if self.pipeline is None:
-            return (None, None)
+            return (None, None) if self.depth_enabled else None
 
         try:
             # Wait for frames with timeout
@@ -157,27 +195,35 @@ class RealSenseDriver(BaseDriver):
             # Get color frame
             color_frame = frames.get_color_frame()
             if not color_frame:
-                return (None, None)
+                return (None, None) if self.depth_enabled else None
 
             # Convert to numpy array (already in BGR8 format)
             color_image = np.asanyarray(color_frame.get_data())
 
             # Get depth frame if enabled
-            depth_image = None
             if self.depth_enabled:
                 depth_frame = frames.get_depth_frame()
                 if depth_frame:
                     # Convert to numpy array (uint16, values in mm)
                     depth_image = np.asanyarray(depth_frame.get_data())
-
-            return (color_image, depth_image)
+                    return (color_image, depth_image)
+                else:
+                    # Depth enabled but no depth frame available
+                    return (color_image, None)
+            else:
+                # Depth not enabled - return single frame
+                return color_image
 
         except Exception as e:
             print(f"Error getting frame from RealSense camera {self.identifier}: {e}")
-            return (None, None)
+            return (None, None) if self.depth_enabled else None
 
     def supports_depth(self):
-        """RealSense cameras support depth."""
+        """Indicates that RealSense cameras have depth capability.
+
+        Note: This returns True to indicate hardware capability, but actual depth
+        data is only returned from get_frame() when depth_enabled=True.
+        """
         return True
 
     def _apply_exposure_gain(self):

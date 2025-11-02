@@ -1045,14 +1045,16 @@ class CameraAcquisitionThread(threading.Thread):
         with self._orientation_lock:
             orientation = self._orientation
 
-        # Check if driver supports depth
-        driver_supports_depth = self.driver.supports_depth()
+        # Check if depth is enabled for this camera
+        # Note: driver.supports_depth() tells us if the hardware CAN support depth,
+        # but self.depth_enabled tells us if depth is actually CONFIGURED
+        depth_is_enabled = self.depth_enabled
 
         # Initialize buffer pool with the first frame
         first_frame_data = self.driver.get_frame()
 
         # Handle both single frame and tuple (color, depth) returns
-        if driver_supports_depth:
+        if depth_is_enabled:
             if first_frame_data is None or (isinstance(first_frame_data, tuple) and first_frame_data[0] is None):
                 print(
                     f"[{self.identifier}] Failed to get first frame, cannot initialize buffer pool."
@@ -1095,7 +1097,7 @@ class CameraAcquisitionThread(threading.Thread):
             frame_data = self.driver.get_frame()
 
             # Handle both single frame and tuple (color, depth) returns
-            if driver_supports_depth:
+            if depth_is_enabled:
                 if frame_data is None or (isinstance(frame_data, tuple) and frame_data[0] is None):
                     print(f"Lost frame from {self.identifier}, attempting to reconnect.")
                     break  # Exit inner loop to trigger reconnection
@@ -1113,7 +1115,7 @@ class CameraAcquisitionThread(threading.Thread):
 
             # Get buffer(s) from pool
             buffer_data = self.buffer_pool.get_buffer()
-            if driver_supports_depth:
+            if depth_is_enabled:
                 if buffer_data == (None, None):
                     # Buffer pool exhausted - drain queues to prevent buildup and memory leaks
                     print(
