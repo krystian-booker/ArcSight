@@ -3,18 +3,26 @@
 {% block title %}Camera Calibration{% endblock %}
 
 {% block content %}
-<div
-    class="stack stack-2xl"
-    x-data="calibrationApp({ cameras: {{ cameras|tojson|safe }} })"
-    x-cloak
->
+<script>
+// Pass cameras data to Alpine.js
+window.CALIBRATION_CAMERAS = {{ cameras|tojson }};
+</script>
+
+<div class="stack stack-2xl">
     <header class="stack stack-sm">
         <h1>Camera Calibration</h1>
         <p class="muted text-small">Guide ArcSight through pattern capture and optimisation to generate intrinsic camera parameters.</p>
     </header>
 
+<div
+    class="stack stack-2xl"
+    x-data="calibrationApp({ cameras: window.CALIBRATION_CAMERAS || [] })"
+    x-init="console.log('Calibration initialized - Step:', step, 'Cameras:', cameras.length)"
+>
+
     <section
         class="panel stack stack-lg"
+        style="display: block;"
         x-show="step === 'setup'"
         x-transition
     >
@@ -204,5 +212,6 @@
         :class="{ 'callout-danger': status.isError }"
         x-text="status.message"
     ></div>
+</div>
 </div>
 {% endblock %}

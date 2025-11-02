@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(dir \"C:\\Users\\Krystian\\source\\ArcSight\\app\\static\\js\\alpine\\components\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
