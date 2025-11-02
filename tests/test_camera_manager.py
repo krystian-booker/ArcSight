@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import ANY, MagicMock, patch, call
 
-from app import camera_manager
+from app import camera_manager, thread_state
+from app.thread_config import build_camera_thread_config
 from app.models import Camera, Pipeline
 
 
@@ -40,7 +41,7 @@ def orm_camera(mock_app):
 @pytest.fixture
 def camera_config(orm_camera):
     """Builds a thread-safe primitive configuration for a camera."""
-    return camera_manager.build_camera_thread_config(orm_camera)
+    return build_camera_thread_config(orm_camera)
 
 
 @pytest.fixture
@@ -57,9 +58,9 @@ def mock_pipeline(mock_app):
 @pytest.fixture(autouse=True)
 def manage_active_threads():
     """Fixture to clear the active_camera_threads global before and after each test."""
-    camera_manager.active_camera_threads.clear()
+    thread_state.active_camera_threads.clear()
     yield
-    camera_manager.active_camera_threads.clear()
+    thread_state.active_camera_threads.clear()
 
 
 @pytest.fixture
@@ -76,15 +77,15 @@ def mock_threads():
 def test_build_camera_thread_config(orm_camera):
     """Conversions should strip ORM state and fill defaults."""
     orm_camera.orientation = None  # ensure fallback logic
-    config = camera_manager.build_camera_thread_config(orm_camera)
+    config = build_camera_thread_config(orm_camera)
 
-    assert config["id"] == orm_camera.id
-    assert config["identifier"] == orm_camera.identifier
-    assert config["camera_type"] == orm_camera.camera_type
-    assert config["orientation"] == 0  # default orientation
-    assert config["pipelines"][0]["id"] == orm_camera.pipelines[0].id
+    assert config.id == orm_camera.id
+    assert config.identifier == orm_camera.identifier
+    assert config.camera_type == orm_camera.camera_type
+    assert config.orientation == 0  # default orientation
+    assert config.pipelines[0].id == orm_camera.pipelines[0].id
     assert (
-        config["pipelines"][1]["pipeline_type"] == orm_camera.pipelines[1].pipeline_type
+        config.pipelines[1].pipeline_type == orm_camera.pipelines[1].pipeline_type
     )
 
 
@@ -93,29 +94,36 @@ def test_start_camera_thread(camera_config, mock_app, mock_threads):
     camera_manager.start_camera_thread(camera_config, mock_app)
 
     mock_threads["acquisition"].assert_called_once_with(
-        camera_id=camera_config["id"],
-        identifier=camera_config["identifier"],
-        camera_type=camera_config["camera_type"],
-        orientation=camera_config["orientation"],
+        camera_id=camera_config.id,
+        identifier=camera_config.identifier,
+        camera_type=camera_config.camera_type,
+        orientation=camera_config.orientation,
         app=mock_app,
         jpeg_quality=85,
+        depth_enabled=camera_config.depth_enabled,
+        resolution_json=camera_config.resolution_json,
+        framerate=camera_config.framerate,
+        exposure_mode=camera_config.exposure_mode,
+        exposure_value=camera_config.exposure_value,
+        gain_mode=camera_config.gain_mode,
+        gain_value=camera_config.gain_value,
     )
     mock_threads["acquisition"].return_value.start.assert_called_once()
 
-    assert mock_threads["processing"].call_count == len(camera_config["pipelines"])
+    assert mock_threads["processing"].call_count == len(camera_config.pipelines)
     for proc_call in mock_threads["processing"].call_args_list:
         kwargs = proc_call.kwargs
-        assert kwargs["identifier"] == camera_config["identifier"]
+        assert kwargs["identifier"] == camera_config.identifier
         assert kwargs["frame_queue"] is not None
 
-    thread_group = camera_manager.active_camera_threads[camera_config["identifier"]]
+    thread_group = thread_state.active_camera_threads[camera_config.identifier]
     assert thread_group["acquisition"] == mock_threads["acquisition"].return_value
-    assert len(thread_group["processing_threads"]) == len(camera_config["pipelines"])
+    assert len(thread_group["processing_threads"]) == len(camera_config.pipelines)
 
 
 def test_start_camera_thread_already_running(camera_config, mock_app, mock_threads):
     """No threads should start if the camera is already tracked."""
-    camera_manager.active_camera_threads[camera_config["identifier"]] = "dummy"
+    thread_state.active_camera_threads[camera_config.identifier] = {"stopping": False}
     camera_manager.start_camera_thread(camera_config, mock_app)
 
     mock_threads["acquisition"].assert_not_called()
@@ -128,12 +136,13 @@ def test_stop_camera_thread(camera_config):
     mock_proc_thread1 = MagicMock()
     mock_proc_thread2 = MagicMock()
 
-    camera_manager.active_camera_threads[camera_config["identifier"]] = {
+    thread_state.active_camera_threads[camera_config.identifier] = {
         "acquisition": mock_acq_thread,
         "processing_threads": {101: mock_proc_thread1, 102: mock_proc_thread2},
+        "stopping": False,
     }
 
-    camera_manager.stop_camera_thread(camera_config["identifier"])
+    camera_manager.stop_camera_thread(camera_config.identifier)
 
     mock_acq_thread.stop.assert_called_once()
     mock_acq_thread.join.assert_called_once()
@@ -141,37 +150,38 @@ def test_stop_camera_thread(camera_config):
     mock_proc_thread1.join.assert_called_once()
     mock_proc_thread2.stop.assert_called_once()
     mock_proc_thread2.join.assert_called_once()
-    assert camera_config["identifier"] not in camera_manager.active_camera_threads
+    assert camera_config.identifier not in thread_state.active_camera_threads
 
 
 def test_stop_camera_thread_not_running(camera_config):
     """Stopping an unknown camera should be a no-op."""
-    camera_manager.stop_camera_thread(camera_config["identifier"])
-    assert not camera_manager.active_camera_threads
+    camera_manager.stop_camera_thread(camera_config.identifier)
+    assert not thread_state.active_camera_threads
 
 
 def test_add_pipeline_to_camera(camera_config, mock_pipeline, mock_threads):
     """Adding a pipeline should spin up a new processing thread."""
     mock_acq_thread = MagicMock()
     mock_proc_thread1 = MagicMock()
-    camera_manager.active_camera_threads[camera_config["identifier"]] = {
+    thread_state.active_camera_threads[camera_config.identifier] = {
         "acquisition": mock_acq_thread,
         "processing_threads": {101: mock_proc_thread1},
+        "stopping": False,
     }
 
     camera_manager.add_pipeline_to_camera(
-        identifier=camera_config["identifier"],
+        identifier=camera_config.identifier,
         pipeline_id=mock_pipeline.id,
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
-        camera_matrix_json=camera_config["camera_matrix_json"],
-        dist_coeffs_json=camera_config["dist_coeffs_json"],
+        camera_matrix_json=camera_config.camera_matrix_json,
+        dist_coeffs_json=camera_config.dist_coeffs_json,
     )
 
     mock_threads["processing"].assert_called_once()
     mock_threads["processing"].return_value.start.assert_called_once()
     mock_acq_thread.add_pipeline_queue.assert_called_once_with(mock_pipeline.id, ANY)
-    thread_group = camera_manager.active_camera_threads[camera_config["identifier"]]
+    thread_group = thread_state.active_camera_threads[camera_config.identifier]
     assert mock_pipeline.id in thread_group["processing_threads"]
 
 
@@ -181,22 +191,23 @@ def test_remove_pipeline_from_camera(camera_config):
     mock_acq_thread = MagicMock()
     mock_proc_thread1 = MagicMock()
     mock_proc_thread2 = MagicMock()
-    camera_manager.active_camera_threads[camera_config["identifier"]] = {
+    thread_state.active_camera_threads[camera_config.identifier] = {
         "acquisition": mock_acq_thread,
         "processing_threads": {
             pipeline_to_remove_id: mock_proc_thread1,
             102: mock_proc_thread2,
         },
+        "stopping": False,
     }
 
     camera_manager.remove_pipeline_from_camera(
-        identifier=camera_config["identifier"], pipeline_id=pipeline_to_remove_id
+        identifier=camera_config.identifier, pipeline_id=pipeline_to_remove_id
     )
 
     mock_proc_thread1.stop.assert_called_once()
     mock_proc_thread1.join.assert_called_once()
     mock_acq_thread.remove_pipeline_queue.assert_called_once_with(pipeline_to_remove_id)
-    thread_group = camera_manager.active_camera_threads[camera_config["identifier"]]
+    thread_group = thread_state.active_camera_threads[camera_config.identifier]
     assert pipeline_to_remove_id not in thread_group["processing_threads"]
     assert 102 in thread_group["processing_threads"]
 
@@ -206,18 +217,19 @@ def test_update_pipeline_in_camera(camera_config, mock_pipeline, mock_threads):
     pipeline_to_update_id = mock_pipeline.id
     mock_acq_thread = MagicMock()
     mock_old_proc_thread = MagicMock()
-    camera_manager.active_camera_threads[camera_config["identifier"]] = {
+    thread_state.active_camera_threads[camera_config.identifier] = {
         "acquisition": mock_acq_thread,
         "processing_threads": {pipeline_to_update_id: mock_old_proc_thread},
+        "stopping": False,
     }
 
     camera_manager.update_pipeline_in_camera(
-        identifier=camera_config["identifier"],
+        identifier=camera_config.identifier,
         pipeline_id=pipeline_to_update_id,
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
-        camera_matrix_json=camera_config["camera_matrix_json"],
-        dist_coeffs_json=camera_config["dist_coeffs_json"],
+        camera_matrix_json=camera_config.camera_matrix_json,
+        dist_coeffs_json=camera_config.dist_coeffs_json,
     )
 
     mock_old_proc_thread.stop.assert_called_once()
@@ -226,7 +238,7 @@ def test_update_pipeline_in_camera(camera_config, mock_pipeline, mock_threads):
     mock_threads["processing"].assert_called_once()
     mock_threads["processing"].return_value.start.assert_called_once()
     mock_acq_thread.add_pipeline_queue.assert_called_with(pipeline_to_update_id, ANY)
-    thread_group = camera_manager.active_camera_threads[camera_config["identifier"]]
+    thread_group = thread_state.active_camera_threads[camera_config.identifier]
     assert (
         thread_group["processing_threads"][pipeline_to_update_id]
         == mock_threads["processing"].return_value
@@ -258,7 +270,7 @@ def test_start_all_camera_threads(
 @patch("app.camera_manager.stop_camera_thread")
 def test_stop_all_camera_threads(mock_stop_single):
     """Global shutdown should iterate over tracked cameras."""
-    camera_manager.active_camera_threads = {"cam1": 1, "cam2": 2, "cam3": 3}
+    thread_state.active_camera_threads = {"cam1": 1, "cam2": 2, "cam3": 3}
 
     camera_manager.stop_all_camera_threads()
 
@@ -274,12 +286,13 @@ def test_get_camera_pipeline_results(camera_config):
     mock_proc_thread2 = MagicMock()
     mock_proc_thread2.get_latest_results.return_value = "results2"
 
-    camera_manager.active_camera_threads[camera_config["identifier"]] = {
+    thread_state.active_camera_threads[camera_config.identifier] = {
         "acquisition": MagicMock(),
         "processing_threads": {101: mock_proc_thread1, 102: mock_proc_thread2},
+        "stopping": False,
     }
 
-    results = camera_manager.get_camera_pipeline_results(camera_config["identifier"])
+    results = camera_manager.get_camera_pipeline_results(camera_config.identifier)
 
     assert results == {101: "results1", 102: "results2"}
     mock_proc_thread1.get_latest_results.assert_called_once()
@@ -293,15 +306,16 @@ def test_get_camera_pipeline_results_not_running():
 
 def test_is_camera_thread_running(camera_config, mock_threads):
     """Status checks should respect thread liveness."""
-    camera_manager.active_camera_threads[camera_config["identifier"]] = {
+    thread_state.active_camera_threads[camera_config.identifier] = {
         "acquisition": mock_threads["acquisition"].return_value,
         "processing_threads": {},
+        "stopping": False,
     }
 
-    assert camera_manager.is_camera_thread_running(camera_config["identifier"]) is True
+    assert camera_manager.is_camera_thread_running(camera_config.identifier) is True
 
     mock_threads["acquisition"].return_value.is_alive.return_value = False
-    assert camera_manager.is_camera_thread_running(camera_config["identifier"]) is False
+    assert camera_manager.is_camera_thread_running(camera_config.identifier) is False
 
 
 def test_is_camera_thread_running_not_present():
@@ -319,7 +333,7 @@ def test_add_pipeline_to_camera_not_found(mock_pipeline):
         camera_matrix_json="{}",
         dist_coeffs_json="{}",
     )
-    assert not camera_manager.active_camera_threads
+    assert not thread_state.active_camera_threads
 
 
 def test_remove_pipeline_from_camera_not_found():
@@ -327,7 +341,7 @@ def test_remove_pipeline_from_camera_not_found():
     camera_manager.remove_pipeline_from_camera(
         identifier="non_existent_camera", pipeline_id=101
     )
-    assert not camera_manager.active_camera_threads
+    assert not thread_state.active_camera_threads
 
 
 def test_update_pipeline_in_camera_not_found():
@@ -340,4 +354,4 @@ def test_update_pipeline_in_camera_not_found():
         camera_matrix_json="{}",
         dist_coeffs_json="{}",
     )
-    assert not camera_manager.active_camera_threads
+    assert not thread_state.active_camera_threads

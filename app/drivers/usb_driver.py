@@ -1,15 +1,30 @@
+import logging
+from typing import Any, Dict, List, Optional, Union
 import cv2
+import numpy as np
+
 from .base_driver import BaseDriver
 from app.usb_device_info import find_camera_index_by_identifier
+from app.utils.camera_config import CameraConfig, get_config_value
+from app.enums import ExposureMode, GainMode
+
+logger = logging.getLogger(__name__)
 
 
 class USBDriver(BaseDriver):
-    def __init__(self, camera_db_data):
+    def __init__(self, camera_db_data: Union[Dict[str, Any], CameraConfig, Any]):
         super().__init__(camera_db_data)
-        self.cap = None
-        self.resolved_index = None  # Stores the actual OpenCV index after resolution
+        self.cap: Optional[cv2.VideoCapture] = None
+        self.resolved_index: Optional[int] = None  # Stores the actual OpenCV index after resolution
 
-    def connect(self):
+        # Extract exposure and gain settings
+        self.exposure_mode = get_config_value(camera_db_data, "exposure_mode", "auto")
+        self.exposure_value = get_config_value(camera_db_data, "exposure_value", 500)
+        self.gain_mode = get_config_value(camera_db_data, "gain_mode", "auto")
+        self.gain_value = get_config_value(camera_db_data, "gain_value", 50)
+
+    def connect(self) -> None:
+        """Establishes connection to the USB camera."""
         # Resolve stable identifier to current index
         device_index = find_camera_index_by_identifier(self.identifier)
         if device_index is None:
@@ -18,7 +33,7 @@ class USBDriver(BaseDriver):
                 f"Please check that the camera is connected."
             )
 
-        print(f"Resolved camera identifier '{self.identifier}' to index {device_index}")
+        logger.info(f"Resolved camera identifier '{self.identifier}' to index {device_index}")
 
         self.resolved_index = device_index
         self.cap = cv2.VideoCapture(device_index)
@@ -28,17 +43,27 @@ class USBDriver(BaseDriver):
             raise ConnectionError(
                 f"Failed to open USB camera at index {device_index} (identifier: {self.identifier})"
             )
-        print(
+
+        # Apply exposure and gain settings if in manual mode
+        self._apply_camera_settings()
+
+        logger.info(
             f"Successfully connected to USB camera {self.identifier} at index {device_index}"
         )
 
-    def disconnect(self):
+    def disconnect(self) -> None:
+        """Closes the connection to the USB camera."""
         if self.cap:
-            print(f"Disconnecting USB camera {self.identifier}")
+            logger.info(f"Disconnecting USB camera {self.identifier}")
             self.cap.release()
             self.cap = None
 
-    def get_frame(self):
+    def get_frame(self) -> Optional[np.ndarray]:
+        """Retrieves a single frame from the camera.
+
+        Returns:
+            numpy array (BGR format) or None if failed
+        """
         if not self.cap or not self.cap.isOpened():
             # This indicates a lost connection. Returning None will signal the acquisition loop to reconnect.
             return None
@@ -51,14 +76,43 @@ class USBDriver(BaseDriver):
 
         return frame
 
+    def _apply_camera_settings(self) -> None:
+        """Apply exposure and gain settings to the camera."""
+        if not self.cap:
+            return
+
+        try:
+            # Handle exposure mode
+            if self.exposure_mode == ExposureMode.MANUAL.value or self.exposure_mode == "manual":
+                # Disable auto exposure
+                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # 0.25 = manual mode
+                # Set manual exposure value
+                if self.exposure_value is not None:
+                    self.cap.set(cv2.CAP_PROP_EXPOSURE, self.exposure_value)
+            else:
+                # Enable auto exposure
+                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)  # 0.75 = auto mode
+
+            # Handle gain mode
+            if self.gain_mode == GainMode.MANUAL.value or self.gain_mode == "manual":
+                # Set manual gain value
+                if self.gain_value is not None:
+                    self.cap.set(cv2.CAP_PROP_GAIN, self.gain_value)
+            # Note: OpenCV doesn't have explicit auto-gain control for USB cameras
+        except Exception as e:
+            logger.warning(f"Failed to apply camera settings for {self.identifier}: {e}")
+
     @staticmethod
-    def list_devices():
+    def list_devices() -> List[Dict[str, Any]]:
         """
         Scans for available USB cameras with stable unique identifiers.
 
         Uses platform-specific methods to extract USB device information
         (Vendor ID, Product ID, Serial Number) to create stable identifiers
         that persist across USB port changes.
+
+        Returns:
+            List of dictionaries with camera information
         """
         from app.usb_device_info import get_usb_cameras_with_info
 

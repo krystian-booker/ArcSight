@@ -1,14 +1,71 @@
 import os
 import atexit
+import logging
+import logging.handlers
 from flask import Flask
-from appdirs import user_data_dir
 
+from .utils.config import DATA_DIR
 from .extensions import db
 from . import camera_manager
 from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
 from .models import Setting
 from .metrics import metrics_registry, system_metrics_collector
+
+
+def configure_logging(app):
+    """
+    Configure application-wide logging.
+
+    Sets up both file and console logging with appropriate formatters
+    and log levels based on the Flask environment.
+    """
+    # Determine log level based on environment
+    if app.debug:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+
+    # Create logs directory in user data dir
+    log_dir = os.path.join(DATA_DIR, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+
+    # File handler with rotation
+    log_file = os.path.join(log_dir, "arcsight.log")
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5
+    )
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(formatter)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    # Add handlers
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+
+    # Set log level for werkzeug (Flask's server) to WARNING to reduce noise
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
+    app.logger.info(f"Logging configured at {log_level} level")
 
 
 def create_app(config_overrides=None):
@@ -38,13 +95,13 @@ def create_app(config_overrides=None):
     if hasattr(config_class, "init_app"):
         config_class.init_app(app)
 
+    # Configure logging
+    configure_logging(app)
+
     # Database configuration - set default path if not configured
     if app.config.get("SQLALCHEMY_DATABASE_URI") is None:
-        APP_NAME = "VisionTools"
-        APP_AUTHOR = "User"
-        data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
-        os.makedirs(data_dir, exist_ok=True)
-        db_path = os.path.join(data_dir, "config.db")
+        os.makedirs(DATA_DIR, exist_ok=True)
+        db_path = os.path.join(DATA_DIR, "config.db")
         app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
     db.init_app(app)

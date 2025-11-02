@@ -1,156 +1,36 @@
-from flask import jsonify, request
+import logging
+from flask import request
 from werkzeug.utils import secure_filename
 from app.extensions import db
 from app import camera_manager
 from app.models import Camera, Pipeline
 from app.pipeline_validators import validate_pipeline_config, get_default_config
 from app.hw.accel import get_ml_availability
-from app.ml import (
-    convert_yolo_weights_to_onnx,
-    convert_onnx_to_rknn,
-    validate_onnx_model,
-    infer_model_type,
-)
-from typing import Any, Dict, List, Optional, Tuple
+from app.services.model_service import ModelService
+from app.utils.responses import success_response, error_response
+from app.utils.config import DATA_DIR
 import json
 import os
-from appdirs import user_data_dir
 from . import pipelines
 
-# --- Data Directory Setup ---
-APP_NAME = "VisionTools"
-APP_AUTHOR = "User"
-data_dir = user_data_dir(APP_NAME, APP_AUTHOR)
+logger = logging.getLogger(__name__)
 
 
 @pipelines.route("/cameras", methods=["GET"])
 def list_cameras():
     """Returns all registered cameras."""
     cameras = Camera.query.order_by(Camera.id.asc()).all()
-    return jsonify([camera.to_dict() for camera in cameras])
+    return success_response([camera.to_dict() for camera in cameras])
 
 
-def _remove_file(path: Optional[str]) -> None:
-    if path and os.path.exists(path):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
-
-def _apply_model_upload(
-    pipeline_id: int,
-    config: Dict[str, Any],
-    safe_filename: str,
-    save_path: str,
-) -> Tuple[bool, Optional[str]]:
-    """Updates pipeline configuration after a model upload."""
-    updated_config = dict(config)
-    updated_config["model_filename"] = safe_filename
-    updated_config["model_path"] = save_path
-    updated_config.setdefault("accelerator", "none")
-
-    inferred_type = infer_model_type(safe_filename) or "yolo"
-    extension = os.path.splitext(safe_filename)[1].lower()
-
-    previous_converted = config.get("converted_onnx_path")
-    previous_rknn = config.get("rknn_path")
-
-    if inferred_type == "tflite":
-        updated_config["model_type"] = "tflite"
-        updated_config["tflite_delegate"] = (
-            updated_config.get("tflite_delegate") or "CPU"
-        )
-        updated_config.pop("onnx_provider", None)
-        updated_config.pop("converted_onnx_path", None)
-        updated_config.pop("converted_onnx_filename", None)
-        updated_config.pop("rknn_path", None)
-        if updated_config.get("accelerator") == "rknn":
-            updated_config["accelerator"] = "none"
-    elif inferred_type == "rknn":
-        updated_config["model_type"] = "yolo"
-        updated_config["accelerator"] = "rknn"
-        updated_config["rknn_path"] = save_path
-        updated_config.pop("converted_onnx_path", None)
-        updated_config.pop("converted_onnx_filename", None)
-        updated_config.pop("tflite_delegate", None)
-    else:  # YOLO / ONNX path
-        updated_config["model_type"] = "yolo"
-        updated_config["onnx_provider"] = (
-            updated_config.get("onnx_provider") or "CPUExecutionProvider"
-        )
-        updated_config.pop("tflite_delegate", None)
-
-        if extension == ".onnx":
-            is_valid, message = validate_onnx_model(save_path)
-            if not is_valid:
-                return False, message
-            updated_config["converted_onnx_path"] = save_path
-            updated_config["converted_onnx_filename"] = safe_filename
-        elif extension in [".pt", ".weights"]:
-            base_name = os.path.splitext(safe_filename)[0]
-            converted_filename = f"pipeline_{pipeline_id}_{base_name}.onnx"
-            converted_path = os.path.join(data_dir, converted_filename)
-            success, message, output_path = convert_yolo_weights_to_onnx(
-                save_path,
-                converted_path,
-                img_size=int(updated_config.get("img_size", 640)),
-            )
-            if not success:
-                _remove_file(converted_path)
-                return False, message
-            updated_config["converted_onnx_path"] = output_path
-            updated_config["converted_onnx_filename"] = os.path.basename(output_path)
-        else:
-            return (
-                False,
-                "Unsupported model format. Upload .onnx, .pt, .weights, .tflite, or .rknn files.",
-            )
-
-        availability = get_ml_availability()
-        rknn_supported = availability.get("accelerators", {}).get(
-            "rknn", False
-        ) and updated_config.get("converted_onnx_path")
-        if rknn_supported:
-            converted_name = os.path.splitext(
-                os.path.basename(updated_config["converted_onnx_path"])
-            )[0]
-            rknn_filename = f"{converted_name}.rknn"
-            rknn_path = os.path.join(data_dir, rknn_filename)
-            success, message, output_path = convert_onnx_to_rknn(
-                updated_config["converted_onnx_path"], rknn_path
-            )
-            if success and output_path:
-                updated_config["rknn_path"] = output_path
-                updated_config["accelerator"] = "rknn"
-            else:
-                if message:
-                    print(f"RKNN conversion skipped: {message}")
-                updated_config.pop("rknn_path", None)
-                if updated_config.get("accelerator") == "rknn":
-                    updated_config["accelerator"] = "none"
-        else:
-            updated_config.pop("rknn_path", None)
-            if updated_config.get("accelerator") == "rknn":
-                updated_config["accelerator"] = "none"
-
-    # Apply updates atomically
-    config.clear()
-    config.update(updated_config)
-
-    # Remove stale artefacts
-    if previous_converted and previous_converted != config.get("converted_onnx_path"):
-        _remove_file(previous_converted)
-    if previous_rknn and previous_rknn != config.get("rknn_path"):
-        _remove_file(previous_rknn)
-
-    return True, None
+# Removed: _remove_file - now use ModelService.remove_file()
+# Removed: _apply_model_upload - now use ModelService.apply_model_upload()
 
 
 @pipelines.route("/pipelines/ml/availability", methods=["GET"])
 def ml_pipeline_availability():
     """Exposes detected ML runtime capabilities for the frontend."""
-    return jsonify(get_ml_availability())
+    return success_response(get_ml_availability())
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>/labels", methods=["GET"])
@@ -158,39 +38,49 @@ def get_pipeline_labels(pipeline_id: int):
     """Returns the label list for a pipeline, if available."""
     pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
-        return jsonify({"error": "Pipeline not found"}), 404
+        return error_response("Pipeline not found", 404)
 
     config = json.loads(pipeline.config or "{}")
     labels_path = config.get("labels_path")
     if not labels_path and config.get("labels_filename"):
-        labels_path = os.path.join(data_dir, config["labels_filename"])
+        labels_path = os.path.join(DATA_DIR, config["labels_filename"])
 
-    labels: List[str] = []
-    if labels_path and os.path.exists(labels_path):
-        try:
-            with open(labels_path, "r", encoding="utf-8") as handle:
-                labels = [line.strip() for line in handle if line.strip()]
-        except OSError:
-            labels = []
+    # Use ModelService to get labels
+    labels = ModelService.get_labels_from_file(labels_path) if labels_path else []
 
-    response: Dict[str, Any] = {"labels": labels}
+    # Check if validation result uses dataclass pattern
+    validation_result = validate_pipeline_config(pipeline.pipeline_type, config)
+    error_msg = None
+    error_details = None
 
-    is_valid, error_message = validate_pipeline_config(pipeline.pipeline_type, config)
-    if not is_valid:
-        response["error"] = "Invalid configuration"
-        response["details"] = error_message
-    elif (
+    if hasattr(validation_result, 'is_valid'):
+        # New ValidationResult dataclass pattern
+        if not validation_result.is_valid:
+            error_msg = "Invalid configuration"
+            error_details = validation_result.error_message
+    else:
+        # Legacy tuple pattern
+        is_valid, error_message = validation_result
+        if not is_valid:
+            error_msg = "Invalid configuration"
+            error_details = error_message
+
+    # Additional check for ML pipelines
+    if (
         pipeline.pipeline_type == "Object Detection (ML)"
         and labels
         and not config.get("model_path")
     ):
-        response["error"] = "Invalid configuration"
-        response["details"] = (
+        error_msg = "Invalid configuration"
+        error_details = (
             "Model path missing for ML pipeline; upload a model and ensure calibration "
             "values such as tag_size_m are set before deploying."
         )
 
-    return jsonify(response)
+    if error_msg:
+        return error_response(error_msg, 400, details=error_details)
+
+    return success_response({"labels": labels})
 
 
 @pipelines.route("/cameras/<int:camera_id>/pipelines", methods=["GET"])
@@ -198,8 +88,8 @@ def get_pipelines_for_camera(camera_id):
     """Returns all pipelines for a given camera."""
     camera = db.session.get(Camera, camera_id)
     if not camera:
-        return jsonify({"error": "Camera not found"}), 404
-    return jsonify([p.to_dict() for p in camera.pipelines])
+        return error_response("Camera not found", 404)
+    return success_response([p.to_dict() for p in camera.pipelines])
 
 
 @pipelines.route("/cameras/<int:camera_id>/pipelines", methods=["POST"])
@@ -207,13 +97,13 @@ def add_pipeline(camera_id):
     """Adds a new pipeline to a camera."""
     camera = db.session.get(Camera, camera_id)
     if not camera:
-        return jsonify({"error": "Camera not found"}), 404
+        return error_response("Camera not found", 404)
     data = request.get_json()
     name = data.get("name")
     pipeline_type = data.get("pipeline_type")
 
     if not name or not pipeline_type:
-        return jsonify({"error": "Name and pipeline_type are required"}), 400
+        return error_response("Name and pipeline_type are required", 400)
 
     # Use default config for the pipeline type
     default_config = get_default_config(pipeline_type)
@@ -236,7 +126,7 @@ def add_pipeline(camera_id):
         camera_matrix_json=camera.camera_matrix_json,
         dist_coeffs_json=camera.dist_coeffs_json,
     )
-    return jsonify({"success": True, "pipeline": new_pipeline.to_dict()})
+    return success_response({"pipeline": new_pipeline.to_dict()}, code=201)
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>", methods=["PUT"])
@@ -244,13 +134,13 @@ def update_pipeline(pipeline_id):
     """Updates a pipeline's settings."""
     pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
-        return jsonify({"error": "Pipeline not found"}), 404
+        return error_response("Pipeline not found", 404)
     data = request.get_json()
     name = data.get("name")
     pipeline_type = data.get("pipeline_type")
 
     if not name or not pipeline_type:
-        return jsonify({"error": "Name and pipeline_type are required"}), 400
+        return error_response("Name and pipeline_type are required", 400)
 
     pipeline.name = name
     pipeline.pipeline_type = pipeline_type
@@ -268,7 +158,7 @@ def update_pipeline(pipeline_id):
             dist_coeffs_json=camera.dist_coeffs_json,
         )
 
-    return jsonify({"success": True})
+    return success_response()
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>/config", methods=["PUT"])
@@ -276,17 +166,15 @@ def update_pipeline_config(pipeline_id):
     """Updates a pipeline's configuration."""
     pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
-        return jsonify({"error": "Pipeline not found"}), 404
+        return error_response("Pipeline not found", 404)
     config = request.get_json()
     if config is None:
-        return jsonify({"error": "Invalid config format"}), 400
+        return error_response("Invalid config format", 400)
 
     # Validate configuration against schema
     is_valid, error_message = validate_pipeline_config(pipeline.pipeline_type, config)
     if not is_valid:
-        return jsonify(
-            {"error": "Invalid configuration", "details": error_message}
-        ), 400
+        return error_response("Invalid configuration", 400, details=error_message)
 
     pipeline.config = json.dumps(config)
     db.session.commit()
@@ -303,43 +191,43 @@ def update_pipeline_config(pipeline_id):
             dist_coeffs_json=camera.dist_coeffs_json,
         )
 
-    return jsonify({"success": True})
+    return success_response()
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>/files", methods=["POST"])
 def upload_pipeline_file(pipeline_id):
     """Uploads a file for a specific pipeline (e.g., ML model, labels)."""
     if "file" not in request.files:
-        return jsonify({"error": "No file part"}), 400
+        return error_response("No file part", 400)
 
     file = request.files["file"]
     file_type = request.form.get("type")  # 'model' or 'labels'
 
     if file.filename == "":
-        return jsonify({"error": "No selected file"}), 400
+        return error_response("No selected file", 400)
 
     if not file_type:
-        return jsonify({"error": "File type is required"}), 400
+        return error_response("File type is required", 400)
 
     # Validate file_type to prevent path traversal
     if file_type not in ["model", "labels"]:
-        return jsonify({"error": 'Invalid file type. Must be "model" or "labels"'}), 400
+        return error_response('Invalid file type. Must be "model" or "labels"', 400)
 
     pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
-        return jsonify({"error": "Pipeline not found"}), 404
+        return error_response("Pipeline not found", 404)
 
     if file:
         safe_filename = secure_filename(file.filename)
         if not safe_filename:
-            return jsonify({"error": "Invalid filename"}), 400
+            return error_response("Invalid filename", 400)
 
         filename = f"pipeline_{pipeline_id}_{file_type}_{safe_filename}"
-        save_path = os.path.join(data_dir, filename)
+        save_path = os.path.join(DATA_DIR, filename)
 
-        # Additional security: Ensure save_path is within data_dir
-        if not os.path.abspath(save_path).startswith(os.path.abspath(data_dir)):
-            return jsonify({"error": "Invalid file path"}), 400
+        # Additional security: Ensure save_path is within DATA_DIR
+        if not os.path.abspath(save_path).startswith(os.path.abspath(DATA_DIR)):
+            return error_response("Invalid file path", 400)
 
         file.save(save_path)
 
@@ -350,19 +238,16 @@ def upload_pipeline_file(pipeline_id):
             # Reset target classes selection so UI can refresh from new labels
             config["target_classes"] = config.get("target_classes", [])
         else:
-            success, error_message = _apply_model_upload(
+            # Use ModelService for model upload processing
+            success, error_message = ModelService.apply_model_upload(
                 pipeline_id, config, safe_filename, save_path
             )
             if not success:
-                _remove_file(save_path)
-                return (
-                    jsonify(
-                        {
-                            "error": "Model upload failed",
-                            "details": error_message or "Unknown error",
-                        }
-                    ),
+                ModelService.remove_file(save_path)
+                return error_response(
+                    "Model upload failed",
                     400,
+                    details=error_message or "Unknown error"
                 )
 
         # Validate the updated config
@@ -373,12 +258,11 @@ def upload_pipeline_file(pipeline_id):
             # Clean up uploaded file if validation fails
             if os.path.exists(save_path):
                 os.remove(save_path)
-            return jsonify(
-                {
-                    "error": "Configuration validation failed after file upload",
-                    "details": error_message,
-                }
-            ), 400
+            return error_response(
+                "Configuration validation failed after file upload",
+                400,
+                details=error_message
+            )
 
         pipeline.config = json.dumps(config)
         db.session.commit()
@@ -393,16 +277,15 @@ def upload_pipeline_file(pipeline_id):
                 pipeline_config_json=pipeline.config,
                 camera_matrix_json=camera.camera_matrix_json,
             )
-        return jsonify(
+        return success_response(
             {
-                "success": True,
                 "filepath": save_path,
                 "filename": safe_filename,
                 "config": config,
             }
         )
 
-    return jsonify({"error": "File upload failed"}), 500
+    return error_response("File upload failed", 500)
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>/files", methods=["DELETE"])
@@ -410,19 +293,19 @@ def delete_pipeline_file(pipeline_id):
     """Deletes a file associated with a specific pipeline."""
     pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
-        return jsonify({"error": "Pipeline not found"}), 404
+        return error_response("Pipeline not found", 404)
     data = request.get_json()
     file_type = data.get("type")
 
     if not file_type:
-        return jsonify({"error": "File type is required"}), 400
+        return error_response("File type is required", 400)
 
     config = json.loads(pipeline.config or "{}")
     filepath_key = f"{file_type}_path"
     file_path = config.get(filepath_key)
 
     if file_path:
-        _remove_file(file_path)
+        ModelService.remove_file(file_path)
         config.pop(filepath_key, None)
         filename_key = f"{file_type}_filename"
         config.pop(filename_key, None)
@@ -430,9 +313,9 @@ def delete_pipeline_file(pipeline_id):
         if file_type == "labels":
             config["target_classes"] = []
         elif file_type == "model":
-            _remove_file(config.pop("converted_onnx_path", None))
+            ModelService.remove_file(config.pop("converted_onnx_path", None))
             config.pop("converted_onnx_filename", None)
-            _remove_file(config.pop("rknn_path", None))
+            ModelService.remove_file(config.pop("rknn_path", None))
             config["accelerator"] = "none"
             config["model_type"] = "yolo"
             config.pop("tflite_delegate", None)
@@ -442,14 +325,10 @@ def delete_pipeline_file(pipeline_id):
             pipeline.pipeline_type, config
         )
         if not is_valid:
-            return (
-                jsonify(
-                    {
-                        "error": "Invalid configuration after file deletion",
-                        "details": error_message,
-                    }
-                ),
+            return error_response(
+                "Invalid configuration after file deletion",
                 400,
+                details=error_message
             )
 
         pipeline.config = json.dumps(config)
@@ -465,9 +344,9 @@ def delete_pipeline_file(pipeline_id):
                 pipeline_config_json=pipeline.config,
                 camera_matrix_json=camera.camera_matrix_json,
             )
-        return jsonify({"success": True, "config": config})
+        return success_response({"config": config})
 
-    return jsonify({"error": "File not found in config"}), 404
+    return error_response("File not found in config", 404)
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>", methods=["DELETE"])
@@ -475,7 +354,7 @@ def delete_pipeline(pipeline_id):
     """Deletes a pipeline."""
     pipeline = db.session.get(Pipeline, pipeline_id)
     if not pipeline:
-        return jsonify({"error": "Pipeline not found"}), 404
+        return error_response("Pipeline not found", 404)
 
     # Fetch camera identifier for primitive parameter passing
     camera = db.session.get(Camera, pipeline.camera_id)
@@ -487,4 +366,4 @@ def delete_pipeline(pipeline_id):
     db.session.delete(pipeline)
     db.session.commit()
 
-    return jsonify({"success": True})
+    return success_response()

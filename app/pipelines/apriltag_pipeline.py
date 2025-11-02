@@ -1,3 +1,4 @@
+import logging
 import math
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -13,6 +14,8 @@ from wpimath.geometry import (
     Transform3d,
     Translation3d,
 )
+
+logger = logging.getLogger(__name__)
 
 try:
     from wpimath.units import units
@@ -284,14 +287,11 @@ class AprilTagPipeline:
         self._previous_rvec: Optional[np.ndarray] = None
         self._previous_tvec: Optional[np.ndarray] = None
 
-        print(
-            "AprilTag detector configured",
-            f"family={family}",
-            f"threads={detector_config.numThreads}",
-            f"decimate={detector_config.quadDecimate}",
-            f"blur={detector_config.quadSigma}",
-            f"refine_edges={detector_config.refineEdges}",
-            f"multi_tag={self.multi_tag_enabled}",
+        logger.info(
+            f"AprilTag detector configured: family={family}, "
+            f"threads={detector_config.numThreads}, decimate={detector_config.quadDecimate}, "
+            f"blur={detector_config.quadSigma}, refine_edges={detector_config.refineEdges}, "
+            f"multi_tag={self.multi_tag_enabled}"
         )
 
     def _load_selected_layout(self) -> None:
@@ -300,12 +300,12 @@ class AprilTagPipeline:
 
         selected = get_selected_field_name()
         if not selected:
-            print("Multi-tag enabled, but no AprilTag field layout selected")
+            logger.warning("Multi-tag enabled, but no AprilTag field layout selected")
             return
 
         layout = load_field_layout_by_name(selected)
         if not layout:
-            print(f"Failed to load AprilTag field layout '{selected}'")
+            logger.error(f"Failed to load AprilTag field layout '{selected}'")
             return
 
         self._apply_layout(selected, layout)
@@ -344,13 +344,13 @@ class AprilTagPipeline:
         if tag_map:
             self.field_layout_name = name
             self.field_layout_data = tag_map
-            print(
-                f"Loaded AprilTag field '{name}' with {len(tag_map)} tags",
+            logger.info(
+                f"Loaded AprilTag field '{name}' with {len(tag_map)} tags"
             )
         else:
             self.field_layout_name = None
             self.field_layout_data = None
-            print(f"AprilTag field '{name}' contained no valid tags")
+            logger.warning(f"AprilTag field '{name}' contained no valid tags")
 
     def _ensure_pose_estimator(self, cam_matrix: np.ndarray) -> None:
         estimator_cls = getattr(robotpy_apriltag, "AprilTagPoseEstimator", None)
@@ -384,7 +384,7 @@ class AprilTagPipeline:
             try:
                 config = config_cls(self.tag_size_m, fx, fy, cx, cy)
             except TypeError as exc:
-                print(f"Failed to configure AprilTagPoseEstimator: {exc}")
+                logger.error(f"Failed to configure AprilTagPoseEstimator: {exc}")
                 self._pose_estimator = None
                 self._use_pose_estimator = False
                 return
@@ -392,7 +392,7 @@ class AprilTagPipeline:
         try:
             self._pose_estimator = estimator_cls(config)
         except TypeError as exc:
-            print(f"Failed to instantiate AprilTagPoseEstimator: {exc}")
+            logger.error(f"Failed to instantiate AprilTagPoseEstimator: {exc}")
             self._pose_estimator = None
             self._use_pose_estimator = False
             return
@@ -892,15 +892,11 @@ class AprilTagPipeline:
             payload.get("rotation", {}).pop("quaternion", None)
         return payload
 
-    def process_frame(
-        self,
-        frame: np.ndarray,
-        cam_matrix: np.ndarray,
-        dist_coeffs: Optional[np.ndarray] = None,
-    ) -> Dict[str, object]:
-        if dist_coeffs is None:
-            dist_coeffs = np.zeros((4, 1), dtype=np.float32)
-
+    def _detect_and_filter_tags(
+        self, frame: np.ndarray
+    ) -> List[robotpy_apriltag.AprilTagDetection]:
+        """Detect tags in frame and filter by quality thresholds."""
+        # Convert to grayscale if needed
         if frame.ndim == 3:
             if self.gray_frame is None or self.gray_frame.shape != frame.shape[:2]:
                 self.gray_frame = np.empty(frame.shape[:2], dtype=np.uint8)
@@ -909,39 +905,72 @@ class AprilTagPipeline:
         else:
             detect_frame = frame
 
+        # Detect and filter tags
         detections = self.detector.detect(detect_frame)
-        valid_detections = self._filter_detections(detections)
+        return self._filter_detections(detections)
 
-        self._ensure_pose_estimator(cam_matrix)
-
+    def _process_single_tags(
+        self,
+        detections: List[robotpy_apriltag.AprilTagDetection],
+        cam_matrix: np.ndarray,
+        dist_coeffs: np.ndarray,
+    ) -> List[SingleTagResult]:
+        """Process individual tag detections to estimate poses."""
         single_tag_results: List[SingleTagResult] = []
-        for tag in valid_detections:
+        for tag in detections:
             result = None
+            # Try pose estimator first if available
             if self._use_pose_estimator:
                 result = self._solve_single_tag_with_estimator(
                     tag, cam_matrix, dist_coeffs
                 )
+            # Fall back to OpenCV if estimator unavailable or failed
             if result is None:
                 result = self._solve_single_tag_with_opencv(
                     tag, cam_matrix, dist_coeffs
                 )
             if result is not None:
                 single_tag_results.append(result)
+        return single_tag_results
 
-        multi_tag_modern = None
-        multi_tag_legacy = None
-        if self.multi_tag_enabled and self.field_layout_data:
-            correspondences = self._build_correspondences(valid_detections)
-            if correspondences:
-                if self._use_pose_estimator:
-                    multi_tag_modern, multi_tag_legacy = self._solve_multi_tag_ransac(
-                        correspondences, cam_matrix, dist_coeffs
-                    )
-                if multi_tag_modern is None and multi_tag_legacy is None:
-                    multi_tag_modern, multi_tag_legacy = self._solve_multi_tag_opencv(
-                        correspondences, cam_matrix, dist_coeffs
-                    )
+    def _process_multi_tags(
+        self,
+        detections: List[robotpy_apriltag.AprilTagDetection],
+        cam_matrix: np.ndarray,
+        dist_coeffs: np.ndarray,
+    ) -> Tuple[Optional[Dict[str, object]], Optional[Dict[str, object]]]:
+        """Process multiple tags together for improved pose estimation."""
+        if not self.multi_tag_enabled or not self.field_layout_data:
+            return None, None
 
+        # Build correspondences between detected tags and field layout
+        correspondences = self._build_correspondences(detections)
+        if not correspondences:
+            return None, None
+
+        # Try RANSAC approach first for robust estimation
+        multi_tag_modern, multi_tag_legacy = None, None
+        if self._use_pose_estimator:
+            multi_tag_modern, multi_tag_legacy = self._solve_multi_tag_ransac(
+                correspondences, cam_matrix, dist_coeffs
+            )
+
+        # Fall back to standard multi-tag if RANSAC failed
+        if multi_tag_modern is None and multi_tag_legacy is None:
+            multi_tag_modern, multi_tag_legacy = self._solve_multi_tag_opencv(
+                correspondences, cam_matrix, dist_coeffs
+            )
+
+        return multi_tag_modern, multi_tag_legacy
+
+    def _format_results(
+        self,
+        single_tag_results: List[SingleTagResult],
+        multi_tag_modern: Optional[Dict[str, object]],
+        multi_tag_legacy: Optional[Dict[str, object]],
+    ) -> Dict[str, object]:
+        """Format pipeline results for output."""
+        # Extract components from single tag results
         legacy_single_tags = [
             {"ui_data": result.ui_data, "drawing_data": result.drawing_data}
             for result in single_tag_results
@@ -956,3 +985,43 @@ class AprilTagPipeline:
             "single_tags": legacy_single_tags,
             "multi_tag": multi_tag_legacy,
         }
+
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        cam_matrix: np.ndarray,
+        dist_coeffs: Optional[np.ndarray] = None,
+    ) -> Dict[str, object]:
+        """Process frame to detect AprilTags and estimate poses.
+
+        Args:
+            frame: Input frame (BGR or grayscale)
+            cam_matrix: Camera intrinsic matrix
+            dist_coeffs: Camera distortion coefficients (optional)
+
+        Returns:
+            Dictionary containing detections, overlays, and pose estimates
+        """
+        if dist_coeffs is None:
+            dist_coeffs = np.zeros((4, 1), dtype=np.float32)
+
+        # Step 1: Detect and filter tags
+        valid_detections = self._detect_and_filter_tags(frame)
+
+        # Step 2: Ensure pose estimator is ready
+        self._ensure_pose_estimator(cam_matrix)
+
+        # Step 3: Process individual tags
+        single_tag_results = self._process_single_tags(
+            valid_detections, cam_matrix, dist_coeffs
+        )
+
+        # Step 4: Process multiple tags for field-relative pose
+        multi_tag_modern, multi_tag_legacy = self._process_multi_tags(
+            valid_detections, cam_matrix, dist_coeffs
+        )
+
+        # Step 5: Format and return results
+        return self._format_results(
+            single_tag_results, multi_tag_modern, multi_tag_legacy
+        )

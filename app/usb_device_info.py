@@ -6,9 +6,12 @@ and extract stable identifiers (Vendor ID, Product ID, Serial Number, etc.)
 that persist across USB port changes.
 """
 
+import logging
 import sys
 import cv2
 from typing import List, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def get_usb_cameras_with_info() -> List[Dict[str, str]]:
@@ -40,8 +43,8 @@ def _get_usb_cameras_windows() -> List[Dict[str, str]]:
     try:
         import wmi
     except ImportError:
-        print("Warning: wmi module not available. Install with: pip install wmi")
-        print("Falling back to index-based camera detection.")
+        logger.warning("wmi module not available. Install with: pip install wmi")
+        logger.info("Falling back to index-based camera detection")
         return _get_usb_cameras_fallback()
 
     cameras = []
@@ -127,7 +130,7 @@ def _get_usb_cameras_windows() -> List[Dict[str, str]]:
                 )
 
     except Exception as e:
-        print(f"Error querying WMI for USB devices: {e}")
+        logger.error(f"Error querying WMI for USB devices: {e}")
         return _get_usb_cameras_fallback()
 
     return cameras
@@ -138,8 +141,8 @@ def _get_usb_cameras_linux() -> List[Dict[str, str]]:
     try:
         import pyudev
     except ImportError:
-        print("Warning: pyudev module not available. Install with: pip install pyudev")
-        print("Falling back to index-based camera detection.")
+        logger.warning("pyudev module not available. Install with: pip install pyudev")
+        logger.info("Falling back to index-based camera detection")
         return _get_usb_cameras_fallback()
 
     cameras = []
@@ -281,7 +284,7 @@ def _get_usb_cameras_macos() -> List[Dict[str, str]]:
             return _get_usb_cameras_macos_ioreg()
 
     except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
-        print(f"Error querying macOS cameras with system_profiler: {e}")
+        logger.error(f"Error querying macOS cameras with system_profiler: {e}")
         return _get_usb_cameras_macos_ioreg()
 
     return cameras
@@ -401,7 +404,7 @@ def _get_usb_cameras_macos_ioreg() -> List[Dict[str, str]]:
                 )
 
     except Exception as e:
-        print(f"Error querying macOS cameras with ioreg: {e}")
+        logger.error(f"Error querying macOS cameras with ioreg: {e}")
         return _get_usb_cameras_fallback()
 
     return cameras

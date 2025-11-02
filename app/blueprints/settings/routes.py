@@ -1,9 +1,9 @@
 import json
+import logging
 import os
 
 from flask import (
     current_app,
-    jsonify,
     redirect,
     render_template,
     request,
@@ -16,6 +16,7 @@ from app.extensions import db
 from app import network_utils
 from app.models import Setting, Camera, Pipeline
 from app.drivers.genicam_driver import GenICamDriver
+from app.utils.responses import success_response, error_response
 from app.apriltag_fields import (
     MAX_FIELD_FILE_SIZE,
     ensure_user_fields_dir,
@@ -26,6 +27,8 @@ from app.apriltag_fields import (
     validate_layout_structure,
 )
 from . import settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_db_path():
@@ -121,7 +124,7 @@ def clear_genicam_settings():
 @settings.route("/control/restart-app", methods=["POST"])
 def restart_app():
     """Restarts the application."""
-    print("Restarting application...")
+    logger.info("Restarting application...")
     os._exit(0)
     return "Restarting...", 200
 
@@ -129,7 +132,7 @@ def restart_app():
 @settings.route("/control/reboot", methods=["POST"])
 def reboot_device():
     """Reboots the device."""
-    print("Rebooting device...")
+    logger.info("Rebooting device...")
     os.system("sudo reboot")
     return "Rebooting...", 200
 
@@ -189,7 +192,7 @@ def select_apriltag_field():
     """Persist the selected AprilTag field layout."""
     field_name = _extract_field_name()
     if field_name and not _is_valid_field_name(field_name):
-        return jsonify({"ok": False, "error": "Unknown field layout"}), 400
+        return error_response("Unknown field layout", 400)
 
     setting = db.session.get(Setting, "apriltag_field")
     if field_name:
@@ -200,7 +203,7 @@ def select_apriltag_field():
     elif setting:
         db.session.delete(setting)
     db.session.commit()
-    return jsonify({"ok": True, "selected": field_name or None})
+    return success_response({"selected": field_name or None})
 
 
 @settings.route("/apriltag/upload", methods=["POST"])
@@ -208,30 +211,30 @@ def upload_apriltag_field():
     """Handle JSON uploads for custom AprilTag fields."""
     upload = request.files.get("field_layout")
     if upload is None or not upload.filename:
-        return jsonify({"ok": False, "error": "No file provided"}), 400
+        return error_response("No file provided", 400)
 
     filename = secure_filename(upload.filename)
     if not filename.lower().endswith(".json"):
-        return jsonify({"ok": False, "error": "Only .json files are supported"}), 400
+        return error_response("Only .json files are supported", 400)
 
     raw = upload.read()
     if not raw:
-        return jsonify({"ok": False, "error": "File was empty"}), 400
+        return error_response("File was empty", 400)
     if len(raw) > MAX_FIELD_FILE_SIZE:
-        return jsonify({"ok": False, "error": "File exceeds size limit"}), 400
+        return error_response("File exceeds size limit", 400)
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
-        return jsonify({"ok": False, "error": "File must be UTF-8 encoded"}), 400
+        return error_response("File must be UTF-8 encoded", 400)
 
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        return jsonify({"ok": False, "error": "Invalid JSON"}), 400
+        return error_response("Invalid JSON", 400)
 
     is_valid, error = validate_layout_structure(data)
     if not is_valid:
-        return jsonify({"ok": False, "error": error or "Invalid layout structure"}), 400
+        return error_response(error or "Invalid layout structure", 400)
 
     save_dir = ensure_user_fields_dir()
     save_path = os.path.join(save_dir, filename)
@@ -239,9 +242,9 @@ def upload_apriltag_field():
         with open(save_path, "w", encoding="utf-8") as handle:
             handle.write(text)
     except OSError:
-        return jsonify({"ok": False, "error": "Failed to save file"}), 500
+        return error_response("Failed to save file", 500)
 
-    return jsonify({"ok": True, "name": filename})
+    return success_response({"name": filename})
 
 
 @settings.route("/apriltag/delete", methods=["POST"])
@@ -249,33 +252,33 @@ def delete_apriltag_field():
     """Remove a user-uploaded AprilTag field layout."""
     field_name = _extract_field_name()
     if not field_name:
-        return jsonify({"ok": False, "error": "Field name required"}), 400
+        return error_response("Field name required", 400)
     if not field_name.lower().endswith(".json"):
-        return jsonify({"ok": False, "error": "Invalid field name"}), 400
+        return error_response("Invalid field name", 400)
 
     user_dir = ensure_user_fields_dir()
     base_dir = os.path.normpath(user_dir)
     candidate = os.path.normpath(os.path.join(base_dir, field_name))
     if os.path.commonpath([base_dir, candidate]) != base_dir:
-        return jsonify({"ok": False, "error": "Invalid field name"}), 400
+        return error_response("Invalid field name", 400)
 
     for info in get_default_fields():
         if info.name == field_name:
-            return jsonify({"ok": False, "error": "Cannot delete default layouts"}), 400
+            return error_response("Cannot delete default layouts", 400)
 
     if not os.path.isfile(candidate):
-        return jsonify({"ok": False, "error": "Field not found"}), 404
+        return error_response("Field not found", 404)
 
     try:
         os.remove(candidate)
     except OSError:
-        return jsonify({"ok": False, "error": "Failed to delete file"}), 500
+        return error_response("Failed to delete file", 500)
 
     if get_selected_field_name() == field_name:
         setting = db.session.get(Setting, "apriltag_field")
         if setting:
             db.session.delete(setting)
             db.session.commit()
-        return jsonify({"ok": True, "selected": None})
+        return success_response({"selected": None})
 
-    return jsonify({"ok": True})
+    return success_response()

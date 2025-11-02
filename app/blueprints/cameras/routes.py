@@ -1,10 +1,14 @@
-from flask import render_template, request, redirect, url_for, current_app, jsonify
+import logging
+from flask import render_template, request, redirect, url_for, current_app
 import json
 from app.extensions import db
 from app import camera_manager, camera_discovery
 from app.drivers.genicam_driver import GenICamDriver
 from app.models import Camera, Pipeline, Setting
+from app.utils.responses import success_response, error_response
 from . import cameras
+
+logger = logging.getLogger(__name__)
 
 
 @cameras.route("/")
@@ -66,7 +70,7 @@ def add_camera():
                         current_app._get_current_object(),
                     )
                 except Exception as thread_error:
-                    print(f"Error starting camera thread: {thread_error}")
+                    logger.error(f"Error starting camera thread: {thread_error}")
                     # Thread failed to start, remove the orphaned database entry
                     db.session.delete(new_camera)
                     db.session.commit()
@@ -74,7 +78,7 @@ def add_camera():
 
             except Exception as e:
                 db.session.rollback()
-                print(f"Error adding camera: {e}")
+                logger.error(f"Error adding camera: {e}")
                 # Camera and pipeline will be removed from database due to rollback
 
     return redirect(url_for("cameras.cameras_page"))
@@ -102,7 +106,7 @@ def delete_camera(camera_id):
 
         # Verify thread actually stopped before deleting DB record
         if camera_manager.is_camera_thread_running(identifier):
-            return jsonify({"error": "Failed to stop camera thread"}), 500
+            return error_response("Failed to stop camera thread", 500)
 
         db.session.delete(camera)
         db.session.commit()
@@ -114,16 +118,14 @@ def get_camera_results(camera_id):
     """Returns the latest results from all pipelines for a given camera."""
     camera = db.session.get(Camera, camera_id)
     if not camera:
-        return jsonify({"error": "Camera not found"}), 404
+        return error_response("Camera not found", 404)
 
     results = camera_manager.get_camera_pipeline_results(camera.identifier)
     if results is None:
-        return jsonify(
-            {"error": "Camera thread not running or no results available"}
-        ), 404
+        return error_response("Camera thread not running or no results available", 404)
 
     string_key_results = {str(k): v for k, v in results.items()}
-    return jsonify(string_key_results)
+    return success_response(string_key_results)
 
 
 @cameras.route("/discover")
@@ -131,7 +133,7 @@ def discover_cameras():
     """Discovers available USB, GenICam, OAK-D, and RealSense cameras."""
     existing_identifiers = request.args.get("existing", "").split(",")
     discovered = camera_discovery.discover_cameras(existing_identifiers)
-    return jsonify(discovered)
+    return success_response(discovered)
 
 
 @cameras.route("/status/<int:camera_id>")
@@ -140,8 +142,8 @@ def camera_status(camera_id):
     camera = db.session.get(Camera, camera_id)
     if camera:
         is_running = camera_manager.is_camera_thread_running(camera.identifier)
-        return jsonify({"connected": is_running})
-    return jsonify({"error": "Camera not found"}), 404
+        return success_response({"connected": is_running})
+    return error_response("Camera not found", 404)
 
 
 @cameras.route("/controls/<int:camera_id>", methods=["GET"])
@@ -149,8 +151,8 @@ def get_camera_controls(camera_id):
     """Returns the control settings for a camera."""
     camera = db.session.get(Camera, camera_id)
     if camera:
-        return jsonify(camera.to_dict())
-    return jsonify({"error": "Camera not found"}), 404
+        return success_response(camera.to_dict())
+    return error_response("Camera not found", 404)
 
 
 @cameras.route("/update_controls/<int:camera_id>", methods=["POST"])
@@ -159,7 +161,7 @@ def update_camera_controls(camera_id):
     camera = db.session.get(Camera, camera_id)
     data = request.get_json()
     if not data:
-        return jsonify({"error": "Invalid JSON"}), 400
+        return error_response("Invalid JSON", 400)
 
     required_fields = [
         "orientation",
@@ -169,7 +171,7 @@ def update_camera_controls(camera_id):
         "gain_value",
     ]
     if not all(field in data for field in required_fields):
-        return jsonify({"error": "Missing one or more required fields"}), 400
+        return error_response("Missing one or more required fields", 400)
 
     # Track if orientation changed
     old_orientation = camera.orientation
@@ -186,7 +188,7 @@ def update_camera_controls(camera_id):
     if old_orientation != new_orientation:
         camera_manager.notify_camera_config_update(camera.identifier, new_orientation)
 
-    return jsonify({"success": True})
+    return success_response()
 
 
 @cameras.route("/genicam/nodes/<int:camera_id>", methods=["GET"])
@@ -194,13 +196,13 @@ def genicam_nodes(camera_id):
     """Returns the node map for a GenICam camera."""
     camera = db.session.get(Camera, camera_id)
     if not camera or camera.camera_type != "GenICam":
-        return jsonify({"error": "Camera not found or not a GenICam device"}), 404
+        return error_response("Camera not found or not a GenICam device", 404)
 
     nodes, error = GenICamDriver.get_node_map(camera.identifier)
     if error:
-        return jsonify({"error": error}), 500
+        return error_response(error, 500)
 
-    return jsonify({"nodes": nodes})
+    return success_response({"nodes": nodes})
 
 
 @cameras.route("/genicam/nodes/<int:camera_id>", methods=["POST"])
@@ -208,7 +210,7 @@ def update_genicam_node(camera_id):
     """Updates a node on a GenICam camera."""
     camera = db.session.get(Camera, camera_id)
     if not camera or camera.camera_type != "GenICam":
-        return jsonify({"error": "Camera not found or not a GenICam device"}), 404
+        return error_response("Camera not found or not a GenICam device", 404)
 
     payload = request.get_json(silent=True) or {}
     node_name = payload.get("name")
@@ -219,12 +221,10 @@ def update_genicam_node(camera_id):
     )
 
     if success:
-        return jsonify(
-            {
-                "success": True,
-                "message": message or "Node updated successfully.",
-                "node": updated_node,
-            }
-        ), status_code
+        return success_response(
+            data={"node": updated_node},
+            message=message or "Node updated successfully.",
+            code=status_code
+        )
 
-    return jsonify({"error": message or "Failed to update node."}), status_code
+    return error_response(message or "Failed to update node.", status_code)

@@ -1,4 +1,8 @@
 from abc import ABC, abstractmethod
+from typing import Dict, Any, Union
+import numpy as np
+
+from app.utils.camera_config import CameraConfig
 
 
 class BaseDriver(ABC):
@@ -6,34 +10,37 @@ class BaseDriver(ABC):
     Abstract base class for all camera drivers. Defines the common interface.
     """
 
-    def __init__(self, camera_data):
+    def __init__(self, camera_data: Union[Dict[str, Any], CameraConfig, Any]):
         """
         Initialize the driver.
 
         Args:
-            camera_data: Either a Camera ORM object or a dict with key 'identifier'
+            camera_data: Either a CameraConfig dataclass, a dict, or a Camera ORM object
         """
-        # Support both ORM objects and dicts for backwards compatibility
-        if isinstance(camera_data, dict):
-            self.identifier = camera_data["identifier"]
-            self.camera_db_data = camera_data  # Store for potential future use
+        # Support CameraConfig, dicts, and ORM objects for backwards compatibility
+        if isinstance(camera_data, CameraConfig):
+            self.identifier = camera_data.identifier
+            self.camera_db_data = camera_data
+        elif isinstance(camera_data, dict):
+            self.identifier = camera_data.get("identifier", "")
+            self.camera_db_data = camera_data
         else:
             # ORM object
-            self.identifier = camera_data.identifier
+            self.identifier = getattr(camera_data, "identifier", "")
             self.camera_db_data = camera_data
 
     @abstractmethod
-    def connect(self):  # pragma: no cover
+    def connect(self) -> None:  # pragma: no cover
         """Establishes a connection to the camera."""
         pass
 
     @abstractmethod
-    def disconnect(self):  # pragma: no cover
+    def disconnect(self) -> None:  # pragma: no cover
         """Closes the connection to the camera."""
         pass
 
     @abstractmethod
-    def get_frame(self):  # pragma: no cover
+    def get_frame(self) -> Union[np.ndarray, tuple, None]:  # pragma: no cover
         """Retrieves a single frame from the camera.
 
         Returns:
@@ -43,7 +50,7 @@ class BaseDriver(ABC):
         """
         pass
 
-    def supports_depth(self):
+    def supports_depth(self) -> bool:
         """Indicates whether this driver supports depth data.
 
         Returns:
@@ -53,6 +60,6 @@ class BaseDriver(ABC):
 
     @staticmethod
     @abstractmethod
-    def list_devices():  # pragma: no cover
+    def list_devices() -> list:  # pragma: no cover
         """Returns a list of available devices for this driver type."""
         pass

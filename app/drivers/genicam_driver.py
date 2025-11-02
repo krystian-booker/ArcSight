@@ -1,7 +1,15 @@
-import threading
-import cv2
+import logging
 import os
+import threading
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+
 from .base_driver import BaseDriver
+from app.utils.config import DriverConfig
+
+logger = logging.getLogger(__name__)
 
 # Attempt to import Harvesters and GenICam API
 try:
@@ -17,12 +25,12 @@ _harvester = None
 _harvester_lock = threading.Lock()
 
 
-def _get_harvester():
+def _get_harvester() -> Optional["Harvester"]:
     """
     Lazily initialize and return the global Harvester instance.
 
     Returns:
-        Harvester: The global Harvester instance, or None if library is not available.
+        The global Harvester instance, or None if library is not available.
     """
     global _harvester
     with _harvester_lock:
@@ -31,7 +39,7 @@ def _get_harvester():
         return _harvester
 
 
-def _reset_harvester():
+def _reset_harvester() -> None:
     """
     Reset the global Harvester instance, allowing reinitialization.
 
@@ -43,7 +51,7 @@ def _reset_harvester():
             try:
                 _harvester.reset()
             except Exception as e:
-                print(f"Error resetting Harvester: {e}")
+                logger.error(f"Error resetting Harvester: {e}")
             finally:
                 _harvester = None
 
@@ -74,7 +82,7 @@ class GenICamDriver(BaseDriver):
         super().__init__(camera_db_data)
         self.ia = None  # Image Acquirer instance
 
-    def connect(self):
+    def connect(self) -> None:
         h = _get_harvester()
         if not h:
             raise ConnectionError(
@@ -86,7 +94,7 @@ class GenICamDriver(BaseDriver):
                 # The identifier for GenICam is the camera's serial number.
                 self.ia = h.create({"serial_number": self.identifier})
                 self.ia.start()
-                print(f"Successfully connected to GenICam camera {self.identifier}")
+                logger.info(f"Successfully connected to GenICam camera {self.identifier}")
             except Exception as e:
                 # If creation fails, clean up and re-raise.
                 if self.ia:
@@ -96,24 +104,24 @@ class GenICamDriver(BaseDriver):
                     f"Failed to create ImageAcquirer for GenICam camera {self.identifier}: {e}"
                 )
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         if self.ia:
-            print(f"Disconnecting GenICam camera {self.identifier}")
+            logger.info(f"Disconnecting GenICam camera {self.identifier}")
             try:
                 self.ia.stop()
                 self.ia.destroy()
             except Exception as e:
-                print(f"Error during GenICam disconnect for {self.identifier}: {e}")
+                logger.error(f"Error during GenICam disconnect for {self.identifier}: {e}")
             finally:
                 self.ia = None
 
-    def get_frame(self):
+    def get_frame(self) -> Optional[np.ndarray]:
         if not self.ia:
             return None
 
         try:
             # Use a timeout to prevent blocking indefinitely if the camera stops sending frames.
-            with self.ia.fetch(timeout=2.0) as buffer:
+            with self.ia.fetch(timeout=DriverConfig.GENICAM_ENUMERATE_TIMEOUT) as buffer:
                 component = buffer.payload.components[0]
                 img = component.data.reshape(component.height, component.width)
 
@@ -126,17 +134,17 @@ class GenICamDriver(BaseDriver):
                 else:
                     return img  # Assume it's already in a compatible format (e.g., BGR)
         except (genapi.TimeoutException, genapi.LogicalErrorException) as e:
-            print(
-                f"Frame acquisition timeout for GenICam {self.identifier}: {e}. Connection may be lost."
+            logger.warning(
+                f"Frame acquisition timeout for GenICam {self.identifier}: {e}. Connection may be lost"
             )
             # Returning None signals the acquisition loop to attempt reconnection.
             return None
         except Exception as e:
-            print(f"Unexpected error fetching GenICam frame for {self.identifier}: {e}")
+            logger.error(f"Unexpected error fetching GenICam frame for {self.identifier}: {e}")
             return None
 
     @staticmethod
-    def initialize(cti_path=None):
+    def initialize(cti_path: Optional[str] = None) -> None:
         """
         Initializes the shared Harvester instance with a CTI file.
         This must be called once at application startup.
@@ -149,7 +157,7 @@ class GenICamDriver(BaseDriver):
             with the new path. The previous Harvester instance will be reset.
         """
         if not Harvester:
-            print("Cannot initialize GenICam driver: Harvesters library not installed.")
+            logger.warning("Cannot initialize GenICam driver: Harvesters library not installed")
             return
 
         # Reset any existing harvester to allow reinitialization
@@ -160,27 +168,27 @@ class GenICamDriver(BaseDriver):
             # Get a fresh harvester instance
             h = _get_harvester()
             if not h:
-                print("Failed to create Harvester instance.")
+                logger.error("Failed to create Harvester instance")
                 return
 
             with _harvester_lock:
                 try:
                     h.add_file(cti_path)
                     h.update()
-                    print(f"Harvester initialized successfully with CTI: {cti_path}")
+                    logger.info(f"Harvester initialized successfully with CTI: {cti_path}")
                 except Exception as e:
-                    print(f"Error initializing Harvester with CTI {cti_path}: {e}")
+                    logger.error(f"Error initializing Harvester with CTI {cti_path}: {e}")
                     # Reset on failure to leave in clean state
                     _reset_harvester()
         else:
-            print(
-                "GenICam CTI file not found or not configured. Harvester is uninitialized."
+            logger.info(
+                "GenICam CTI file not found or not configured. Harvester is uninitialized"
             )
             # Don't create a Harvester instance if we don't have a CTI path
             # _harvester is already None from the _reset_harvester() call above
 
     @staticmethod
-    def list_devices():
+    def list_devices() -> List[Dict[str, str]]:
         """
         Returns a list of available GenICam devices found by the Harvester instance.
         """
@@ -203,11 +211,11 @@ class GenICamDriver(BaseDriver):
                             }
                         )
             except Exception as e:
-                print(f"Error listing GenICam cameras: {e}")
+                logger.error(f"Error listing GenICam cameras: {e}")
         return devices
 
     @staticmethod
-    def _create_image_acquirer(identifier):
+    def _create_image_acquirer(identifier: str) -> Tuple[Optional[Any], Optional[str]]:
         """Creates and returns an image acquirer for a GenICam device."""
         h = _get_harvester()
         if not h or not identifier:
@@ -218,13 +226,13 @@ class GenICamDriver(BaseDriver):
                 # It does not interfere with the main acquisition connection.
                 return h.create({"serial_number": identifier}), None
             except Exception as error:
-                print(
+                logger.error(
                     f"Error creating temporary ImageAcquirer for {identifier}: {error}"
                 )
                 return None, f"Error creating ImageAcquirer for {identifier}: {error}"
 
     @staticmethod
-    def get_node_map(identifier):
+    def get_node_map(identifier: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """Retrieves the full node map for a specific GenICam device."""
         if not genapi:
             return [], "GenICam runtime (GenAPI) is not available on the server."
@@ -283,14 +291,14 @@ class GenICamDriver(BaseDriver):
                     try:
                         node_info["value"] = str(node_wrapper.to_string())
                     except Exception as read_error:
-                        print(f"Error reading node {name}: {read_error}")
+                        logger.error(f"Error reading node {name}: {read_error}")
                 if interface_type == genapi.EInterfaceType.intfIEnumeration:
                     try:
                         node_info["choices"] = [
                             str(symbol) for symbol in node_wrapper.symbolics
                         ]
                     except Exception as enum_error:
-                        print(f"Error retrieving enum values for {name}: {enum_error}")
+                        logger.error(f"Error retrieving enum values for {name}: {enum_error}")
                 nodes.append(node_info)
             nodes.sort(key=lambda item: item["display_name"].lower())
             return nodes, None
@@ -301,7 +309,9 @@ class GenICamDriver(BaseDriver):
                 ia.destroy()
 
     @staticmethod
-    def update_node(identifier, node_name, value):
+    def update_node(
+        identifier: str, node_name: str, value: Any
+    ) -> Tuple[bool, str, int, Optional[Dict[str, Any]]]:
         """Updates a specific node on a GenICam device."""
         if not genapi:
             return False, "GenICam runtime is not available.", 500, None

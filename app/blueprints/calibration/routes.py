@@ -1,7 +1,6 @@
 from flask import (
     render_template,
     request,
-    jsonify,
     Response,
     current_app,
     make_response,
@@ -11,6 +10,7 @@ from app.extensions import db
 from app import camera_manager, camera_stream
 from app.models import Camera
 from app.calibration_utils import generate_chessboard_pdf, generate_charuco_board_pdf
+from app.utils.responses import success_response, error_response
 import cv2
 import io
 import numpy as np
@@ -96,28 +96,24 @@ def calibration_start():
     """Starts a new calibration session."""
     data = request.get_json()
     if not data:
-        return jsonify({"success": False, "error": "Invalid request format."}), 400
+        return error_response("Invalid request format.", 400)
 
     camera_id = data.get("camera_id")
     pattern_type = data.get("pattern_type")
     pattern_params = data.get("pattern_params")
 
     if not all([camera_id, pattern_type, pattern_params]):
-        return jsonify({"success": False, "error": "Missing required parameters."}), 400
+        return error_response("Missing required parameters.", 400)
 
     try:
         current_app.calibration_manager.start_session(
             int(camera_id), pattern_type, pattern_params
         )
-        return jsonify({"success": True})
+        return success_response()
     except (ValueError, KeyError, AttributeError) as e:
-        return jsonify(
-            {"success": False, "error": f"Invalid parameters for {pattern_type}: {e}"}
-        ), 400
+        return error_response(f"Invalid parameters for {pattern_type}: {e}", 400)
     except Exception as e:
-        return jsonify(
-            {"success": False, "error": f"An unexpected error occurred: {e}"}
-        ), 500
+        return error_response(f"An unexpected error occurred: {e}", 500)
 
 
 @calibration.route("/capture", methods=["POST"])
@@ -126,17 +122,15 @@ def calibration_capture():
     data = request.get_json()
     camera_id = data.get("camera_id")
     if not camera_id:
-        return jsonify({"success": False, "error": "Camera ID is required."}), 400
+        return error_response("Camera ID is required.", 400)
 
     camera = db.session.get(Camera, int(camera_id))
     if not camera:
-        return jsonify({"success": False, "error": "Camera not found."}), 404
+        return error_response("Camera not found.", 404)
 
     frame = camera_stream.get_latest_raw_frame(camera.identifier)
     if frame is None:
-        return jsonify(
-            {"success": False, "error": "Could not get frame from camera."}
-        ), 500
+        return error_response("Could not get frame from camera.", 500)
 
     success, message, _ = current_app.calibration_manager.capture_points(
         int(camera_id), frame
@@ -150,9 +144,10 @@ def calibration_capture():
         else:
             capture_count = len(session.get("img_points", []))
 
-    return jsonify(
-        {"success": success, "message": message, "capture_count": capture_count}
-    )
+    if success:
+        return success_response({"capture_count": capture_count}, message=message)
+    else:
+        return error_response(message, 400)
 
 
 @calibration.route("/calculate", methods=["POST"])
@@ -161,10 +156,14 @@ def calibration_calculate():
     data = request.get_json()
     camera_id = data.get("camera_id")
     if not camera_id:
-        return jsonify({"success": False, "error": "Camera ID is required."}), 400
+        return error_response("Camera ID is required.", 400)
 
     results = current_app.calibration_manager.calculate_calibration(int(camera_id))
-    return jsonify(results)
+    # Results already contain success/error structure, wrap it
+    if results.get("success"):
+        return success_response(results)
+    else:
+        return error_response(results.get("error", "Calibration failed"), 400)
 
 
 @calibration.route("/save", methods=["POST"])
@@ -177,11 +176,11 @@ def calibration_save():
     error = data.get("reprojection_error")
 
     if not all([camera_id, matrix, dist_coeffs, error is not None]):
-        return jsonify({"success": False, "error": "Missing required parameters."}), 400
+        return error_response("Missing required parameters.", 400)
 
     camera = db.session.get(Camera, int(camera_id))
     if not camera:
-        return jsonify({"success": False, "error": "Camera not found."}), 404
+        return error_response("Camera not found.", 404)
     camera.camera_matrix_json = json.dumps(matrix)
     camera.dist_coeffs_json = json.dumps(dist_coeffs)
     camera.reprojection_error = float(error)
@@ -194,7 +193,7 @@ def calibration_save():
         current_app._get_current_object(),
     )
 
-    return jsonify({"success": True})
+    return success_response()
 
 
 @calibration.route("/calibration_feed/<int:camera_id>")

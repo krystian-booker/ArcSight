@@ -386,15 +386,19 @@ def test_frame_buffer_pool_initialize_default_initial_buffers():
 def mock_pipeline_instances():
     """Provides a dictionary of mocked pipeline implementation instances."""
     with (
-        patch("app.camera_threads.AprilTagPipeline") as mock_at,
-        patch("app.camera_threads.ColouredShapePipeline") as mock_cs,
-        patch("app.camera_threads.ObjectDetectionMLPipeline") as mock_ml,
+        patch("app.factories.PipelineFactory.create") as mock_factory,
     ):
         # Provide valid numpy arrays for rvec and tvec to prevent cv2.error
         rvec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         tvec = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+
+        # Create mock pipeline instances
+        mock_at = MagicMock()
+        mock_cs = MagicMock()
+        mock_ml = MagicMock()
+
         # AprilTag pipeline now returns {"single_tags": [...], "multi_tag": ...}
-        mock_at.return_value.process_frame.return_value = {
+        mock_at.process_frame.return_value = {
             "single_tags": [
                 {
                     "ui_data": "apriltag_data",
@@ -408,8 +412,20 @@ def mock_pipeline_instances():
             ],
             "multi_tag": None,
         }
-        mock_cs.return_value.process_frame.return_value = "coloured_shape_data"
-        mock_ml.return_value.process_frame.return_value = "ml_data"
+        mock_cs.process_frame.return_value = "coloured_shape_data"
+        mock_ml.process_frame.return_value = "ml_data"
+
+        # Factory returns the appropriate mock based on pipeline type
+        def factory_side_effect(pipeline_type, config):
+            if pipeline_type == "AprilTag":
+                return mock_at
+            elif pipeline_type == "Coloured Shape":
+                return mock_cs
+            elif pipeline_type == "Object Detection (ML)":
+                return mock_ml
+            return MagicMock()
+
+        mock_factory.side_effect = factory_side_effect
 
         yield {
             "AprilTag": mock_at,

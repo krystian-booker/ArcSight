@@ -1,7 +1,11 @@
+import logging
+
 from .drivers.usb_driver import USBDriver
 from .drivers.genicam_driver import GenICamDriver
 from .drivers.oakd_driver import OAKDDriver
 from .drivers.realsense_driver import RealSenseDriver
+
+logger = logging.getLogger(__name__)
 
 
 # --- Driver Factory ---
@@ -34,7 +38,7 @@ def get_driver(camera_data):
 # --- Camera Discovery ---
 def discover_cameras(existing_identifiers):
     """Discovers all available cameras by polling the drivers."""
-    print("Discovering cameras...")
+    logger.info("Discovering cameras...")
     usb_cams = [
         c
         for c in USBDriver.list_devices()
@@ -56,9 +60,9 @@ def discover_cameras(existing_identifiers):
         if c["identifier"] not in existing_identifiers
     ]
 
-    print(
+    logger.info(
         f"Found {len(usb_cams)} new USB, {len(genicam_cams)} new GenICam, "
-        f"{len(oakd_cams)} new OAK-D, {len(realsense_cams)} new RealSense cameras."
+        f"{len(oakd_cams)} new OAK-D, {len(realsense_cams)} new RealSense cameras"
     )
     return {
         "usb": usb_cams,

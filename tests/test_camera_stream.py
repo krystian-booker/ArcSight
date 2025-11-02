@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 import numpy as np
 
-from app import camera_stream
+from app import camera_stream, thread_state
 from app.models import Camera
 
 
@@ -46,7 +46,7 @@ def mock_active_threads(mock_camera):
     }
 
     with patch.dict(
-        camera_stream.active_camera_threads, threads_dict, clear=True
+        thread_state.active_camera_threads, threads_dict, clear=True
     ) as mocked_dict:
         yield {"dict": mocked_dict, "acq": mock_acq_thread, "proc": mock_proc_thread}
 
