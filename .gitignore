@@ -241,3 +241,4 @@ Temporary Items
 # iCloud generated files
 *.icloud
 Miniconda3-latest-Linux-x86_64.sh
+.claude/

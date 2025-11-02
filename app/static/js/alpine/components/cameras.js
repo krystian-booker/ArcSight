@@ -72,8 +72,9 @@ export function registerCamerasComponents(Alpine) {
             this.camerasLoading = true;
             this.camerasError = '';
             try {
-                const payload = await fetchJson('/api/cameras');
-                this.cameras = normaliseCameras(payload || []);
+                const response = await fetchJson('/api/cameras');
+                const cameras = response.data || response || [];
+                this.cameras = normaliseCameras(cameras);
                 this.onCamerasUpdated();
             } catch (error) {
                 this.camerasError = error.message || 'Failed to load cameras';

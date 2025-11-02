@@ -19,6 +19,7 @@ Examples:
     FLASK_DEBUG=1 python run.py
 """
 
+import socket
 from app import create_app
 
 app = create_app()
@@ -28,6 +29,29 @@ if __name__ == "__main__":
     host = app.config.get('HOST', '0.0.0.0')
     port = app.config.get('PORT', 8080)
     debug = app.config.get('DEBUG', False)
+
+    # Display server information
+    print("\n" + "="*60)
+    print("ArcSight Server Starting")
+    print("="*60)
+
+    # Get local IP addresses
+    hostname = socket.gethostname()
+    try:
+        local_ip = socket.gethostbyname(hostname)
+        print(f"Local IP: http://{local_ip}:{port}")
+    except:
+        pass
+
+    if host == '0.0.0.0':
+        print(f"Listening on all interfaces: http://0.0.0.0:{port}")
+        print(f"Localhost: http://127.0.0.1:{port}")
+        print(f"Hostname: http://{hostname}:{port}")
+    else:
+        print(f"Server: http://{host}:{port}")
+
+    print(f"Mode: {'DEBUG' if debug else 'PRODUCTION'}")
+    print("="*60 + "\n")
 
     # IMPORTANT: use_reloader=False to prevent issues with camera threads
     # The reloader would spawn duplicate threads and cause resource conflicts

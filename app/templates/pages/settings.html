@@ -6,9 +6,11 @@
         defaultFields: {{ default_fields|map(attribute='name')|list|tojson }},
         userFields: {{ user_fields|map(attribute='name')|list|tojson }},
         endpoints: {
-            select: '{{ url_for(" settings.select_apriltag_field") }}',
-    upload: '{{ url_for("settings.upload_apriltag_field") }}' ,
-    delete: '{{ url_for("settings.delete_apriltag_field") }}' , }, })" x-cloak class="stack stack-2xl">
+            select: '{{ url_for("settings.select_apriltag_field") }}',
+            upload: '{{ url_for("settings.upload_apriltag_field") }}',
+            delete: '{{ url_for("settings.delete_apriltag_field") }}'
+        }
+    })" x-cloak class="stack stack-2xl">
     <header class="stack stack-sm">
         <h1>Settings</h1>
         <p class="muted text-small">Configure network identity, GenICam integration, and device-level controls for

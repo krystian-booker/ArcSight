@@ -284,9 +284,10 @@ export function registerDashboardComponents(Alpine) {
             if (!this.hasCamera) return;
             this.isLoadingPipelines = true;
             try {
-                const data = await fetchJson(this.endpoints.pipelinesForCamera(this.selectedCameraId));
+                const response = await fetchJson(this.endpoints.pipelinesForCamera(this.selectedCameraId));
+                const data = response.data || response || [];
                 const existingSelection = this.selectedPipelineId;
-                this.pipelines = (data || []).map((pipeline) => ({
+                this.pipelines = data.map((pipeline) => ({
                     ...pipeline,
                     id: toStringId(pipeline.id),
                     configData: safeJsonParse(pipeline.config || '{}', {}),
