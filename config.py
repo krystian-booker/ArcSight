@@ -41,6 +41,10 @@ class Config:
     PIPELINE_LATENCY_WARN_MS = float(os.environ.get('PIPELINE_LATENCY_WARN_MS', 150))
     METRICS_REFRESH_INTERVAL_MS = int(os.environ.get('METRICS_REFRESH_INTERVAL_MS', 2000))
 
+    # Vite/React development settings
+    VITE_DEV_SERVER_URL = os.environ.get('VITE_DEV_SERVER_URL', 'http://localhost:5173')
+    VITE_AUTO_START = os.environ.get('VITE_AUTO_START', '1').lower() not in ('0', 'false', 'no')
+
 
 class DevelopmentConfig(Config):
     """Development configuration with debug enabled and verbose logging."""
@@ -49,6 +53,8 @@ class DevelopmentConfig(Config):
     # In development, we might want to see detailed errors
     # but still disable the reloader for camera thread stability
     ENV = 'development'
+    # Auto-start Vite in development mode
+    VITE_AUTO_START = os.environ.get('VITE_AUTO_START', '1').lower() not in ('0', 'false', 'no')
 
 
 class ProductionConfig(Config):
@@ -68,6 +74,8 @@ class TestingConfig(Config):
     # Disable camera threads in tests
     CAMERA_THREADS_ENABLED = False
     METRICS_ENABLED = False
+    # Don't auto-start Vite in tests (Playwright handles this)
+    VITE_AUTO_START = False
 
 
 # Configuration dictionary

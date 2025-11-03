@@ -10,6 +10,8 @@ This test suite provides comprehensive E2E testing covering:
 - **Visual Regression**: Screenshot comparison to detect UI changes
 - **Mock Hardware**: Simulated camera devices and video feeds
 
+**Note**: Tests run against the production build of the React frontend. The global setup automatically builds the React app before starting the Flask server.
+
 ## Prerequisites
 
 - **Node.js** >= 18.0.0
@@ -337,7 +339,7 @@ jobs:
 
 1. **Always reset database** in `beforeEach` for test isolation
 2. **Use Page Object Models** for maintainable tests
-3. **Wait for Alpine.js** initialization with `waitForPageReady()`
+3. **Wait for React** initialization with `waitForPageReady()`
 4. **Add descriptive test names** that explain what is being tested
 5. **Keep tests focused** - one concept per test
 6. **Use data-testid** attributes for stable selectors (if needed)

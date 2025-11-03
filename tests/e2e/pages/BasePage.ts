@@ -19,22 +19,32 @@ export class BasePage {
   }
 
   /**
-   * Wait for Alpine.js to initialize
-   * Checks for x-cloak attribute to be removed
+   * Wait for React to initialize
+   * Checks for React root element to be rendered
    */
-  async waitForAlpineInit() {
+  async waitForReactInit() {
+    // Wait for React root to be rendered
+    await this.page.waitForSelector('#root', { timeout: 5000 });
+    // Wait for React Router to settle
     await this.page.waitForFunction(
-      () => !document.querySelector('[x-cloak]'),
+      () => {
+        const root = document.getElementById('root');
+        return root && root.children.length > 0;
+      },
       { timeout: 5000 }
     );
   }
 
   /**
-   * Wait for page to be fully loaded including Alpine.js
+   * Wait for page to be fully loaded including React
    */
   async waitForPageReady() {
     await this.page.waitForLoadState('domcontentloaded');
-    await this.waitForAlpineInit();
+    await this.waitForReactInit();
+    // Additional wait for any async data loading
+    await this.page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {
+      // Ignore timeout - some pages may have ongoing network activity
+    });
   }
 
   /**

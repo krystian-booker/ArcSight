@@ -2,17 +2,35 @@ import { FullConfig } from '@playwright/test';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { waitForServer } from './utils/wait-for-server';
+import { execSync } from 'child_process';
 
 let flaskProcess: ChildProcess | null = null;
+let viteProcess: ChildProcess | null = null;
 
 /**
  * Global setup runs once before all tests
- * Starts Flask server with test configuration
+ * Builds React app and starts Flask server with test configuration
  */
 async function globalSetup(config: FullConfig) {
+  const projectRoot = path.resolve(__dirname, '../..');
+  const frontendDir = path.join(projectRoot, 'frontend');
+
+  console.log('Building React app for E2E tests...');
+  try {
+    // Build React app for production
+    execSync('npm run build', {
+      cwd: frontendDir,
+      stdio: 'inherit',
+      shell: true,
+    });
+    console.log('React app built successfully');
+  } catch (error) {
+    console.error('Failed to build React app:', error);
+    throw error;
+  }
+
   console.log('Starting Flask server for E2E tests...');
 
-  const projectRoot = path.resolve(__dirname, '../..');
   const flaskApp = path.join(projectRoot, 'run.py');
 
   // Environment variables for test configuration
@@ -27,6 +45,8 @@ async function globalSetup(config: FullConfig) {
     METRICS_ENABLED: 'false',
     // Enable test mock endpoints
     E2E_TESTING: 'true',
+    // Don't auto-start Vite since we're using the production build
+    VITE_AUTO_START: 'false',
   };
 
   // Start Flask process
@@ -71,6 +91,7 @@ async function globalSetup(config: FullConfig) {
 
   // Store process reference for teardown
   (global as any).__FLASK_PROCESS__ = flaskProcess;
+  (global as any).__VITE_PROCESS__ = viteProcess;
 }
 
 export default globalSetup;

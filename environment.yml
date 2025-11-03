@@ -20,6 +20,7 @@ dependencies:
       - flask-sqlalchemy
       - flask-socketio
       - python-socketio
+      - requests
 
       # Camera/Vision libraries
       - harvesters
