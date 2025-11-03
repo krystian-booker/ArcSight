@@ -136,6 +136,12 @@ def create_app(config_overrides=None):
     app.register_blueprint(pipelines_blueprint)
     app.register_blueprint(monitoring_blueprint)
 
+    # Register test mock blueprint if E2E testing is enabled
+    if os.getenv("E2E_TESTING", "false").lower() == "true":
+        from .blueprints.test_mock import test_mock as test_mock_blueprint
+
+        app.register_blueprint(test_mock_blueprint)
+
     with app.app_context():
         db.create_all()
 
