@@ -130,7 +130,7 @@ export function registerCalibrationComponents(Alpine) {
                     body: JSON.stringify({ camera_id: Number(this.setup.cameraId) }),
                 });
                 if (response?.success) {
-                    this.capture.count = response.capture_count ?? this.capture.count + 1;
+                    this.capture.count = response.data?.capture_count ?? this.capture.count + 1;
                     this.showStatus(`Frame captured. Total: ${this.capture.count}`);
                 } else {
                     this.showStatus(response?.message || 'Pattern not found in frame.', true);
@@ -154,7 +154,7 @@ export function registerCalibrationComponents(Alpine) {
                 if (!response?.success) {
                     throw new Error(response?.error || 'Calculation failed.');
                 }
-                this.results.data = response;
+                this.results.data = response.data;
                 this.step = 'results';
                 this.capture.feedSrc = '';
                 this.showStatus('Calculation complete. Review the results below.');

@@ -4,31 +4,32 @@ import cv2
 import numpy as np
 
 from .base_driver import BaseDriver
+from .exceptions import DriverConnectionError, DriverConfigurationError
 from app.usb_device_info import find_camera_index_by_identifier
 from app.utils.camera_config import CameraConfig, get_config_value
-from app.enums import ExposureMode, GainMode
+from app.enums import CameraType, ExposureMode, GainMode
 
 logger = logging.getLogger(__name__)
 
 
 class USBDriver(BaseDriver):
-    def __init__(self, camera_db_data: Union[Dict[str, Any], CameraConfig, Any]):
-        super().__init__(camera_db_data)
+    def __init__(self, camera_config: CameraConfig):
+        super().__init__(camera_config)
         self.cap: Optional[cv2.VideoCapture] = None
         self.resolved_index: Optional[int] = None  # Stores the actual OpenCV index after resolution
 
         # Extract exposure and gain settings
-        self.exposure_mode = get_config_value(camera_db_data, "exposure_mode", "auto")
-        self.exposure_value = get_config_value(camera_db_data, "exposure_value", 500)
-        self.gain_mode = get_config_value(camera_db_data, "gain_mode", "auto")
-        self.gain_value = get_config_value(camera_db_data, "gain_value", 50)
+        self.exposure_mode = get_config_value(camera_config, "exposure_mode", "auto")
+        self.exposure_value = get_config_value(camera_config, "exposure_value", 500)
+        self.gain_mode = get_config_value(camera_config, "gain_mode", "auto")
+        self.gain_value = get_config_value(camera_config, "gain_value", 50)
 
     def connect(self) -> None:
         """Establishes connection to the USB camera."""
         # Resolve stable identifier to current index
         device_index = find_camera_index_by_identifier(self.identifier)
         if device_index is None:
-            raise ConnectionError(
+            raise DriverConnectionError(
                 f"USB camera with identifier '{self.identifier}' not found. "
                 f"Please check that the camera is connected."
             )
@@ -40,7 +41,7 @@ class USBDriver(BaseDriver):
         if not self.cap.isOpened():
             self.cap = None
             self.resolved_index = None
-            raise ConnectionError(
+            raise DriverConnectionError(
                 f"Failed to open USB camera at index {device_index} (identifier: {self.identifier})"
             )
 
@@ -101,6 +102,7 @@ class USBDriver(BaseDriver):
             # Note: OpenCV doesn't have explicit auto-gain control for USB cameras
         except Exception as e:
             logger.warning(f"Failed to apply camera settings for {self.identifier}: {e}")
+            # Don't raise - settings application is non-critical
 
     @staticmethod
     def list_devices() -> List[Dict[str, Any]]:
@@ -144,7 +146,7 @@ class USBDriver(BaseDriver):
                 {
                     "identifier": cam_info["identifier"],
                     "name": full_name,
-                    "camera_type": "USB",
+                    "camera_type": CameraType.USB.value,
                     # Include metadata for UI display (optional)
                     "vendor_id": cam_info.get("vendor_id", ""),
                     "product_id": cam_info.get("product_id", ""),

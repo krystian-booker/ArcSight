@@ -4,6 +4,8 @@ from .drivers.usb_driver import USBDriver
 from .drivers.genicam_driver import GenICamDriver
 from .drivers.oakd_driver import OAKDDriver
 from .drivers.realsense_driver import RealSenseDriver
+from .enums import CameraType
+from .utils.camera_config import CameraConfig
 
 logger = logging.getLogger(__name__)
 
@@ -14,23 +16,28 @@ def get_driver(camera_data):
     Factory function to get the correct driver instance.
 
     Args:
-        camera_data: Either a Camera ORM object or a dict with keys 'camera_type' and 'identifier'
-    """
-    # Support both ORM objects and dicts for backwards compatibility
-    if isinstance(camera_data, dict):
-        camera_type = camera_data["camera_type"]
-    else:
-        # ORM object
-        camera_type = camera_data.camera_type
+        camera_data: CameraConfig object, dict, or Camera ORM object.
+                    Non-CameraConfig inputs will be automatically converted.
 
-    if camera_type == "USB":
-        return USBDriver(camera_data)
-    elif camera_type == "GenICam":
-        return GenICamDriver(camera_data)
-    elif camera_type == "OAK-D":
-        return OAKDDriver(camera_data)
-    elif camera_type == "RealSense":
-        return RealSenseDriver(camera_data)
+    Returns:
+        An instance of the appropriate camera driver.
+    """
+    # Convert to CameraConfig if not already
+    if not isinstance(camera_data, CameraConfig):
+        camera_config = CameraConfig.from_camera_data(camera_data)
+    else:
+        camera_config = camera_data
+
+    camera_type = camera_config.camera_type
+
+    if camera_type == CameraType.USB.value:
+        return USBDriver(camera_config)
+    elif camera_type == CameraType.GENICAM.value:
+        return GenICamDriver(camera_config)
+    elif camera_type == CameraType.OAKD.value:
+        return OAKDDriver(camera_config)
+    elif camera_type == CameraType.REALSENSE.value:
+        return RealSenseDriver(camera_config)
     else:
         raise ValueError(f"Unknown camera type: {camera_type}")
 
@@ -65,8 +72,8 @@ def discover_cameras(existing_identifiers):
         f"{len(oakd_cams)} new OAK-D, {len(realsense_cams)} new RealSense cameras"
     )
     return {
-        "usb": usb_cams,
-        "genicam": genicam_cams,
-        "oakd": oakd_cams,
-        "realsense": realsense_cams,
+        CameraType.USB.value: usb_cams,
+        CameraType.GENICAM.value: genicam_cams,
+        CameraType.OAKD.value: oakd_cams,
+        CameraType.REALSENSE.value: realsense_cams,
     }

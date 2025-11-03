@@ -19,6 +19,7 @@ export function registerCamerasComponents(Alpine) {
         camerasError: '',
         status: {},
         nodePanels: {},
+        realsensePanels: {},
         statusInterval: null,
         addModal: {
             open: false,
@@ -52,12 +53,21 @@ export function registerCamerasComponents(Alpine) {
         },
 
         onCamerasUpdated() {
+            // Preserve existing panel states before reset
+            const oldNodePanels = this.nodePanels;
+            const oldRealsensePanels = this.realsensePanels;
+
             this.status = {};
             this.nodePanels = {};
+            this.realsensePanels = {};
             this.cameras.forEach((camera) => {
                 this.status[camera.id] = { loading: true, connected: null };
-                if (camera.camera_type === 'GenICam') {
-                    this.nodePanels[camera.id] = this.createNodePanelState();
+                // Only preserve panels that were already open, don't create new ones
+                if (camera.camera_type === 'GenICam' && oldNodePanels[camera.id]) {
+                    this.nodePanels[camera.id] = oldNodePanels[camera.id];
+                }
+                if (camera.camera_type === 'RealSense' && oldRealsensePanels[camera.id]) {
+                    this.realsensePanels[camera.id] = oldRealsensePanels[camera.id];
                 }
             });
             if (document.visibilityState !== 'hidden') {
@@ -73,7 +83,7 @@ export function registerCamerasComponents(Alpine) {
             this.camerasError = '';
             try {
                 const response = await fetchJson('/api/cameras');
-                const cameras = response.data || response || [];
+                const cameras = response.data;
                 this.cameras = normaliseCameras(cameras);
                 this.onCamerasUpdated();
             } catch (error) {
@@ -121,10 +131,10 @@ export function registerCamerasComponents(Alpine) {
             await Promise.all(
                 this.cameras.map(async (camera) => {
                     try {
-                        const data = await fetchJson(`/cameras/status/${camera.id}`);
+                        const response = await fetchJson(`/cameras/status/${camera.id}`);
                         this.status[camera.id] = {
                             loading: false,
-                            connected: Boolean(data?.connected),
+                            connected: Boolean(response?.data?.connected),
                         };
                     } catch (error) {
                         this.status[camera.id] = {
@@ -160,8 +170,8 @@ export function registerCamerasComponents(Alpine) {
             panel.loading = true;
             panel.error = '';
             try {
-                const payload = await fetchJson(`/cameras/genicam/nodes/${cameraId}`);
-                panel.nodes = (payload?.nodes || []).map((node) => ({
+                const response = await fetchJson(`/cameras/genicam/nodes/${cameraId}`);
+                panel.nodes = (response?.data?.nodes || []).map((node) => ({
                     ...node,
                     workingValue: node.value,
                     saving: false,
@@ -202,14 +212,14 @@ export function registerCamerasComponents(Alpine) {
             node.feedback = '';
             node.feedbackType = 'success';
             try {
-                const payload = await fetchJson(`/cameras/genicam/nodes/${cameraId}`, {
+                const response = await fetchJson(`/cameras/genicam/nodes/${cameraId}`, {
                     method: 'POST',
                     body: JSON.stringify({
                         name: node.name,
                         value: node.workingValue,
                     }),
                 });
-                const updated = payload?.node;
+                const updated = response?.data?.node;
                 if (updated) {
                     Object.assign(node, {
                         ...node,
@@ -217,7 +227,7 @@ export function registerCamerasComponents(Alpine) {
                         workingValue: updated.value,
                     });
                 }
-                node.feedback = payload?.message || 'Node updated';
+                node.feedback = response?.message || 'Node updated';
                 node.feedbackType = 'success';
             } catch (error) {
                 node.feedback = error.message || 'Failed to update node';
@@ -228,6 +238,121 @@ export function registerCamerasComponents(Alpine) {
                     window.setTimeout(() => {
                         node.feedback = '';
                     }, 3000);
+                }
+            }
+        },
+
+        createRealSensePanelState() {
+            return {
+                open: false,
+                loading: false,
+                error: '',
+                saving: false,
+                feedback: '',
+                feedbackType: 'success',
+                resolutions: [],
+                selectedResolution: '',
+                fps: 30,
+                depthEnabled: false,
+            };
+        },
+
+        ensureRealSensePanel(cameraId) {
+            if (!this.realsensePanels[cameraId]) {
+                this.realsensePanels[cameraId] = this.createRealSensePanelState();
+            }
+            return this.realsensePanels[cameraId];
+        },
+
+        toggleRealSensePanel(cameraId) {
+            const panel = this.ensureRealSensePanel(cameraId);
+            panel.open = !panel.open;
+            if (panel.open && !panel.resolutions.length) {
+                this.loadRealSenseConfig(cameraId);
+            }
+        },
+
+        async loadRealSenseConfig(cameraId, { force = false } = {}) {
+            const panel = this.ensureRealSensePanel(cameraId);
+            if (panel.loading) return;
+            if (!force && panel.resolutions.length) return;
+
+            panel.loading = true;
+            panel.error = '';
+            try {
+                const response = await fetchJson(`/cameras/realsense/resolutions/${cameraId}`);
+                const resolutions = response?.data?.resolutions || [];
+                const current = response?.data?.current || {};
+
+                // Group resolutions by unique width x height
+                const uniqueResolutions = [];
+                const seen = new Set();
+                resolutions.forEach((res) => {
+                    const key = `${res.width}x${res.height}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        uniqueResolutions.push(res);
+                    }
+                });
+
+                panel.resolutions = uniqueResolutions;
+
+                // Set current values
+                if (current.resolution) {
+                    panel.selectedResolution = `${current.resolution.width}x${current.resolution.height}`;
+                } else if (uniqueResolutions.length > 0) {
+                    // Default to first (highest) resolution
+                    panel.selectedResolution = `${uniqueResolutions[0].width}x${uniqueResolutions[0].height}`;
+                }
+
+                panel.fps = current.fps || 30;
+                panel.depthEnabled = current.depth_enabled || false;
+            } catch (error) {
+                panel.error = error.message || 'Failed to load RealSense configuration';
+                panel.resolutions = [];
+            } finally {
+                panel.loading = false;
+            }
+        },
+
+        async submitRealSenseConfig(cameraId) {
+            const panel = this.ensureRealSensePanel(cameraId);
+            if (panel.saving) return;
+
+            panel.saving = true;
+            panel.feedback = '';
+            panel.feedbackType = 'success';
+
+            try {
+                // Parse selected resolution
+                const [width, height] = panel.selectedResolution.split('x').map(Number);
+
+                const payload = await fetchJson(`/cameras/realsense/config/${cameraId}`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        width,
+                        height,
+                        fps: panel.fps,
+                        depth_enabled: panel.depthEnabled,
+                    }),
+                });
+
+                panel.feedback = payload?.message || 'Configuration updated successfully';
+                panel.feedbackType = 'success';
+
+                // Reload cameras to get updated status
+                setTimeout(() => {
+                    this.reloadCameras();
+                }, 1000);
+            } catch (error) {
+                panel.feedback = error.message || 'Failed to update configuration';
+                panel.feedbackType = 'error';
+            } finally {
+                panel.saving = false;
+                if (panel.feedback) {
+                    window.setTimeout(() => {
+                        panel.feedback = '';
+                    }, 5000);
                 }
             }
         },
@@ -258,11 +383,12 @@ export function registerCamerasComponents(Alpine) {
                     .filter(Boolean)
                     .join(',');
                 const payload = await fetchJson(`/cameras/discover?existing=${encodeURIComponent(existing)}`);
+                const data = payload?.data || payload;
                 this.addModal.options = {
-                    usb: payload?.usb || [],
-                    genicam: payload?.genicam || [],
-                    oakd: payload?.oakd || [],
-                    realsense: payload?.realsense || [],
+                    usb: data?.USB || [],
+                    genicam: data?.GenICam || [],
+                    oakd: data?.['OAK-D'] || [],
+                    realsense: data?.RealSense || [],
                 };
                 this.onAddCameraTypeChange(this.addModal.camera_type);
             } catch (error) {

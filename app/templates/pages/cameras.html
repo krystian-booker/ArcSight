@@ -56,7 +56,7 @@
                         </tr>
                     </template>
                     <template x-for="camera in cameras" :key="camera.id">
-                        <tr x-init="camera.camera_type === 'GenICam' && ensureNodePanel(camera.id)">
+                        <tr x-init="if (camera.camera_type === 'GenICam') ensureNodePanel(camera.id); if (camera.camera_type === 'RealSense') ensureRealSensePanel(camera.id)">
                             <td>
                                 <div class="stack stack-xs">
                                     <span x-text="camera.name"></span>
@@ -102,6 +102,11 @@
                                         @click="toggleNodePanel(camera.id)">
                                         <span x-show="!(nodePanels[camera.id]?.open)">Nodes</span>
                                         <span x-show="nodePanels[camera.id]?.open">Hide</span>
+                                    </button>
+                                    <button type="button" class="button-text" x-show="camera.camera_type === 'RealSense'"
+                                        @click="toggleRealSensePanel(camera.id)">
+                                        <span x-show="!(realsensePanels[camera.id]?.open)">Settings</span>
+                                        <span x-show="realsensePanels[camera.id]?.open">Hide</span>
                                     </button>
                                     <button type="button" class="button-text" @click="openEditModal(camera)">
                                         Rename
@@ -228,6 +233,70 @@
                                             </tbody>
                                         </table>
                                     </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr x-show="realsensePanels[camera.id]?.open" x-cloak>
+                            <td colspan="5">
+                                <div class="surface stack stack-lg" x-data="{ panel: realsensePanels[camera.id] }">
+                                    <div class="cluster cluster-wrap justify-between align-start">
+                                        <div class="stack stack-xs">
+                                            <h4>RealSense Configuration</h4>
+                                            <p class="muted text-small">Configure resolution, framerate, and depth stream settings.</p>
+                                        </div>
+                                        <button type="button" class="button-icon" title="Refresh settings"
+                                            @click="loadRealSenseConfig(camera.id, { force: true })"
+                                            :disabled="panel.loading">
+                                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                <path
+                                                    d="M4 5a6 6 0 0 1 10.39-4H11v2h6V1h-2.12A8 8 0 1 0 4 15.9l1.4-1.45A6 6 0 0 1 4 5Zm12 5a6 6 0 0 1-10.39 4H9v-2H3v6h2.12A8 8 0 1 0 16 4.1l-1.4 1.45A6 6 0 0 1 16 10Z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="callout text-small" x-show="panel.loading">Loading configuration…</div>
+                                    <div class="callout callout-danger text-small" x-show="panel.error"
+                                        x-text="panel.error"></div>
+                                    <form class="stack stack-md" @submit.prevent="submitRealSenseConfig(camera.id)"
+                                        x-show="!panel.loading && !panel.error">
+                                        <div class="form-field">
+                                            <label class="form-label">Resolution</label>
+                                            <select class="form-control" x-model="panel.selectedResolution"
+                                                :disabled="panel.saving">
+                                                <template x-for="res in panel.resolutions" :key="`${res.width}x${res.height}`">
+                                                    <option :value="`${res.width}x${res.height}`"
+                                                        x-text="`${res.width}x${res.height}`"></option>
+                                                </template>
+                                            </select>
+                                            <p class="form-hint">Select the camera resolution. Higher resolutions may require USB 3.0.</p>
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="form-label" for="realsense-fps">Framerate (FPS)</label>
+                                            <input type="number" id="realsense-fps" class="form-control"
+                                                x-model.number="panel.fps" min="1" max="120"
+                                                :disabled="panel.saving">
+                                            <p class="form-hint">Frames per second. Common values: 15, 30, 60.</p>
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="cluster text-small">
+                                                <input type="checkbox" class="form-checkbox"
+                                                    x-model="panel.depthEnabled" :disabled="panel.saving">
+                                                <span>Enable Depth Stream</span>
+                                            </label>
+                                            <p class="form-hint">Enable to capture depth data alongside color images.</p>
+                                        </div>
+                                        <div class="cluster cluster-wrap">
+                                            <button type="submit" class="button button--primary"
+                                                :disabled="panel.saving">
+                                                <span x-show="!panel.saving">Save Configuration</span>
+                                                <span x-show="panel.saving">Saving…</span>
+                                            </button>
+                                            <span class="badge" x-show="panel.feedback"
+                                                :class="{
+                                                    'badge--ok': panel.feedbackType === 'success',
+                                                    'badge--error': panel.feedbackType !== 'success'
+                                                }" x-text="panel.feedback"></span>
+                                        </div>
+                                    </form>
                                 </div>
                             </td>
                         </tr>

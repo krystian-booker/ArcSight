@@ -5,6 +5,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from .base_driver import BaseDriver
+from .exceptions import (
+    DriverConnectionError,
+    DriverFrameAcquisitionError,
+    DriverNotAvailableError,
+)
+from app.enums import CameraType
 from app.utils.camera_config import get_config_value
 from app.utils.config import DriverConfig
 
@@ -25,8 +31,8 @@ class RealSenseDriver(BaseDriver):
     """
 
     # Default configuration constants
-    _DEFAULT_WIDTH = 1920
-    _DEFAULT_HEIGHT = 1080
+    _DEFAULT_WIDTH = 640
+    _DEFAULT_HEIGHT = 480
     _DEFAULT_FPS = 30
 
     def __init__(self, camera_data: Union[Dict[str, Any], Any]):
@@ -74,7 +80,7 @@ class RealSenseDriver(BaseDriver):
     def connect(self) -> None:
         """Establishes connection to the RealSense camera."""
         if rs is None:
-            raise ConnectionError(
+            raise DriverNotAvailableError(
                 "pyrealsense2 library is not installed. "
                 "Install with: pip install pyrealsense2"
             )
@@ -137,7 +143,7 @@ class RealSenseDriver(BaseDriver):
             self.disconnect()
             error_msg = str(e)
             if "Couldn't resolve requests" in error_msg:
-                raise ConnectionError(
+                raise DriverConnectionError(
                     f"RealSense camera {self.identifier}: Unsupported resolution/framerate combination. "
                     f"Requested {self.width}x{self.height} @ {self.fps} FPS. "
                     f"This may be caused by: (1) USB 2.0 connection (USB 3.0 required for high resolutions), "
@@ -145,10 +151,10 @@ class RealSenseDriver(BaseDriver):
                     f"Try a lower resolution like 1280x720 or 640x480. Original error: {e}"
                 )
             else:
-                raise ConnectionError(f"Failed to connect to RealSense camera {self.identifier}: {e}")
+                raise DriverConnectionError(f"Failed to connect to RealSense camera {self.identifier}: {e}")
         except Exception as e:
             self.disconnect()
-            raise ConnectionError(
+            raise DriverConnectionError(
                 f"Failed to connect to RealSense camera {self.identifier}: {e}"
             )
 
@@ -293,7 +299,7 @@ class RealSenseDriver(BaseDriver):
                 devices.append({
                     "identifier": serial,
                     "name": display_name,
-                    "camera_type": "RealSense",
+                    "camera_type": CameraType.REALSENSE.value,
                 })
 
         except Exception as e:
@@ -301,3 +307,145 @@ class RealSenseDriver(BaseDriver):
             return []
 
         return devices
+
+    @staticmethod
+    def get_supported_resolutions(serial_number: str) -> List[Dict[str, Any]]:
+        """Query supported resolutions and framerates for a specific RealSense camera.
+
+        Args:
+            serial_number: Camera serial number (identifier)
+
+        Returns:
+            List of dicts with keys 'width', 'height', 'fps', 'format'
+            Sorted by resolution (highest first) and FPS.
+            Returns safe defaults if query fails.
+        """
+        if rs is None:
+            logger.warning("pyrealsense2 not available, returning default resolutions")
+            return RealSenseDriver._get_default_resolutions()
+
+        try:
+            ctx = rs.context()
+            devices = ctx.query_devices()
+
+            # Find device by serial number
+            target_device = None
+            for device in devices:
+                if device.get_info(rs.camera_info.serial_number) == serial_number:
+                    target_device = device
+                    break
+
+            if not target_device:
+                logger.warning(f"RealSense camera {serial_number} not found, returning defaults")
+                return RealSenseDriver._get_default_resolutions()
+
+            # Get color sensor
+            color_sensor = None
+            for sensor in target_device.query_sensors():
+                if sensor.is_color_sensor():
+                    color_sensor = sensor
+                    break
+
+            if not color_sensor:
+                logger.warning(f"No color sensor found for {serial_number}, returning defaults")
+                return RealSenseDriver._get_default_resolutions()
+
+            # Query all stream profiles
+            stream_profiles = color_sensor.get_stream_profiles()
+
+            # Extract unique resolution/FPS combinations for BGR8 format
+            resolutions = []
+            seen = set()
+
+            for profile in stream_profiles:
+                # Filter for video streams only
+                if profile.stream_type() != rs.stream.color:
+                    continue
+
+                # Cast to video stream profile to access resolution
+                video_profile = profile.as_video_stream_profile()
+
+                # We want BGR8 format (native for color stream)
+                if profile.format() != rs.format.bgr8:
+                    continue
+
+                width = video_profile.width()
+                height = video_profile.height()
+                fps = video_profile.fps()
+
+                # Create unique key
+                key = (width, height, fps)
+                if key not in seen:
+                    seen.add(key)
+                    resolutions.append({
+                        "width": width,
+                        "height": height,
+                        "fps": fps,
+                        "format": "bgr8"
+                    })
+
+            # Sort by resolution (area) descending, then by FPS descending
+            resolutions.sort(key=lambda x: (x["width"] * x["height"], x["fps"]), reverse=True)
+
+            if not resolutions:
+                logger.warning(f"No BGR8 color profiles found for {serial_number}, returning defaults")
+                return RealSenseDriver._get_default_resolutions()
+
+            logger.info(f"Found {len(resolutions)} supported resolutions for RealSense {serial_number}")
+            return resolutions
+
+        except Exception as e:
+            logger.error(f"Error querying resolutions for RealSense {serial_number}: {e}")
+            return RealSenseDriver._get_default_resolutions()
+
+    @staticmethod
+    def _get_default_resolutions() -> List[Dict[str, Any]]:
+        """Returns a safe list of common resolutions supported by most RealSense cameras.
+
+        These are fallback values when actual resolution query fails.
+        """
+        return [
+            {"width": 1920, "height": 1080, "fps": 30, "format": "bgr8"},
+            {"width": 1920, "height": 1080, "fps": 15, "format": "bgr8"},
+            {"width": 1280, "height": 720, "fps": 30, "format": "bgr8"},
+            {"width": 1280, "height": 720, "fps": 15, "format": "bgr8"},
+            {"width": 640, "height": 480, "fps": 60, "format": "bgr8"},
+            {"width": 640, "height": 480, "fps": 30, "format": "bgr8"},
+            {"width": 640, "height": 480, "fps": 15, "format": "bgr8"},
+        ]
+
+    @staticmethod
+    def detect_best_resolution(serial_number: str) -> Dict[str, Any]:
+        """Automatically detect and return the best supported resolution for a camera.
+
+        Args:
+            serial_number: Camera serial number (identifier)
+
+        Returns:
+            Dict with 'width', 'height', 'fps' for the highest supported resolution.
+            Falls back to 640x480@30 if detection fails.
+        """
+        try:
+            resolutions = RealSenseDriver.get_supported_resolutions(serial_number)
+            if resolutions:
+                # Return the first one (highest resolution/FPS due to sorting)
+                best = resolutions[0]
+                logger.info(
+                    f"Detected best resolution for {serial_number}: "
+                    f"{best['width']}x{best['height']}@{best['fps']}fps"
+                )
+                return {
+                    "width": best["width"],
+                    "height": best["height"],
+                    "fps": best["fps"]
+                }
+        except Exception as e:
+            logger.error(f"Error detecting best resolution for {serial_number}: {e}")
+
+        # Safe fallback
+        logger.info(f"Using safe fallback resolution for {serial_number}: 640x480@30fps")
+        return {
+            "width": RealSenseDriver._DEFAULT_WIDTH,
+            "height": RealSenseDriver._DEFAULT_HEIGHT,
+            "fps": RealSenseDriver._DEFAULT_FPS
+        }

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Union
+from typing import Union
 import numpy as np
 
 from app.utils.camera_config import CameraConfig
@@ -8,26 +8,26 @@ from app.utils.camera_config import CameraConfig
 class BaseDriver(ABC):
     """
     Abstract base class for all camera drivers. Defines the common interface.
+
+    Drivers may raise the following exceptions from app.drivers.exceptions:
+    - DriverConnectionError: When connect() fails
+    - DriverDisconnectionError: When disconnect() fails
+    - DriverFrameAcquisitionError: When get_frame() fails
+    - DriverConfigurationError: When configuration is invalid
+    - DriverNotAvailableError: When driver dependencies are not installed
+    - DriverDiscoveryError: When list_devices() fails
+    - DriverNodeError: When GenICam node operations fail (GenICam only)
     """
 
-    def __init__(self, camera_data: Union[Dict[str, Any], CameraConfig, Any]):
+    def __init__(self, camera_config: CameraConfig):
         """
         Initialize the driver.
 
         Args:
-            camera_data: Either a CameraConfig dataclass, a dict, or a Camera ORM object
+            camera_config: CameraConfig dataclass containing camera configuration
         """
-        # Support CameraConfig, dicts, and ORM objects for backwards compatibility
-        if isinstance(camera_data, CameraConfig):
-            self.identifier = camera_data.identifier
-            self.camera_db_data = camera_data
-        elif isinstance(camera_data, dict):
-            self.identifier = camera_data.get("identifier", "")
-            self.camera_db_data = camera_data
-        else:
-            # ORM object
-            self.identifier = getattr(camera_data, "identifier", "")
-            self.camera_db_data = camera_data
+        self.identifier = camera_config.identifier
+        self.camera_config = camera_config
 
     @abstractmethod
     def connect(self) -> None:  # pragma: no cover

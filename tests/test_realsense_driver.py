@@ -474,3 +474,165 @@ def test_apply_exposure_gain_exception(mock_rs, realsense_driver):
 
     # Act - should not raise exception
     realsense_driver._apply_exposure_gain()
+
+
+# --- Test Resolution Query Methods ---
+def test_get_supported_resolutions_success():
+    """Test getting supported resolutions from a RealSense camera."""
+    with patch("app.drivers.realsense_driver.rs") as mock_rs:
+        # Setup mock objects
+        mock_ctx = MagicMock()
+        mock_device = MagicMock()
+        mock_sensor = MagicMock()
+        mock_profile_1 = MagicMock()
+        mock_profile_2 = MagicMock()
+        mock_profile_3 = MagicMock()
+        mock_video_1 = MagicMock()
+        mock_video_2 = MagicMock()
+        mock_video_3 = MagicMock()
+
+        # Configure mocks
+        mock_rs.context.return_value = mock_ctx
+        mock_ctx.query_devices.return_value = [mock_device]
+        mock_device.get_info.return_value = "123456"
+        mock_device.query_sensors.return_value = [mock_sensor]
+        mock_sensor.is_color_sensor.return_value = True
+        mock_sensor.get_stream_profiles.return_value = [mock_profile_1, mock_profile_2, mock_profile_3]
+
+        # Configure profiles
+        mock_rs.stream.color = "color_stream"
+        mock_rs.format.bgr8 = "bgr8_format"
+
+        mock_profile_1.stream_type.return_value = "color_stream"
+        mock_profile_1.format.return_value = "bgr8_format"
+        mock_profile_1.as_video_stream_profile.return_value = mock_video_1
+        mock_video_1.width.return_value = 1920
+        mock_video_1.height.return_value = 1080
+        mock_video_1.fps.return_value = 30
+
+        mock_profile_2.stream_type.return_value = "color_stream"
+        mock_profile_2.format.return_value = "bgr8_format"
+        mock_profile_2.as_video_stream_profile.return_value = mock_video_2
+        mock_video_2.width.return_value = 1280
+        mock_video_2.height.return_value = 720
+        mock_video_2.fps.return_value = 30
+
+        mock_profile_3.stream_type.return_value = "color_stream"
+        mock_profile_3.format.return_value = "bgr8_format"
+        mock_profile_3.as_video_stream_profile.return_value = mock_video_3
+        mock_video_3.width.return_value = 640
+        mock_video_3.height.return_value = 480
+        mock_video_3.fps.return_value = 60
+
+        # Act
+        resolutions = RealSenseDriver.get_supported_resolutions("123456")
+
+        # Assert
+        assert len(resolutions) == 3
+        assert resolutions[0]["width"] == 1920
+        assert resolutions[0]["height"] == 1080
+        assert resolutions[1]["width"] == 1280
+        assert resolutions[1]["height"] == 720
+        assert resolutions[2]["width"] == 640
+        assert resolutions[2]["height"] == 480
+
+
+def test_get_supported_resolutions_camera_not_found():
+    """Test getting resolutions when camera is not found."""
+    with patch("app.drivers.realsense_driver.rs") as mock_rs:
+        mock_ctx = MagicMock()
+        mock_device = MagicMock()
+
+        mock_rs.context.return_value = mock_ctx
+        mock_ctx.query_devices.return_value = [mock_device]
+        mock_device.get_info.return_value = "different_serial"
+
+        # Act
+        resolutions = RealSenseDriver.get_supported_resolutions("123456")
+
+        # Assert - should return defaults
+        assert len(resolutions) > 0
+        assert any(r["width"] == 640 and r["height"] == 480 for r in resolutions)
+
+
+def test_get_supported_resolutions_no_pyrealsense2():
+    """Test getting resolutions when pyrealsense2 is not installed."""
+    with patch("app.drivers.realsense_driver.rs", None):
+        # Act
+        resolutions = RealSenseDriver.get_supported_resolutions("123456")
+
+        # Assert - should return defaults
+        assert len(resolutions) > 0
+        assert any(r["width"] == 640 and r["height"] == 480 for r in resolutions)
+
+
+def test_get_supported_resolutions_exception():
+    """Test getting resolutions when an exception occurs."""
+    with patch("app.drivers.realsense_driver.rs") as mock_rs:
+        mock_rs.context.side_effect = Exception("Connection error")
+
+        # Act
+        resolutions = RealSenseDriver.get_supported_resolutions("123456")
+
+        # Assert - should return defaults
+        assert len(resolutions) > 0
+        assert any(r["width"] == 640 and r["height"] == 480 for r in resolutions)
+
+
+def test_get_default_resolutions():
+    """Test that default resolutions are returned in correct format."""
+    # Act
+    defaults = RealSenseDriver._get_default_resolutions()
+
+    # Assert
+    assert len(defaults) > 0
+    assert all("width" in r and "height" in r and "fps" in r for r in defaults)
+    assert any(r["width"] == 640 and r["height"] == 480 for r in defaults)
+    assert any(r["width"] == 1280 and r["height"] == 720 for r in defaults)
+    assert any(r["width"] == 1920 and r["height"] == 1080 for r in defaults)
+
+
+def test_detect_best_resolution_success():
+    """Test detecting best resolution for a camera."""
+    with patch.object(RealSenseDriver, "get_supported_resolutions") as mock_get_res:
+        mock_get_res.return_value = [
+            {"width": 1920, "height": 1080, "fps": 30, "format": "bgr8"},
+            {"width": 1280, "height": 720, "fps": 30, "format": "bgr8"},
+            {"width": 640, "height": 480, "fps": 60, "format": "bgr8"},
+        ]
+
+        # Act
+        best = RealSenseDriver.detect_best_resolution("123456")
+
+        # Assert - should return highest resolution
+        assert best["width"] == 1920
+        assert best["height"] == 1080
+        assert best["fps"] == 30
+
+
+def test_detect_best_resolution_fallback():
+    """Test detecting best resolution falls back to safe default."""
+    with patch.object(RealSenseDriver, "get_supported_resolutions") as mock_get_res:
+        mock_get_res.side_effect = Exception("Error")
+
+        # Act
+        best = RealSenseDriver.detect_best_resolution("123456")
+
+        # Assert - should return safe fallback
+        assert best["width"] == 640
+        assert best["height"] == 480
+        assert best["fps"] == 30
+
+
+def test_detect_best_resolution_empty_list():
+    """Test detecting best resolution with empty resolution list."""
+    with patch.object(RealSenseDriver, "get_supported_resolutions") as mock_get_res:
+        mock_get_res.return_value = []
+
+        # Act
+        best = RealSenseDriver.detect_best_resolution("123456")
+
+        # Assert - should return safe fallback
+        assert best["width"] == 640
+        assert best["height"] == 480
+        assert best["fps"] == 30

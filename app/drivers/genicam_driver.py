@@ -7,6 +7,15 @@ import cv2
 import numpy as np
 
 from .base_driver import BaseDriver
+from .exceptions import (
+    DriverConnectionError,
+    DriverDisconnectionError,
+    DriverFrameAcquisitionError,
+    DriverNotAvailableError,
+    DriverDiscoveryError,
+    DriverNodeError,
+)
+from app.enums import CameraType
 from app.utils.config import DriverConfig
 
 logger = logging.getLogger(__name__)
@@ -78,14 +87,14 @@ class GenICamDriver(BaseDriver):
     Driver for GenICam compliant cameras using the Harvesters library.
     """
 
-    def __init__(self, camera_db_data):
-        super().__init__(camera_db_data)
+    def __init__(self, camera_config):
+        super().__init__(camera_config)
         self.ia = None  # Image Acquirer instance
 
     def connect(self) -> None:
         h = _get_harvester()
         if not h:
-            raise ConnectionError(
+            raise DriverNotAvailableError(
                 "Harvesters library is not installed or failed to import."
             )
 
@@ -100,7 +109,7 @@ class GenICamDriver(BaseDriver):
                 if self.ia:
                     self.ia.destroy()
                     self.ia = None
-                raise ConnectionError(
+                raise DriverConnectionError(
                     f"Failed to create ImageAcquirer for GenICam camera {self.identifier}: {e}"
                 )
 
@@ -207,11 +216,12 @@ class GenICamDriver(BaseDriver):
                             {
                                 "identifier": device_info.serial_number,
                                 "name": f"{device_info.model} ({device_info.serial_number})",
-                                "camera_type": "GenICam",
+                                "camera_type": CameraType.GENICAM.value,
                             }
                         )
             except Exception as e:
                 logger.error(f"Error listing GenICam cameras: {e}")
+                # Don't raise - return empty list on discovery failure
         return devices
 
     @staticmethod

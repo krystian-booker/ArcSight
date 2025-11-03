@@ -16,6 +16,7 @@ from app.extensions import db
 from app import network_utils
 from app.models import Setting, Camera, Pipeline
 from app.drivers.genicam_driver import GenICamDriver
+from app.services import SettingsService
 from app.utils.responses import success_response, error_response
 from app.apriltag_fields import (
     MAX_FIELD_FILE_SIZE,
@@ -42,19 +43,10 @@ def get_db_path():
 @settings.route("/")
 def settings_page():
     """Renders the application settings page."""
-
-    def _get_setting_value(key, default=""):
-        setting = db.session.get(Setting, key)
-        if setting:
-            return setting.value or default
-        return default
-
-    all_settings = {
-        "genicam_cti_path": _get_setting_value("genicam_cti_path", ""),
-        "team_number": _get_setting_value("team_number", ""),
-        "ip_mode": _get_setting_value("ip_mode", "dhcp"),
-        "hostname": _get_setting_value("hostname", ""),
-    }
+    all_settings = SettingsService.get_multiple_settings(
+        keys=["genicam_cti_path", "team_number", "ip_mode", "hostname"],
+        defaults={"ip_mode": "dhcp"}
+    )
     current_network_settings = network_utils.get_network_settings()
     current_hostname = network_utils.get_hostname()
     default_fields = get_default_fields()
@@ -71,23 +63,14 @@ def settings_page():
     )
 
 
-def _update_setting(key, value):
-    """Helper to update a setting in the database."""
-    setting = db.session.get(Setting, key)
-    if setting:
-        setting.value = value
-    else:
-        setting = Setting(key=key, value=value)
-        db.session.add(setting)
-
-
 @settings.route("/global/update", methods=["POST"])
 def update_global_settings():
     """Updates global application settings."""
-    _update_setting("team_number", request.form.get("team_number", ""))
-    _update_setting("ip_mode", request.form.get("ip_mode", "dhcp"))
-    _update_setting("hostname", request.form.get("hostname", ""))
-    db.session.commit()
+    SettingsService.set_multiple_settings({
+        "team_number": request.form.get("team_number", ""),
+        "ip_mode": request.form.get("ip_mode", "dhcp"),
+        "hostname": request.form.get("hostname", ""),
+    })
     return redirect(url_for("settings.settings_page"))
 
 
@@ -98,14 +81,11 @@ def update_genicam_settings():
     new_path = None
 
     if path and path.lower().endswith(".cti") and os.path.exists(path):
-        _update_setting("genicam_cti_path", path)
+        SettingsService.set_genicam_cti_path(path)
         new_path = path
     else:
-        setting = db.session.get(Setting, "genicam_cti_path")
-        if setting:
-            db.session.delete(setting)
+        SettingsService.delete_setting("genicam_cti_path")
 
-    db.session.commit()
     GenICamDriver.initialize(new_path)
     return redirect(url_for("settings.settings_page"))
 
@@ -113,10 +93,7 @@ def update_genicam_settings():
 @settings.route("/genicam/clear", methods=["POST"])
 def clear_genicam_settings():
     """Clears the GenICam CTI path."""
-    setting = db.session.get(Setting, "genicam_cti_path")
-    if setting:
-        db.session.delete(setting)
-        db.session.commit()
+    SettingsService.delete_setting("genicam_cti_path")
     GenICamDriver.initialize(None)
     return redirect(url_for("settings.settings_page"))
 
@@ -194,15 +171,11 @@ def select_apriltag_field():
     if field_name and not _is_valid_field_name(field_name):
         return error_response("Unknown field layout", 400)
 
-    setting = db.session.get(Setting, "apriltag_field")
     if field_name:
-        if setting:
-            setting.value = field_name
-        else:
-            db.session.add(Setting(key="apriltag_field", value=field_name))
-    elif setting:
-        db.session.delete(setting)
-    db.session.commit()
+        SettingsService.set_apriltag_field(field_name)
+    else:
+        SettingsService.delete_setting("apriltag_field")
+
     return success_response({"selected": field_name or None})
 
 

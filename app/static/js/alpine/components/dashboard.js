@@ -202,8 +202,8 @@ export function registerDashboardComponents(Alpine) {
 
         async loadCameras() {
             try {
-                const cameras = await fetchJson('/api/cameras');
-                this.cameras = cameras || [];
+                const response = await fetchJson('/api/cameras');
+                this.cameras = response.data;
                 if (this.hasCamera) {
                     await this.refreshCameraData();
                 }
@@ -238,7 +238,8 @@ export function registerDashboardComponents(Alpine) {
             if (!this.hasCamera) return;
             this.isLoadingControls = true;
             try {
-                const data = await fetchJson(this.endpoints.cameraControls(this.selectedCameraId));
+                const response = await fetchJson(this.endpoints.cameraControls(this.selectedCameraId));
+                const data = response.data;
                 this.controls.orientation = data.orientation ?? 0;
                 this.controls.exposure_mode = data.exposure_mode || 'auto';
                 this.controls.exposure_value = data.exposure_value ?? 500;
@@ -285,7 +286,7 @@ export function registerDashboardComponents(Alpine) {
             this.isLoadingPipelines = true;
             try {
                 const response = await fetchJson(this.endpoints.pipelinesForCamera(this.selectedCameraId));
-                const data = response.data || response || [];
+                const data = response.data;
                 const existingSelection = this.selectedPipelineId;
                 this.pipelines = data.map((pipeline) => ({
                     ...pipeline,
@@ -422,9 +423,9 @@ export function registerDashboardComponents(Alpine) {
                         name,
                         pipeline_type: type,
                     });
-                    if (response?.pipeline) {
+                    if (response?.data?.pipeline) {
                         await this.refreshPipelines();
-                        this.selectedPipelineId = toStringId(response.pipeline.id);
+                        this.selectedPipelineId = toStringId(response.data.pipeline.id);
                         await this.onPipelineChanged();
                         this.toast('success', 'Pipeline created');
                     } else {
@@ -673,7 +674,7 @@ export function registerDashboardComponents(Alpine) {
                     method: 'DELETE',
                     body: JSON.stringify({ type }),
                 });
-                pipeline.configData = response?.config || pipeline.configData;
+                pipeline.configData = response?.data?.config || pipeline.configData;
                 this.loadFormsFromConfig(pipeline.configData);
                 if (type === 'labels') {
                     await this.loadLabels(true);
@@ -687,8 +688,8 @@ export function registerDashboardComponents(Alpine) {
         async ensureMlAvailability() {
             if (this.mlAvailability) return;
             try {
-                const availability = await fetchJson(this.endpoints.mlAvailability);
-                this.mlAvailability = availability || {};
+                const response = await fetchJson(this.endpoints.mlAvailability);
+                this.mlAvailability = response.data;
             } catch (error) {
                 console.warn('Failed to fetch ML availability:', error);
                 this.mlAvailability = {};
@@ -701,8 +702,8 @@ export function registerDashboardComponents(Alpine) {
             if (!force && this.labelOptions.length) return;
 
             try {
-                const payload = await fetchJson(this.endpoints.pipelineLabels(pipeline.id));
-                this.labelOptions = payload?.labels || [];
+                const response = await fetchJson(this.endpoints.pipelineLabels(pipeline.id));
+                this.labelOptions = response.data?.labels || [];
                 // Ensure selected classes are still valid
                 if (this.pipelineForms.ml.target_classes?.length) {
                     this.pipelineForms.ml.target_classes = this.pipelineForms.ml.target_classes.filter((item) =>

@@ -9,6 +9,8 @@ import os
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
 
+from .enums import PipelineType
+
 # Enumerations for ML pipeline configuration
 ML_MODEL_TYPES = ["yolo", "tflite"]
 ONNX_EXECUTION_PROVIDERS = [
@@ -293,9 +295,9 @@ COLOURED_SHAPE_SCHEMA = {
 
 # Map pipeline types to their schemas
 PIPELINE_SCHEMAS = {
-    "AprilTag": APRILTAG_SCHEMA,
-    "Object Detection (ML)": ML_DETECTION_SCHEMA,
-    "Coloured Shape": COLOURED_SHAPE_SCHEMA,
+    PipelineType.APRILTAG.value: APRILTAG_SCHEMA,
+    PipelineType.OBJECT_DETECTION_ML.value: ML_DETECTION_SCHEMA,
+    PipelineType.COLOURED_SHAPE.value: COLOURED_SHAPE_SCHEMA,
 }
 
 
@@ -492,7 +494,7 @@ def validate_pipeline_config(
                     f"Unknown property '{key}' not allowed for {pipeline_type} pipeline"
                 )
 
-        if pipeline_type == "Object Detection (ML)":
+        if pipeline_type == PipelineType.OBJECT_DETECTION_ML.value:
             _validate_ml_pipeline_relationships(config)
 
         # All validations passed

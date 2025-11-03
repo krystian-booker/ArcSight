@@ -4,6 +4,7 @@ from unittest.mock import ANY, MagicMock, patch, call
 from app import camera_manager, thread_state
 from app.thread_config import build_camera_thread_config
 from app.models import Camera, Pipeline
+from app.utils.camera_config import PipelineManagerConfig
 
 
 @pytest.fixture
@@ -169,13 +170,16 @@ def test_add_pipeline_to_camera(camera_config, mock_pipeline, mock_threads):
         "stopping": False,
     }
 
-    camera_manager.add_pipeline_to_camera(
-        identifier=camera_config.identifier,
+    pipeline_config = PipelineManagerConfig(
         pipeline_id=mock_pipeline.id,
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=camera_config.camera_matrix_json,
         dist_coeffs_json=camera_config.dist_coeffs_json,
+    )
+    camera_manager.add_pipeline_to_camera(
+        identifier=camera_config.identifier,
+        config=pipeline_config,
     )
 
     mock_threads["processing"].assert_called_once()
@@ -223,13 +227,16 @@ def test_update_pipeline_in_camera(camera_config, mock_pipeline, mock_threads):
         "stopping": False,
     }
 
-    camera_manager.update_pipeline_in_camera(
-        identifier=camera_config.identifier,
+    pipeline_config = PipelineManagerConfig(
         pipeline_id=pipeline_to_update_id,
         pipeline_type=mock_pipeline.pipeline_type,
         pipeline_config_json=mock_pipeline.config,
         camera_matrix_json=camera_config.camera_matrix_json,
         dist_coeffs_json=camera_config.dist_coeffs_json,
+    )
+    camera_manager.update_pipeline_in_camera(
+        identifier=camera_config.identifier,
+        config=pipeline_config,
     )
 
     mock_old_proc_thread.stop.assert_called_once()

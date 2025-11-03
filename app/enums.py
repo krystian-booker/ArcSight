@@ -37,10 +37,10 @@ class PipelineType(str, Enum):
 class CameraType(str, Enum):
     """Camera driver types supported by the application."""
 
-    USB = "usb"
-    GENICAM = "genicam"
-    OAKD = "oakd"
-    REALSENSE = "realsense"
+    USB = "USB"
+    GENICAM = "GenICam"
+    OAKD = "OAK-D"
+    REALSENSE = "RealSense"
 
     @classmethod
     def from_string(cls, value: str) -> "CameraType":
@@ -135,13 +135,3 @@ class AprilTagFamily(str, Enum):
         return self.value
 
 
-class ObjectFormat(str, Enum):
-    """Model file formats for object detection."""
-
-    ONNX = "onnx"
-    RKNN = "rknn"
-    BLOB = "blob"
-
-    def __str__(self) -> str:
-        """Return the string value of the enum."""
-        return self.value

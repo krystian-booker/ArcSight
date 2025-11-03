@@ -100,14 +100,14 @@ export function registerSettingsComponents(Alpine) {
                     }),
                 });
                 const data = await response.json().catch(() => ({}));
-                if (!response.ok || !data.ok) {
+                if (!response.ok || !data.success) {
                     throw new Error(data.error || 'Failed to save selection');
                 }
-                this.apriltag.selectedField = data.selected || '';
+                this.apriltag.selectedField = data.data?.selected || '';
                 this.toast(
                     'success',
-                    data.selected
-                        ? `Selected AprilTag field ${data.selected}`
+                    data.data?.selected
+                        ? `Selected AprilTag field ${data.data.selected}`
                         : 'Cleared AprilTag field selection',
                 );
             } catch (error) {
@@ -137,10 +137,10 @@ export function registerSettingsComponents(Alpine) {
                     body: formData,
                 });
                 const data = await response.json().catch(() => ({}));
-                if (!response.ok || !data.ok) {
+                if (!response.ok || !data.success) {
                     throw new Error(data.error || 'Failed to upload field layout');
                 }
-                const name = data.name;
+                const name = data.data?.name;
                 if (name) {
                     const names = this.apriltag.userFields.includes(name)
                         ? this.apriltag.userFields
@@ -170,11 +170,11 @@ export function registerSettingsComponents(Alpine) {
                     body: JSON.stringify({ field_name: name }),
                 });
                 const data = await response.json().catch(() => ({}));
-                if (!response.ok || !data.ok) {
+                if (!response.ok || !data.success) {
                     throw new Error(data.error || 'Failed to delete field layout');
                 }
                 this.apriltag.userFields = this.apriltag.userFields.filter((entry) => entry !== name);
-                if (data.selected === null && this.apriltag.selectedField === name) {
+                if (data.data?.selected === null && this.apriltag.selectedField === name) {
                     this.apriltag.selectedField = '';
                 }
                 this.toast('success', `Deleted ${name}`);

@@ -183,7 +183,7 @@ class CameraService:
         Returns:
             True if camera thread is running
         """
-        return camera_manager.is_camera_running(identifier)
+        return camera_manager.is_camera_thread_running(identifier)
 
     @staticmethod
     def get_camera_status(identifier: str) -> Dict[str, Any]:
@@ -196,7 +196,7 @@ class CameraService:
         Returns:
             Dictionary with status information
         """
-        is_running = camera_manager.is_camera_running(identifier)
+        is_running = camera_manager.is_camera_thread_running(identifier)
 
         status = {
             "is_running": is_running,
@@ -208,3 +208,16 @@ class CameraService:
             pass
 
         return status
+
+    @staticmethod
+    def get_pipeline_results(identifier: str) -> Optional[Dict]:
+        """
+        Get the latest pipeline results for a camera.
+
+        Args:
+            identifier: Camera identifier
+
+        Returns:
+            Dictionary of pipeline results or None if not available
+        """
+        return camera_manager.get_camera_pipeline_results(identifier)

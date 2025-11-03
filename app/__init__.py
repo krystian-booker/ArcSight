@@ -138,6 +138,7 @@ def create_app(config_overrides=None):
 
     with app.app_context():
         db.create_all()
+
         # Only initialize cameras and threads if not disabled
         if app.config.get("CAMERA_THREADS_ENABLED", True):
             genicam_setting = db.session.get(Setting, "genicam_cti_path")

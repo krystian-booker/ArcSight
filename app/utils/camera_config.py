@@ -53,7 +53,7 @@ class CameraConfig:
 
         return cls(
             identifier=get_value("identifier", ""),
-            camera_type=get_value("type", "usb"),
+            camera_type=get_value("camera_type", get_value("type", "USB")),
             name=get_value("name"),
             orientation=get_value("orientation", 0) or 0,
             exposure_mode=get_value("exposure_mode", "auto") or "auto",
@@ -166,3 +166,19 @@ def get_config_value(
 
     # Handle None values by returning default
     return value if value is not None else default
+
+
+@dataclass
+class PipelineManagerConfig:
+    """
+    Configuration for pipeline operations in camera manager.
+
+    Encapsulates all the data needed to add/update a pipeline in the
+    camera manager, avoiding long parameter lists.
+    """
+
+    pipeline_id: int
+    pipeline_type: str
+    pipeline_config_json: str
+    camera_matrix_json: Optional[str] = None
+    dist_coeffs_json: Optional[str] = None

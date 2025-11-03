@@ -1,16 +1,15 @@
 import logging
+import os
+
 from flask import request
 from werkzeug.utils import secure_filename
-from app.extensions import db
-from app import camera_manager
-from app.models import Camera, Pipeline
-from app.pipeline_validators import validate_pipeline_config, get_default_config
+
 from app.hw.accel import get_ml_availability
+from app.models import Camera
+from app.services import PipelineService, CameraService
 from app.services.model_service import ModelService
 from app.utils.responses import success_response, error_response
 from app.utils.config import DATA_DIR
-import json
-import os
 from . import pipelines
 
 logger = logging.getLogger(__name__)
@@ -23,10 +22,6 @@ def list_cameras():
     return success_response([camera.to_dict() for camera in cameras])
 
 
-# Removed: _remove_file - now use ModelService.remove_file()
-# Removed: _apply_model_upload - now use ModelService.apply_model_upload()
-
-
 @pipelines.route("/pipelines/ml/availability", methods=["GET"])
 def ml_pipeline_availability():
     """Exposes detected ML runtime capabilities for the frontend."""
@@ -34,51 +29,13 @@ def ml_pipeline_availability():
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>/labels", methods=["GET"])
-def get_pipeline_labels(pipeline_id: int):
+def get_pipeline_labels_route(pipeline_id: int):
     """Returns the label list for a pipeline, if available."""
-    pipeline = db.session.get(Pipeline, pipeline_id)
-    if not pipeline:
-        return error_response("Pipeline not found", 404)
-
-    config = json.loads(pipeline.config or "{}")
-    labels_path = config.get("labels_path")
-    if not labels_path and config.get("labels_filename"):
-        labels_path = os.path.join(DATA_DIR, config["labels_filename"])
-
-    # Use ModelService to get labels
-    labels = ModelService.get_labels_from_file(labels_path) if labels_path else []
-
-    # Check if validation result uses dataclass pattern
-    validation_result = validate_pipeline_config(pipeline.pipeline_type, config)
-    error_msg = None
-    error_details = None
-
-    if hasattr(validation_result, 'is_valid'):
-        # New ValidationResult dataclass pattern
-        if not validation_result.is_valid:
-            error_msg = "Invalid configuration"
-            error_details = validation_result.error_message
-    else:
-        # Legacy tuple pattern
-        is_valid, error_message = validation_result
-        if not is_valid:
-            error_msg = "Invalid configuration"
-            error_details = error_message
-
-    # Additional check for ML pipelines
-    if (
-        pipeline.pipeline_type == "Object Detection (ML)"
-        and labels
-        and not config.get("model_path")
-    ):
-        error_msg = "Invalid configuration"
-        error_details = (
-            "Model path missing for ML pipeline; upload a model and ensure calibration "
-            "values such as tag_size_m are set before deploying."
-        )
+    labels, error_msg, error_details = PipelineService.get_pipeline_labels(pipeline_id)
 
     if error_msg:
-        return error_response(error_msg, 400, details=error_details)
+        status_code = 404 if error_msg == "Pipeline not found" else 400
+        return error_response(error_msg, status_code, details=error_details)
 
     return success_response({"labels": labels})
 
@@ -86,18 +43,13 @@ def get_pipeline_labels(pipeline_id: int):
 @pipelines.route("/cameras/<int:camera_id>/pipelines", methods=["GET"])
 def get_pipelines_for_camera(camera_id):
     """Returns all pipelines for a given camera."""
-    camera = db.session.get(Camera, camera_id)
-    if not camera:
-        return error_response("Camera not found", 404)
-    return success_response([p.to_dict() for p in camera.pipelines])
+    pipelines_list = PipelineService.get_pipelines_for_camera(camera_id)
+    return success_response([p.to_dict() for p in pipelines_list])
 
 
 @pipelines.route("/cameras/<int:camera_id>/pipelines", methods=["POST"])
 def add_pipeline(camera_id):
     """Adds a new pipeline to a camera."""
-    camera = db.session.get(Camera, camera_id)
-    if not camera:
-        return error_response("Camera not found", 404)
     data = request.get_json()
     name = data.get("name")
     pipeline_type = data.get("pipeline_type")
@@ -105,36 +57,26 @@ def add_pipeline(camera_id):
     if not name or not pipeline_type:
         return error_response("Name and pipeline_type are required", 400)
 
-    # Use default config for the pipeline type
-    default_config = get_default_config(pipeline_type)
-
-    new_pipeline = Pipeline(
-        name=name,
-        pipeline_type=pipeline_type,
-        config=json.dumps(default_config),
+    # Create pipeline using service
+    new_pipeline, error = PipelineService.create_pipeline(
         camera_id=camera_id,
+        name=name,
+        pipeline_type=pipeline_type
     )
-    db.session.add(new_pipeline)
-    db.session.commit()
 
-    # Pass primitive data to avoid DB I/O in hot path
-    camera_manager.add_pipeline_to_camera(
-        identifier=camera.identifier,
-        pipeline_id=new_pipeline.id,
-        pipeline_type=new_pipeline.pipeline_type,
-        pipeline_config_json=new_pipeline.config,
-        camera_matrix_json=camera.camera_matrix_json,
-        dist_coeffs_json=camera.dist_coeffs_json,
-    )
+    if error:
+        status_code = 404 if error == "Camera not found" else 400
+        return error_response(error, status_code)
+
+    # Add pipeline to camera manager
+    PipelineService.add_pipeline_to_camera_manager(new_pipeline)
+
     return success_response({"pipeline": new_pipeline.to_dict()}, code=201)
 
 
 @pipelines.route("/pipelines/<int:pipeline_id>", methods=["PUT"])
 def update_pipeline(pipeline_id):
     """Updates a pipeline's settings."""
-    pipeline = db.session.get(Pipeline, pipeline_id)
-    if not pipeline:
-        return error_response("Pipeline not found", 404)
     data = request.get_json()
     name = data.get("name")
     pipeline_type = data.get("pipeline_type")
@@ -142,21 +84,21 @@ def update_pipeline(pipeline_id):
     if not name or not pipeline_type:
         return error_response("Name and pipeline_type are required", 400)
 
-    pipeline.name = name
-    pipeline.pipeline_type = pipeline_type
-    db.session.commit()
+    # Update pipeline using service
+    success, error = PipelineService.update_pipeline_metadata(
+        pipeline_id=pipeline_id,
+        name=name,
+        pipeline_type=pipeline_type
+    )
 
-    # Fetch camera data once for primitive parameter passing
-    camera = db.session.get(Camera, pipeline.camera_id)
-    if camera:
-        camera_manager.update_pipeline_in_camera(
-            identifier=camera.identifier,
-            pipeline_id=pipeline_id,
-            pipeline_type=pipeline.pipeline_type,
-            pipeline_config_json=pipeline.config,
-            camera_matrix_json=camera.camera_matrix_json,
-            dist_coeffs_json=camera.dist_coeffs_json,
-        )
+    if not success:
+        status_code = 404 if error == "Pipeline not found" else 400
+        return error_response(error, status_code)
+
+    # Sync to camera manager
+    pipeline = PipelineService.get_pipeline_by_id(pipeline_id)
+    if pipeline:
+        PipelineService.sync_pipeline_to_camera_manager(pipeline)
 
     return success_response()
 
@@ -164,32 +106,21 @@ def update_pipeline(pipeline_id):
 @pipelines.route("/pipelines/<int:pipeline_id>/config", methods=["PUT"])
 def update_pipeline_config(pipeline_id):
     """Updates a pipeline's configuration."""
-    pipeline = db.session.get(Pipeline, pipeline_id)
-    if not pipeline:
-        return error_response("Pipeline not found", 404)
     config = request.get_json()
     if config is None:
         return error_response("Invalid config format", 400)
 
-    # Validate configuration against schema
-    is_valid, error_message = validate_pipeline_config(pipeline.pipeline_type, config)
-    if not is_valid:
-        return error_response("Invalid configuration", 400, details=error_message)
+    # Update config using service
+    success, error = PipelineService.update_pipeline_config(pipeline_id, config)
 
-    pipeline.config = json.dumps(config)
-    db.session.commit()
+    if not success:
+        status_code = 404 if error == "Pipeline not found" else 400
+        return error_response(error or "Invalid configuration", status_code)
 
-    # Fetch camera data once for primitive parameter passing
-    camera = db.session.get(Camera, pipeline.camera_id)
-    if camera:
-        camera_manager.update_pipeline_in_camera(
-            identifier=camera.identifier,
-            pipeline_id=pipeline_id,
-            pipeline_type=pipeline.pipeline_type,
-            pipeline_config_json=pipeline.config,
-            camera_matrix_json=camera.camera_matrix_json,
-            dist_coeffs_json=camera.dist_coeffs_json,
-        )
+    # Sync to camera manager
+    pipeline = PipelineService.get_pipeline_by_id(pipeline_id)
+    if pipeline:
+        PipelineService.sync_pipeline_to_camera_manager(pipeline)
 
     return success_response()
 
@@ -213,7 +144,7 @@ def upload_pipeline_file(pipeline_id):
     if file_type not in ["model", "labels"]:
         return error_response('Invalid file type. Must be "model" or "labels"', 400)
 
-    pipeline = db.session.get(Pipeline, pipeline_id)
+    pipeline = PipelineService.get_pipeline_by_id(pipeline_id)
     if not pipeline:
         return error_response("Pipeline not found", 404)
 
@@ -231,7 +162,7 @@ def upload_pipeline_file(pipeline_id):
 
         file.save(save_path)
 
-        config = json.loads(pipeline.config or "{}")
+        config = PipelineService.get_pipeline_config_dict(pipeline)
         if file_type == "labels":
             config["labels_path"] = save_path
             config["labels_filename"] = safe_filename
@@ -251,32 +182,27 @@ def upload_pipeline_file(pipeline_id):
                 )
 
         # Validate the updated config
-        is_valid, error_message = validate_pipeline_config(
+        validation_result = PipelineService.validate_config(
             pipeline.pipeline_type, config
         )
-        if not is_valid:
+        if not validation_result.is_valid:
             # Clean up uploaded file if validation fails
             if os.path.exists(save_path):
                 os.remove(save_path)
             return error_response(
                 "Configuration validation failed after file upload",
                 400,
-                details=error_message
+                details=validation_result.error_message
             )
 
-        pipeline.config = json.dumps(config)
-        db.session.commit()
+        # Update config in database
+        success, error = PipelineService.update_pipeline_config(pipeline_id, config)
+        if not success:
+            return error_response(error or "Failed to update config", 500)
 
-        # Fetch camera data once for primitive parameter passing
-        camera = db.session.get(Camera, pipeline.camera_id)
-        if camera:
-            camera_manager.update_pipeline_in_camera(
-                identifier=camera.identifier,
-                pipeline_id=pipeline_id,
-                pipeline_type=pipeline.pipeline_type,
-                pipeline_config_json=pipeline.config,
-                camera_matrix_json=camera.camera_matrix_json,
-            )
+        # Sync to camera manager
+        PipelineService.sync_pipeline_to_camera_manager(pipeline)
+
         return success_response(
             {
                 "filepath": save_path,
@@ -291,16 +217,17 @@ def upload_pipeline_file(pipeline_id):
 @pipelines.route("/pipelines/<int:pipeline_id>/files", methods=["DELETE"])
 def delete_pipeline_file(pipeline_id):
     """Deletes a file associated with a specific pipeline."""
-    pipeline = db.session.get(Pipeline, pipeline_id)
+    pipeline = PipelineService.get_pipeline_by_id(pipeline_id)
     if not pipeline:
         return error_response("Pipeline not found", 404)
+
     data = request.get_json()
     file_type = data.get("type")
 
     if not file_type:
         return error_response("File type is required", 400)
 
-    config = json.loads(pipeline.config or "{}")
+    config = PipelineService.get_pipeline_config_dict(pipeline)
     filepath_key = f"{file_type}_path"
     file_path = config.get(filepath_key)
 
@@ -321,29 +248,24 @@ def delete_pipeline_file(pipeline_id):
             config.pop("tflite_delegate", None)
             config["onnx_provider"] = "CPUExecutionProvider"
 
-        is_valid, error_message = validate_pipeline_config(
+        validation_result = PipelineService.validate_config(
             pipeline.pipeline_type, config
         )
-        if not is_valid:
+        if not validation_result.is_valid:
             return error_response(
                 "Invalid configuration after file deletion",
                 400,
-                details=error_message
+                details=validation_result.error_message
             )
 
-        pipeline.config = json.dumps(config)
-        db.session.commit()
+        # Update config in database
+        success, error = PipelineService.update_pipeline_config(pipeline_id, config)
+        if not success:
+            return error_response(error or "Failed to update config", 500)
 
-        # Fetch camera data once for primitive parameter passing
-        camera = db.session.get(Camera, pipeline.camera_id)
-        if camera:
-            camera_manager.update_pipeline_in_camera(
-                identifier=camera.identifier,
-                pipeline_id=pipeline_id,
-                pipeline_type=pipeline.pipeline_type,
-                pipeline_config_json=pipeline.config,
-                camera_matrix_json=camera.camera_matrix_json,
-            )
+        # Sync to camera manager
+        PipelineService.sync_pipeline_to_camera_manager(pipeline)
+
         return success_response({"config": config})
 
     return error_response("File not found in config", 404)
@@ -352,18 +274,21 @@ def delete_pipeline_file(pipeline_id):
 @pipelines.route("/pipelines/<int:pipeline_id>", methods=["DELETE"])
 def delete_pipeline(pipeline_id):
     """Deletes a pipeline."""
-    pipeline = db.session.get(Pipeline, pipeline_id)
+    # Get pipeline to retrieve camera info before deletion
+    pipeline = PipelineService.get_pipeline_by_id(pipeline_id)
     if not pipeline:
         return error_response("Pipeline not found", 404)
 
-    # Fetch camera identifier for primitive parameter passing
-    camera = db.session.get(Camera, pipeline.camera_id)
+    # Remove from camera manager first
+    camera = CameraService.get_camera_by_id(pipeline.camera_id)
     if camera:
-        camera_manager.remove_pipeline_from_camera(
-            identifier=camera.identifier, pipeline_id=pipeline_id
+        PipelineService.remove_pipeline_from_camera_manager(
+            camera.identifier, pipeline_id
         )
 
-    db.session.delete(pipeline)
-    db.session.commit()
+    # Delete from database
+    success, _, error = PipelineService.delete_pipeline(pipeline_id)
+    if not success:
+        return error_response(error or "Failed to delete pipeline", 500)
 
     return success_response()

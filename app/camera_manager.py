@@ -7,6 +7,7 @@ from app.camera_threads import CameraAcquisitionThread, VisionProcessingThread
 from app.thread_config import build_camera_thread_config, CameraThreadConfig
 from app import thread_state
 from app.utils.config import ThreadConfig
+from app.utils.camera_config import PipelineManagerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -107,23 +108,12 @@ def stop_camera_thread(identifier):
     logger.info(f"Successfully stopped and removed threads for camera {identifier}")
 
 
-def add_pipeline_to_camera(
-    identifier,
-    pipeline_id,
-    pipeline_type,
-    pipeline_config_json,
-    camera_matrix_json,
-    dist_coeffs_json,
-):
+def add_pipeline_to_camera(identifier: str, config: PipelineManagerConfig):
     """Starts a new processing thread for a running camera.
 
     Args:
         identifier: Camera identifier string
-        pipeline_id: Pipeline database ID
-        pipeline_type: Pipeline type string (e.g., 'AprilTag')
-        pipeline_config_json: Pipeline configuration as JSON string
-        camera_matrix_json: Camera calibration matrix as JSON string
-        dist_coeffs_json: Camera distortion coefficients as JSON string
+        config: PipelineManagerConfig containing pipeline configuration
 
     Note:
         This function accepts primitive values to avoid database I/O in the hot path.
@@ -132,28 +122,28 @@ def add_pipeline_to_camera(
     try:
         with thread_state.safe_thread_access(identifier) as thread_group:
             # Check if pipeline already exists
-            if pipeline_id in thread_group["processing_threads"]:
-                logger.warning(f"Pipeline {pipeline_id} already exists for camera {identifier}")
+            if config.pipeline_id in thread_group["processing_threads"]:
+                logger.warning(f"Pipeline {config.pipeline_id} already exists for camera {identifier}")
                 return
 
-            logger.info(f"Dynamically adding pipeline {pipeline_id} to camera {identifier}")
+            logger.info(f"Dynamically adding pipeline {config.pipeline_id} to camera {identifier}")
 
             # Create new processing thread
             frame_queue = queue.Queue(maxsize=ThreadConfig.PIPELINE_QUEUE_SIZE)
             proc_thread = VisionProcessingThread(
                 identifier=identifier,
-                pipeline_id=pipeline_id,
-                pipeline_type=pipeline_type,
-                pipeline_config_json=pipeline_config_json,
-                camera_matrix_json=camera_matrix_json,
-                dist_coeffs_json=dist_coeffs_json,
+                pipeline_id=config.pipeline_id,
+                pipeline_type=config.pipeline_type,
+                pipeline_config_json=config.pipeline_config_json,
+                camera_matrix_json=config.camera_matrix_json,
+                dist_coeffs_json=config.dist_coeffs_json,
                 frame_queue=frame_queue,
                 jpeg_quality=ThreadConfig.PIPELINE_JPEG_QUALITY,
             )
 
             # Add to acquisition thread and thread group
-            thread_group["acquisition"].add_pipeline_queue(pipeline_id, frame_queue)
-            thread_state.add_processing_thread(identifier, pipeline_id, proc_thread)
+            thread_group["acquisition"].add_pipeline_queue(config.pipeline_id, frame_queue)
+            thread_state.add_processing_thread(identifier, config.pipeline_id, proc_thread)
             proc_thread.start()
     except thread_state.ThreadNotAccessibleError as e:
         logger.warning(f"Cannot add pipeline to camera {identifier}: {e}")
@@ -200,23 +190,12 @@ def remove_pipeline_from_camera(identifier, pipeline_id):
         logger.warning(f"Cannot remove pipeline from camera {identifier}: {e}")
 
 
-def update_pipeline_in_camera(
-    identifier,
-    pipeline_id,
-    pipeline_type,
-    pipeline_config_json,
-    camera_matrix_json,
-    dist_coeffs_json,
-):
+def update_pipeline_in_camera(identifier: str, config: PipelineManagerConfig):
     """Stops and restarts a pipeline processing thread to apply new settings.
 
     Args:
         identifier: Camera identifier string
-        pipeline_id: Pipeline database ID
-        pipeline_type: Pipeline type string (e.g., 'AprilTag')
-        pipeline_config_json: Updated pipeline configuration as JSON string
-        camera_matrix_json: Camera calibration matrix as JSON string
-        dist_coeffs_json: Camera distortion coefficients as JSON string
+        config: PipelineManagerConfig containing updated pipeline configuration
 
     Note:
         This function accepts primitive values to avoid database I/O in the hot path.
@@ -226,38 +205,38 @@ def update_pipeline_in_camera(
         with thread_state.safe_thread_access(identifier) as thread_group:
             # 1. Stop and remove the old thread if it exists
             old_proc_thread = None
-            if pipeline_id in thread_group["processing_threads"]:
-                logger.info(f"Stopping old pipeline thread {pipeline_id} for update")
-                old_proc_thread = thread_group["processing_threads"][pipeline_id]
+            if config.pipeline_id in thread_group["processing_threads"]:
+                logger.info(f"Stopping old pipeline thread {config.pipeline_id} for update")
+                old_proc_thread = thread_group["processing_threads"][config.pipeline_id]
                 old_proc_thread.stop()
-                thread_group["acquisition"].remove_pipeline_queue(pipeline_id)
-                thread_state.remove_processing_thread(identifier, pipeline_id)
+                thread_group["acquisition"].remove_pipeline_queue(config.pipeline_id)
+                thread_state.remove_processing_thread(identifier, config.pipeline_id)
 
         # Wait for old thread to terminate (outside lock)
         if old_proc_thread:
             old_proc_thread.join(timeout=ThreadConfig.THREAD_STOP_TIMEOUT)
             if old_proc_thread.is_alive():
                 logger.warning(
-                    f"Old processing thread {pipeline_id} did not terminate within {ThreadConfig.THREAD_STOP_TIMEOUT} seconds"
+                    f"Old processing thread {config.pipeline_id} did not terminate within {ThreadConfig.THREAD_STOP_TIMEOUT} seconds"
                 )
 
         # 2. Start a new thread with the updated pipeline config
         with thread_state.safe_thread_access(identifier) as thread_group:
-            logger.info(f"Starting new pipeline thread {pipeline_id} with updated config")
+            logger.info(f"Starting new pipeline thread {config.pipeline_id} with updated config")
             frame_queue = queue.Queue(maxsize=ThreadConfig.PIPELINE_QUEUE_SIZE)
             new_proc_thread = VisionProcessingThread(
                 identifier=identifier,
-                pipeline_id=pipeline_id,
-                pipeline_type=pipeline_type,
-                pipeline_config_json=pipeline_config_json,
-                camera_matrix_json=camera_matrix_json,
-                dist_coeffs_json=dist_coeffs_json,
+                pipeline_id=config.pipeline_id,
+                pipeline_type=config.pipeline_type,
+                pipeline_config_json=config.pipeline_config_json,
+                camera_matrix_json=config.camera_matrix_json,
+                dist_coeffs_json=config.dist_coeffs_json,
                 frame_queue=frame_queue,
                 jpeg_quality=ThreadConfig.PIPELINE_JPEG_QUALITY,
             )
 
-            thread_group["acquisition"].add_pipeline_queue(pipeline_id, frame_queue)
-            thread_state.add_processing_thread(identifier, pipeline_id, new_proc_thread)
+            thread_group["acquisition"].add_pipeline_queue(config.pipeline_id, frame_queue)
+            thread_state.add_processing_thread(identifier, config.pipeline_id, new_proc_thread)
             new_proc_thread.start()
     except thread_state.ThreadNotAccessibleError as e:
         logger.warning(f"Cannot update pipeline for camera {identifier}: {e}")
