@@ -393,3 +393,6 @@ vite.config.ts.timestamp-*
 /playwright-report/
 /test-results/
 *.spec.ts-snapshots/
+
+# React Build Output
+app/static/react_build/

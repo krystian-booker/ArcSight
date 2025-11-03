@@ -105,6 +105,12 @@ def create_app(config_overrides=None):
         app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
     db.init_app(app)
+
+    # Initialize WebSocket support
+    from .blueprints.websocket import init_socketio
+    socketio = init_socketio(app)
+    app.socketio = socketio  # Store reference for access in other modules
+
     metrics_registry.configure(
         enabled=app.config.get("METRICS_ENABLED", True),
         window_seconds=app.config.get("METRICS_WINDOW_SECONDS", 300.0),
@@ -121,7 +127,7 @@ def create_app(config_overrides=None):
         atexit.register(metrics_registry.shutdown)
         atexit.register(system_metrics_collector.stop)
 
-    # Import and register the new blueprints
+    # Import and register API blueprints (must be before react_app)
     from .blueprints.dashboard import dashboard as dashboard_blueprint
     from .blueprints.cameras import cameras as cameras_blueprint
     from .blueprints.calibration import calibration as calibration_blueprint
@@ -141,6 +147,12 @@ def create_app(config_overrides=None):
         from .blueprints.test_mock import test_mock as test_mock_blueprint
 
         app.register_blueprint(test_mock_blueprint)
+
+    # Register React app blueprint LAST (catch-all for React Router)
+    # This allows API routes to take precedence
+    from .blueprints.react_app import bp as react_app_blueprint
+
+    app.register_blueprint(react_app_blueprint)
 
     with app.app_context():
         db.create_all()

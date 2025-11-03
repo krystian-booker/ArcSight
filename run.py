@@ -23,6 +23,7 @@ import socket
 from app import create_app
 
 app = create_app()
+socketio = app.socketio  # Get SocketIO instance from app
 
 if __name__ == "__main__":
     # Get configuration from app.config (set by config.py)
@@ -51,8 +52,10 @@ if __name__ == "__main__":
         print(f"Server: http://{host}:{port}")
 
     print(f"Mode: {'DEBUG' if debug else 'PRODUCTION'}")
+    print(f"WebSocket: Enabled")
     print("="*60 + "\n")
 
     # IMPORTANT: use_reloader=False to prevent issues with camera threads
     # The reloader would spawn duplicate threads and cause resource conflicts
-    app.run(host=host, port=port, debug=debug, use_reloader=False)
+    # Use socketio.run() instead of app.run() for WebSocket support
+    socketio.run(app, host=host, port=port, debug=debug, use_reloader=False, allow_unsafe_werkzeug=True)
