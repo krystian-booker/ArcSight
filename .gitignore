@@ -396,3 +396,4 @@ vite.config.ts.timestamp-*
 
 # React Build Output
 app/static/react_build/
+nul
