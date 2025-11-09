@@ -25,11 +25,13 @@ Examples:
 
 import socket
 import sys
+import logging
 from app import create_app
 from app.vite_manager import get_vite_manager
 
 app = create_app()
 socketio = app.socketio  # Get SocketIO instance from app
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     # Get configuration from app.config (set by config.py)
@@ -49,6 +51,7 @@ if __name__ == "__main__":
     try:
         local_ip = socket.gethostbyname(hostname)
         print(f"Local IP: http://{local_ip}:{port}")
+        logger.info(f"Local IP: http://{local_ip}:{port}")
     except:
         pass
 
@@ -56,16 +59,23 @@ if __name__ == "__main__":
         print(f"Listening on all interfaces: http://0.0.0.0:{port}")
         print(f"Localhost: http://127.0.0.1:{port}")
         print(f"Hostname: http://{hostname}:{port}")
+        logger.info(f"Server listening on all interfaces (0.0.0.0:{port})")
+        logger.info(f"Access via localhost: http://127.0.0.1:{port}")
+        logger.info(f"Access via hostname: http://{hostname}:{port}")
     else:
         print(f"Server: http://{host}:{port}")
+        logger.info(f"Server running at http://{host}:{port}")
 
     print(f"Mode: {'DEBUG' if debug else 'PRODUCTION'}")
     print(f"WebSocket: Enabled")
+    logger.info(f"Server mode: {'DEBUG' if debug else 'PRODUCTION'}")
+    logger.info("WebSocket support enabled")
 
     # Start Vite dev server in development mode
     vite_manager = None
     if debug and vite_auto_start:
         print(f"Frontend: Vite dev server (auto-start)")
+        logger.info("Frontend: Vite dev server (auto-start)")
         vite_manager = get_vite_manager(vite_url)
         if not vite_manager.start():
             print("\nERROR: Failed to start Vite dev server")
@@ -73,11 +83,14 @@ if __name__ == "__main__":
             print("  1. Fix the issue and restart Flask")
             print("  2. Start Vite manually: cd frontend && npm run dev")
             print("  3. Disable auto-start: VITE_AUTO_START=0 python run.py")
+            logger.error("Failed to start Vite dev server")
             sys.exit(1)
     elif debug:
         print(f"Frontend: Vite dev server (manual start at {vite_url})")
+        logger.info(f"Frontend: Vite dev server (manual start expected at {vite_url})")
     else:
         print(f"Frontend: Static build (app/static/react_build)")
+        logger.info("Frontend: Static build (app/static/react_build)")
 
     print("="*60 + "\n")
 
