@@ -60,10 +60,10 @@ def serve_react_app(path):
         return _proxy_to_vite(path)
 
     # Production mode - serve static build files
-    react_build_dir = os.path.join(
-        current_app.static_folder,
-        'react_build'
-    )
+    # Get the absolute path to frontend/dist directory
+    app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    project_root = os.path.dirname(app_root)
+    react_build_dir = os.path.join(project_root, 'frontend', 'dist')
 
     # Check if build directory exists
     if not os.path.exists(react_build_dir):
