@@ -1,4 +1,3 @@
-import logging
 import cv2
 import cv2.aruco as aruco
 import numpy as np
@@ -9,8 +8,6 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
-
-logger = logging.getLogger(__name__)
 
 
 class CalibrationManager:
@@ -55,7 +52,7 @@ class CalibrationManager:
                 session["img_points"] = []
 
             self._sessions[camera_id] = session
-            logger.info(f"Started {pattern_type} calibration session for camera {camera_id}")
+            print(f"Started {pattern_type} calibration session for camera {camera_id}")
 
     def get_session(self, camera_id):
         """Retrieves the active calibration session for a given camera."""
@@ -67,7 +64,7 @@ class CalibrationManager:
         with self._lock:
             if camera_id in self._sessions:
                 del self._sessions[camera_id]
-                logger.info(f"Ended calibration session for camera {camera_id}")
+                print(f"Ended calibration session for camera {camera_id}")
 
     def capture_points(self, camera_id, frame):
         """
@@ -263,7 +260,7 @@ def generate_charuco_board_pdf(buffer, p, page_size=A4):
         c.save()
 
     except Exception as e:
-        logger.error(f"Error in generate_charuco_board_pdf: {e}")
+        print(f"Error in generate_charuco_board_pdf: {e}")
         raise
 
 

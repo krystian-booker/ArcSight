@@ -53,8 +53,8 @@ def test_select_field_updates_setting(app, client, apriltag_field_dirs):
     )
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["success"] is True
-    assert payload["data"]["selected"] == "2024-crescendo.json"
+    assert payload["ok"] is True
+    assert payload["selected"] == "2024-crescendo.json"
 
     with app.app_context():
         setting = db.session.get(Setting, "apriltag_field")
@@ -68,7 +68,7 @@ def test_select_field_rejects_unknown(client, apriltag_field_dirs):
         json={"field_name": "nonexistent.json"},
     )
     assert response.status_code == 400
-    assert response.get_json()["success"] is False
+    assert response.get_json()["ok"] is False
 
 
 def test_upload_field_persists_file(client, apriltag_field_dirs):
@@ -100,7 +100,7 @@ def test_upload_field_persists_file(client, apriltag_field_dirs):
     )
     assert response.status_code == 200
     result = response.get_json()
-    assert result["success"] is True
+    assert result["ok"] is True
     saved = user_dir / "custom-field.json"
     assert saved.exists()
 
@@ -121,8 +121,8 @@ def test_delete_field_removes_user_layout(app, client, apriltag_field_dirs):
     )
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["success"] is True
-    assert payload["data"].get("selected") is None
+    assert payload["ok"] is True
+    assert payload.get("selected") is None
     assert not file_path.exists()
 
     with app.app_context():

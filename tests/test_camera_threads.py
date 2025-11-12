@@ -386,19 +386,15 @@ def test_frame_buffer_pool_initialize_default_initial_buffers():
 def mock_pipeline_instances():
     """Provides a dictionary of mocked pipeline implementation instances."""
     with (
-        patch("app.factories.PipelineFactory.create") as mock_factory,
+        patch("app.camera_threads.AprilTagPipeline") as mock_at,
+        patch("app.camera_threads.ColouredShapePipeline") as mock_cs,
+        patch("app.camera_threads.ObjectDetectionMLPipeline") as mock_ml,
     ):
         # Provide valid numpy arrays for rvec and tvec to prevent cv2.error
         rvec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         tvec = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-
-        # Create mock pipeline instances
-        mock_at = MagicMock()
-        mock_cs = MagicMock()
-        mock_ml = MagicMock()
-
         # AprilTag pipeline now returns {"single_tags": [...], "multi_tag": ...}
-        mock_at.process_frame.return_value = {
+        mock_at.return_value.process_frame.return_value = {
             "single_tags": [
                 {
                     "ui_data": "apriltag_data",
@@ -412,20 +408,8 @@ def mock_pipeline_instances():
             ],
             "multi_tag": None,
         }
-        mock_cs.process_frame.return_value = "coloured_shape_data"
-        mock_ml.process_frame.return_value = "ml_data"
-
-        # Factory returns the appropriate mock based on pipeline type
-        def factory_side_effect(pipeline_type, config):
-            if pipeline_type == "AprilTag":
-                return mock_at
-            elif pipeline_type == "Coloured Shape":
-                return mock_cs
-            elif pipeline_type == "Object Detection (ML)":
-                return mock_ml
-            return MagicMock()
-
-        mock_factory.side_effect = factory_side_effect
+        mock_cs.return_value.process_frame.return_value = "coloured_shape_data"
+        mock_ml.return_value.process_frame.return_value = "ml_data"
 
         yield {
             "AprilTag": mock_at,
@@ -445,6 +429,13 @@ def mock_camera(mock_app):
         camera.dist_coeffs_json = json.dumps(np.zeros(5).tolist())
         camera.orientation = 0
         camera.camera_type = "USB"  # Needed for get_driver to succeed
+        camera.resolution_json = None
+        camera.framerate = None
+        camera.depth_enabled = False
+        camera.exposure_mode = "auto"
+        camera.exposure_value = 500
+        camera.gain_mode = "auto"
+        camera.gain_value = 50
     return camera
 
 
@@ -926,7 +917,17 @@ def test_camera_acquisition_thread_run_connect_disconnect(
     thread.join(timeout=1)
 
     mock_get_driver.assert_called_once_with(
-        {"camera_type": mock_camera.camera_type, "identifier": mock_camera.identifier}
+        {
+            "camera_type": mock_camera.camera_type,
+            "identifier": mock_camera.identifier,
+            "resolution_json": None,
+            "framerate": None,
+            "depth_enabled": False,
+            "exposure_mode": "auto",
+            "exposure_value": 500,
+            "gain_mode": "auto",
+            "gain_value": 50,
+        }
     )
     mock_driver.connect.assert_called_once()
     mock_acq_loop.assert_called_once()
@@ -1197,9 +1198,12 @@ def test_acquisition_loop_handles_full_queue(mock_driver):
 
     # Add two full queues to test buffer release when ALL queues reject the frame
     full_q1 = queue.Queue(maxsize=1)
-    full_q1.put("dummy")
     full_q2 = queue.Queue(maxsize=1)
-    full_q2.put("dummy")
+    # Use RefCountedFrame objects instead of strings
+    mock_frame1 = MagicMock(spec=RefCountedFrame)
+    mock_frame2 = MagicMock(spec=RefCountedFrame)
+    full_q1.put(mock_frame1)
+    full_q2.put(mock_frame2)
     thread.add_pipeline_queue(1, full_q1)
     thread.add_pipeline_queue(2, full_q2)
 
@@ -1207,14 +1211,14 @@ def test_acquisition_loop_handles_full_queue(mock_driver):
     original_release = thread.buffer_pool.release_buffer
     release_count = [0]
 
-    def mock_release_buffer(buffer):
+    def mock_release_buffer(self, buffer):
         release_count[0] += 1
         original_release(buffer)
 
-    thread.buffer_pool.release_buffer = mock_release_buffer
-
-    # This should run without raising a queue.Full exception
-    thread._acquisition_loop()
+    # Use patch.object to properly replace the method
+    with patch.object(thread.buffer_pool, 'release_buffer', mock_release_buffer):
+        # This should run without raising a queue.Full exception
+        thread._acquisition_loop()
 
     # Verify that buffers were released back to the pool even when all queues were full
     # We expect at least one buffer release (from frames that couldn't be queued)
@@ -1238,7 +1242,9 @@ def test_acquisition_loop_reference_counting_correctness():
     # Add one normal queue and one full queue
     normal_q = queue.Queue(maxsize=10)
     full_q = queue.Queue(maxsize=1)
-    full_q.put("dummy")  # Fill it
+    # Use RefCountedFrame object instead of string
+    mock_frame = MagicMock(spec=RefCountedFrame)
+    full_q.put(mock_frame)  # Fill it
     thread.add_pipeline_queue(1, normal_q)
     thread.add_pipeline_queue(2, full_q)
 
@@ -1262,11 +1268,17 @@ def test_acquisition_loop_reference_counting_correctness():
     ):
         thread._acquisition_loop()
 
-        # Consume and release all frames from the normal queue
-        # (simulating what a consumer thread would do)
+        # Consume and release all frames from both queues
+        # (simulating what consumer threads would do)
         while not normal_q.empty():
             frame = normal_q.get_nowait()
             frame.release()
+
+        while not full_q.empty():
+            frame = full_q.get_nowait()
+            # Skip the mock frame, only release RefCountedFrame instances
+            if isinstance(frame, RefCountedFrame):
+                frame.release()
 
         # Release the final latest_raw_frame to complete reference counting
         if thread.latest_raw_frame is not None:
@@ -1274,11 +1286,10 @@ def test_acquisition_loop_reference_counting_correctness():
 
     # Verify that all acquires have matching releases
     # Each frame should have:
-    # - 1 initial acquire (acquisition thread)
-    # - 1 acquire for latest_raw_frame
+    # - 1 initial acquire (acquisition thread, released in finally block)
     # - 1 acquire for normal_q (succeeds, released after consuming)
-    # - 1 acquire for full_q (fails, gets released immediately)
-    # Total: 4 acquires, 4 releases per frame (after latest_raw_frame cleanup)
+    # - 1 acquire for full_q (succeeds after dropping old frame, released after consuming)
+    # Total: 3 acquires, 3 releases per frame
     assert acquire_calls[0] == release_calls[0], (
         f"Reference counting mismatch: {acquire_calls[0]} acquires vs {release_calls[0]} releases"
     )

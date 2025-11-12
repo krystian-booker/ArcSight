@@ -36,10 +36,12 @@ def metrics_client(metrics_app):
 
 
 def test_monitoring_page_disabled_shows_warning(client):
-    """Monitoring page should display guidance when metrics are disabled."""
-    response = client.get("/monitoring")
+    """Monitoring API should indicate when metrics are disabled."""
+    response = client.get("/api/metrics/summary")
     assert response.status_code == 200
-    assert b"Metrics disabled" in response.data
+    data = response.get_json()
+    assert data["enabled"] is False
+    assert data["pipelines"] == []
 
 
 def test_metrics_registry_snapshot_contains_pipeline(metrics_app):

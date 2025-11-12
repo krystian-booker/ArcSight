@@ -19,10 +19,7 @@ def create_error_image(message, width=640, height=480):
     return jpeg.tobytes()
 
 
-@dashboard.route("/")
-def dashboard_page():
-    """Renders the main dashboard."""
-    return render_template("pages/dashboard.html")
+# Dashboard page is now served by the React app at root
 
 
 @dashboard.route("/video_feed/<int:camera_id>")

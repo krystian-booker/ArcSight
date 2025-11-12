@@ -18,9 +18,6 @@ dependencies:
       # Flask
       - flask
       - flask-sqlalchemy
-      - flask-socketio
-      - python-socketio
-      - requests
 
       # Camera/Vision libraries
       - harvesters
@@ -41,7 +38,6 @@ dependencies:
       # Utilities
       - appdirs
       - reportlab
-      - ffmpeg-python
       - wmi ; sys_platform == 'win32'
       - pyudev ; sys_platform == 'linux'
 

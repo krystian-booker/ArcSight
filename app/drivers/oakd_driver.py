@@ -1,19 +1,7 @@
-import logging
 import time
-from typing import Any, Dict, List, Optional, Union
-
-import numpy as np
+from typing import Optional
 
 from .base_driver import BaseDriver
-from .exceptions import (
-    DriverConnectionError,
-    DriverFrameAcquisitionError,
-    DriverNotAvailableError,
-    DriverConfigurationError,
-)
-from app.enums import CameraType
-
-logger = logging.getLogger(__name__)
 
 # Attempt to import depthai
 try:
@@ -31,21 +19,21 @@ class OAKDDriver(BaseDriver):
     _FRAME_ACQUIRE_TIMEOUT_SEC = 5.0
     _FRAME_ACQUIRE_POLL_INTERVAL_SEC = 0.05
 
-    def __init__(self, camera_config: Union[Dict[str, Any], Any]):
-        super().__init__(camera_config)
+    def __init__(self, camera_db_data):
+        super().__init__(camera_db_data)
         self.device: Optional["dai.Device"] = None
         self.pipeline: Optional["dai.Pipeline"] = None
         self.output_queue: Optional["dai.DataOutputQueue"] = None
-        self._camera_socket: Optional[Any] = None
+        self._camera_socket = None
 
     _STREAM_NAME = "oakd_rgb"
     _OUTPUT_QUEUE_SIZE = 4
     _DEFAULT_FPS = 30
     _DEFAULT_RESOLUTION = "THE_1080_P"
 
-    def connect(self) -> None:
+    def connect(self):
         if dai is None:
-            raise DriverNotAvailableError(
+            raise ConnectionError(
                 "DepthAI library is not installed or failed to import."
             )
 
@@ -69,7 +57,7 @@ class OAKDDriver(BaseDriver):
             xlink_out.setStreamName(self._STREAM_NAME)
             xlink_input = getattr(xlink_out, "input", None)
             if xlink_input is None:
-                raise DriverConfigurationError("XLinkOut node is missing an input interface.")
+                raise RuntimeError("XLinkOut node is missing an input interface.")
             if hasattr(xlink_input, "setBlocking"):
                 xlink_input.setBlocking(False)
 
@@ -77,7 +65,7 @@ class OAKDDriver(BaseDriver):
             if stream_source is None:
                 stream_source = getattr(color_camera, "isp", None)
             if stream_source is None:
-                raise DriverConfigurationError("ColorCamera node does not expose a video/isp output.")
+                raise RuntimeError("ColorCamera node does not expose a video/isp output.")
             stream_source.link(xlink_input)
 
             try:
@@ -103,20 +91,16 @@ class OAKDDriver(BaseDriver):
                 if hasattr(self.output_queue, "setBlocking"):
                     self.output_queue.setBlocking(False)
 
-            logger.info(
+            print(
                 f"Successfully connected to OAK-D camera {self.identifier} at {self._camera_socket}"
             )
-        except DriverConfigurationError:
-            # Re-raise configuration errors without wrapping
-            self.disconnect()
-            raise
         except Exception as exc:  # pragma: no cover - cascades to caller
             self.disconnect()
-            raise DriverConnectionError(
+            raise ConnectionError(
                 f"Failed to connect to OAK-D camera {self.identifier}: {exc}"
             ) from exc
 
-    def disconnect(self) -> None:
+    def disconnect(self):
         if self.output_queue is not None:
             self.output_queue = None
 
@@ -131,7 +115,7 @@ class OAKDDriver(BaseDriver):
 
         self.pipeline = None
 
-    def _configure_camera_socket(self, color_camera: Any, socket: Any) -> None:
+    def _configure_camera_socket(self, color_camera, socket):
         if socket is None or color_camera is None:
             return
 
@@ -141,7 +125,7 @@ class OAKDDriver(BaseDriver):
                 setter(socket)
                 return
 
-    def _configure_color_camera(self, color_camera: Any) -> None:
+    def _configure_color_camera(self, color_camera):
         if color_camera is None:
             return
 
@@ -172,7 +156,7 @@ class OAKDDriver(BaseDriver):
         if hasattr(color_camera, "setPreviewKeepAspectRatio"):
             color_camera.setPreviewKeepAspectRatio(False)
 
-    def get_frame(self) -> Optional[np.ndarray]:
+    def get_frame(self):
         if self.output_queue is None:
             return None
 
@@ -202,7 +186,7 @@ class OAKDDriver(BaseDriver):
                 return None
 
     @staticmethod
-    def list_devices() -> List[Dict[str, str]]:
+    def list_devices():
         if dai is None:
             return []
 
@@ -229,15 +213,15 @@ class OAKDDriver(BaseDriver):
                     {
                         "identifier": identifier,
                         "name": f"OAK-D {identifier}",
-                        "camera_type": CameraType.OAKD.value,
+                        "camera_type": "OAK-D",
                     }
                 )
         except Exception as exc:
-            logger.error(f"Error listing OAK-D cameras: {exc}")
+            print(f"Error listing OAK-D cameras: {exc}")
 
         return devices
 
-    def _ensure_supported_depthai_version(self) -> None:
+    def _ensure_supported_depthai_version(self):
         version_str = getattr(dai, "__version__", "")
         if not version_str:
             return
@@ -253,7 +237,7 @@ class OAKDDriver(BaseDriver):
             )
 
     @staticmethod
-    def _parse_version(version_str: str) -> Optional[tuple]:
+    def _parse_version(version_str):
         parts = []
         for piece in version_str.split("."):
             try:
@@ -266,7 +250,7 @@ class OAKDDriver(BaseDriver):
             parts.append(0)
         return tuple(parts[:3])
 
-    def _select_camera_socket(self, device: Any) -> Any:
+    def _select_camera_socket(self, device):
         default_socket = getattr(dai.CameraBoardSocket, "CAM_A", None)
         try:
             sockets = list(device.getConnectedCameras())

@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+@layer theme {
+  :root {
+    /* Brand colors */
+    --color-primary: #d42e12;
+    --color-teal: #00c2a8;
+
+    /* Background colors */
+    --color-bg: #141414;
+    --color-surface: #1c1c1c;
+    --color-surface-alt: #232323;
+    --color-panel: #2e2e2e;
+
+    /* Text colors */
+    --color-text: #f4f5f6;
+    --color-muted: #9ca2a6;
+    --color-subtle: #5c6166;
+    --color-accent: #bfc4ca;
+
+    /* Status colors */
+    --color-success: #2bc48a;
+    --color-warning: #f0b429;
+    --color-danger: #ff5a4f;
+
+    /* Border colors */
+    --color-border: #2c2c2c;
+    --color-border-strong: #3a3a3a;
+
+    /* Spacing */
+    --spacing-3xs: 2px;
+    --spacing-2xs: 4px;
+    --spacing-xs: 8px;
+    --spacing-sm: 12px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    --spacing-2xl: 48px;
+    --spacing-3xl: 64px;
+
+    /* Border radius */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+
+    /* Shadows */
+    --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.28);
+    --shadow-sharp: 0 0 0 1px rgba(0, 194, 168, 0.2), 0 14px 42px rgba(0, 0, 0, 0.56);
+
+    /* Layout */
+    --sidebar-width: 280px;
+    --topbar-height: 64px;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color-scheme: dark;
+    margin: 0;
+    min-height: 100vh;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+  }
+}
+
+@layer utilities {
+  .bg-bg {
+    background-color: var(--color-bg);
+  }
+
+  .bg-surface {
+    background-color: var(--color-surface);
+  }
+
+  .bg-surface-alt {
+    background-color: var(--color-surface-alt);
+  }
+
+  .bg-panel {
+    background-color: var(--color-panel);
+  }
+
+  .text-text {
+    color: var(--color-text);
+  }
+
+  .text-muted {
+    color: var(--color-muted);
+  }
+
+  .text-subtle {
+    color: var(--color-subtle);
+  }
+
+  .text-primary {
+    color: var(--color-primary);
+  }
+
+  .text-teal {
+    color: var(--color-teal);
+  }
+
+  .border-border {
+    border-color: var(--color-border);
+  }
+
+  .border-border-strong {
+    border-color: var(--color-border-strong);
+  }
+}

@@ -9,15 +9,15 @@ import inspect
 from typing import Dict, Optional
 from numbers import Real
 
+from .pipelines.apriltag_pipeline import AprilTagPipeline
+from .pipelines.coloured_shape_pipeline import ColouredShapePipeline
+from .pipelines.object_detection_ml_pipeline import ObjectDetectionMLPipeline
 from .camera_discovery import get_driver
 from .metrics import metrics_registry
 from .pipeline_validators import (
     get_default_config,
     recommended_apriltag_threads,
 )
-from .factories import PipelineFactory
-from .utils.encoding import encode_frame_to_jpeg
-from .utils.config import ThreadConfig
 
 logger = logging.getLogger(__name__)
 
@@ -367,7 +367,7 @@ class VisionProcessingThread(threading.Thread):
         camera_matrix_json,
         dist_coeffs_json,
         frame_queue,
-        jpeg_quality=None,
+        jpeg_quality=75,
     ):
         super().__init__()
         self.daemon = True
@@ -380,7 +380,7 @@ class VisionProcessingThread(threading.Thread):
         self.latest_results = {"status": "Starting..."}
         self.latest_processed_frame_raw = None  # Raw annotated frame for lazy encoding
         self.processed_frame_lock = threading.Lock()
-        self.jpeg_quality = jpeg_quality if jpeg_quality is not None else ThreadConfig.PIPELINE_JPEG_QUALITY
+        self.jpeg_quality = jpeg_quality
         self.processed_frame_seq = 0
         self.latest_processed_frame_timestamp = 0.0
 
@@ -475,15 +475,9 @@ class VisionProcessingThread(threading.Thread):
             self._auto_threads_enabled = auto_threads_enabled
             self._detector_threads = final_config["threads"]
 
-        # Create pipeline instance using the factory
-        try:
-            self.pipeline_instance = PipelineFactory.create(self.pipeline_type, final_config)
-        except ValueError as e:
-            logger.error(f"Failed to create pipeline {self.pipeline_id}: {e}")
-            self.pipeline_instance = None
-
-        # Pre-calculate 3D coordinates for AprilTag pipelines
-        if self.pipeline_type == "AprilTag" and self.pipeline_instance:
+        if self.pipeline_type == "AprilTag":
+            self.pipeline_instance = AprilTagPipeline(final_config)
+            # Pre-calculate the 3D coordinates of the tag corners
             tag_size_m = final_config.get("tag_size_m", 0.165)
             half_tag_size = tag_size_m / 2
             self.obj_pts = np.array(
@@ -497,6 +491,14 @@ class VisionProcessingThread(threading.Thread):
                     [half_tag_size, half_tag_size, -tag_size_m],
                     [-half_tag_size, half_tag_size, -tag_size_m],
                 ]
+            )
+        elif self.pipeline_type == "Coloured Shape":
+            self.pipeline_instance = ColouredShapePipeline(final_config)
+        elif self.pipeline_type == "Object Detection (ML)":
+            self.pipeline_instance = ObjectDetectionMLPipeline(final_config)
+        else:
+            print(
+                f"Warning: Unknown pipeline type '{self.pipeline_type}' for pipeline ID {self.pipeline_id}"
             )
         metrics_registry.register_pipeline(
             camera_identifier=self.identifier,
@@ -524,14 +526,10 @@ class VisionProcessingThread(threading.Thread):
                 f"[{self.identifier}] No calibration data found, will estimate camera matrix from frame resolution."
             )
 
-        error_count = 0
-        max_consecutive_errors = 10
-        error_backoff = 1.0  # Start with 1 second backoff
-
         while not self.stop_event.is_set():
             ref_counted_frame = None
             try:
-                ref_counted_frame = self.frame_queue.get(timeout=ThreadConfig.FRAME_PROCESS_TIMEOUT)
+                ref_counted_frame = self.frame_queue.get(timeout=1)
                 dequeue_timestamp = time.perf_counter()
                 raw_frame = ref_counted_frame.data
                 queue_depth_after_pop = _coerce_int(self.frame_queue.qsize())
@@ -679,43 +677,8 @@ class VisionProcessingThread(threading.Thread):
                     queue_wait_ms=queue_wait_ms,
                     queue_util_pct=queue_util_pct,
                 )
-
-                # Reset error count on successful processing
-                error_count = 0
-                error_backoff = 1.0
-
             except queue.Empty:
-                # Expected timeout when no frames available
                 continue
-            except Exception as e:
-                # Catch all exceptions to prevent thread crash
-                error_count += 1
-                logger.exception(
-                    f"Error in pipeline {self.pipeline_id} ({self.pipeline_type}) on camera {self.identifier}: {e}"
-                )
-
-                # Update status to indicate error
-                with self.results_lock:
-                    self.latest_results = {
-                        "status": f"Error: {str(e)}",
-                        "error_count": error_count,
-                    }
-
-                # Implement exponential backoff
-                if error_count >= max_consecutive_errors:
-                    logger.error(
-                        f"Pipeline {self.pipeline_id} exceeded max consecutive errors ({max_consecutive_errors}), stopping thread"
-                    )
-                    break
-
-                # Sleep with exponential backoff to prevent tight error loop
-                backoff_time = min(error_backoff, 30.0)  # Cap at 30 seconds
-                logger.warning(
-                    f"Pipeline {self.pipeline_id} backing off for {backoff_time:.1f} seconds after error #{error_count}"
-                )
-                time.sleep(backoff_time)
-                error_backoff *= 2  # Exponential increase
-
             finally:
                 if ref_counted_frame:
                     ref_counted_frame.release()
@@ -800,7 +763,14 @@ class VisionProcessingThread(threading.Thread):
             if self.latest_processed_frame_raw is None:
                 return None
 
-            return encode_frame_to_jpeg(self.latest_processed_frame_raw, quality=self.jpeg_quality)
+            ret, buffer = cv2.imencode(
+                ".jpg",
+                self.latest_processed_frame_raw,
+                [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality],
+            )
+            if ret:
+                return buffer.tobytes()
+            return None
 
     def _draw_3d_box_on_frame(self, frame, detections):
         """Draws a 3D bounding box around each detected AprilTag."""
@@ -848,7 +818,7 @@ class VisionProcessingThread(threading.Thread):
         """Emit throttled warnings when pipelines fall behind."""
         now = time.time()
         last_warn = self._latency_log_state.get("last_warn", 0.0)
-        if now - last_warn < ThreadConfig.WARNING_THROTTLE_INTERVAL:
+        if now - last_warn < 5.0:
             return
 
         latency_threshold = metrics_registry.latency_warn_ms or 0.0
@@ -899,7 +869,7 @@ class CameraAcquisitionThread(threading.Thread):
     """
 
     def __init__(
-        self, identifier, camera_type, orientation, app, jpeg_quality=None, camera_id=None,
+        self, identifier, camera_type, orientation, app, jpeg_quality=85, camera_id=None,
         depth_enabled=False, resolution_json=None, framerate=None,
         exposure_mode="auto", exposure_value=500, gain_mode="auto", gain_value=50
     ):
@@ -921,7 +891,7 @@ class CameraAcquisitionThread(threading.Thread):
         # Initialize buffer pool with depth support if needed
         self.depth_enabled = depth_enabled
         self.buffer_pool = FrameBufferPool(name=self.identifier, enable_depth=depth_enabled)
-        self.jpeg_quality = jpeg_quality if jpeg_quality is not None else ThreadConfig.DISPLAY_JPEG_QUALITY
+        self.jpeg_quality = jpeg_quality
         self._drop_states: Dict[int, Dict[str, float]] = {}
         self.display_frame_seq = 0
         self.latest_display_frame_timestamp = 0.0
@@ -943,11 +913,6 @@ class CameraAcquisitionThread(threading.Thread):
         """Adds a pipeline's frame queue to the list of queues to receive frames."""
         with self.queues_lock:
             self.processing_queues[pipeline_id] = frame_queue
-            # Validate queue size matches configuration
-            if hasattr(frame_queue, 'maxsize') and frame_queue.maxsize != ThreadConfig.PIPELINE_QUEUE_SIZE:
-                logger.warning(
-                    f"Pipeline {pipeline_id} queue size {frame_queue.maxsize} doesn't match ThreadConfig.PIPELINE_QUEUE_SIZE {ThreadConfig.PIPELINE_QUEUE_SIZE}"
-                )
 
     def remove_pipeline_queue(self, pipeline_id):
         """Removes a pipeline's frame queue from the list of queues."""
@@ -973,7 +938,7 @@ class CameraAcquisitionThread(threading.Thread):
         utilization_pct = 0.0
         if max_size:
             utilization_pct = min(float(queue_size) / max_size, 1.0) * 100.0
-        should_log = now - state["last_log"] >= ThreadConfig.WARNING_THROTTLE_INTERVAL or state["consecutive"] in (
+        should_log = now - state["last_log"] >= 5.0 or state["consecutive"] in (
             1,
             5,
             10,
@@ -1020,7 +985,14 @@ class CameraAcquisitionThread(threading.Thread):
             if self.latest_display_frame_raw is None:
                 return None
 
-            return encode_frame_to_jpeg(self.latest_display_frame_raw, quality=self.jpeg_quality)
+            ret, buffer = cv2.imencode(
+                ".jpg",
+                self.latest_display_frame_raw,
+                [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality],
+            )
+            if ret:
+                return buffer.tobytes()
+            return None
 
     def run(self):
         """The main loop for the camera acquisition thread."""

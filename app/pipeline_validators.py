@@ -6,10 +6,7 @@ malicious or malformed configurations from crashing vision processing threads.
 """
 
 import os
-from dataclasses import dataclass
-from typing import Dict, Any, Optional
-
-from .enums import PipelineType
+from typing import Dict, Any, Tuple, Optional
 
 # Enumerations for ML pipeline configuration
 ML_MODEL_TYPES = ["yolo", "tflite"]
@@ -22,24 +19,6 @@ ONNX_EXECUTION_PROVIDERS = [
 ]
 TFLITE_DELEGATES = ["CPU", "GPU", "EdgeTPU"]
 ML_ACCELERATORS = ["none", "rknn"]
-
-
-@dataclass
-class ValidationResult:
-    """Result of a pipeline configuration validation."""
-
-    is_valid: bool
-    error_message: Optional[str] = None
-
-    @classmethod
-    def success(cls) -> "ValidationResult":
-        """Create a successful validation result."""
-        return cls(is_valid=True, error_message=None)
-
-    @classmethod
-    def failure(cls, error_message: str) -> "ValidationResult":
-        """Create a failed validation result with an error message."""
-        return cls(is_valid=False, error_message=error_message)
 
 
 def recommended_apriltag_threads(
@@ -295,9 +274,9 @@ COLOURED_SHAPE_SCHEMA = {
 
 # Map pipeline types to their schemas
 PIPELINE_SCHEMAS = {
-    PipelineType.APRILTAG.value: APRILTAG_SCHEMA,
-    PipelineType.OBJECT_DETECTION_ML.value: ML_DETECTION_SCHEMA,
-    PipelineType.COLOURED_SHAPE.value: COLOURED_SHAPE_SCHEMA,
+    "AprilTag": APRILTAG_SCHEMA,
+    "Object Detection (ML)": ML_DETECTION_SCHEMA,
+    "Coloured Shape": COLOURED_SHAPE_SCHEMA,
 }
 
 
@@ -459,7 +438,7 @@ def validate_value(
 
 def validate_pipeline_config(
     pipeline_type: str, config: Dict[str, Any]
-) -> ValidationResult:
+) -> Tuple[bool, Optional[str]]:
     """
     Validates a pipeline configuration against its schema.
 
@@ -468,18 +447,21 @@ def validate_pipeline_config(
         config: The configuration dictionary to validate
 
     Returns:
-        ValidationResult with is_valid boolean and optional error_message
+        Tuple of (is_valid, error_message)
+        - (True, None) if valid
+        - (False, error_message) if invalid
     """
     # Check if pipeline type is known
     if pipeline_type not in PIPELINE_SCHEMAS:
-        return ValidationResult.failure(f"Unknown pipeline type: '{pipeline_type}'")
+        return False, f"Unknown pipeline type: '{pipeline_type}'"
 
     schema = PIPELINE_SCHEMAS[pipeline_type]
 
     # Ensure config is a dictionary
     if not isinstance(config, dict):
-        return ValidationResult.failure(
-            f"Config must be an object/dictionary, got {type(config).__name__}"
+        return (
+            False,
+            f"Config must be an object/dictionary, got {type(config).__name__}",
         )
 
     try:
@@ -490,20 +472,21 @@ def validate_pipeline_config(
                 validate_value(value, property_schema, key, schema)
             elif not schema.get("additionalProperties", False):
                 # Schema doesn't allow additional properties
-                return ValidationResult.failure(
-                    f"Unknown property '{key}' not allowed for {pipeline_type} pipeline"
+                return (
+                    False,
+                    f"Unknown property '{key}' not allowed for {pipeline_type} pipeline",
                 )
 
-        if pipeline_type == PipelineType.OBJECT_DETECTION_ML.value:
+        if pipeline_type == "Object Detection (ML)":
             _validate_ml_pipeline_relationships(config)
 
         # All validations passed
-        return ValidationResult.success()
+        return True, None
 
     except ValidationError as e:
-        return ValidationResult.failure(str(e))
+        return False, str(e)
     except Exception as e:
-        return ValidationResult.failure(f"Validation error: {str(e)}")
+        return False, f"Validation error: {str(e)}"
 
 
 def get_default_config(pipeline_type: str) -> Dict[str, Any]:

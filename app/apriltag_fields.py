@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,8 +10,6 @@ from appdirs import user_data_dir
 
 from app.extensions import db
 from app.models import Setting
-
-logger = logging.getLogger(__name__)
 
 APP_NAME = "VisionTools"
 APP_AUTHOR = "User"
@@ -167,7 +164,7 @@ def _load_layout(path: str) -> Optional[Dict]:
 
     is_valid, error = validate_layout_structure(data)
     if not is_valid:
-        logger.warning(f"Rejected AprilTag field layout '{path}': {error}")
+        print(f"Rejected AprilTag field layout '{path}': {error}")
         return None
     return data
 

@@ -1,6 +1,7 @@
 from flask import (
     render_template,
     request,
+    jsonify,
     Response,
     current_app,
     make_response,
@@ -10,7 +11,6 @@ from app.extensions import db
 from app import camera_manager, camera_stream
 from app.models import Camera
 from app.calibration_utils import generate_chessboard_pdf, generate_charuco_board_pdf
-from app.utils.responses import success_response, error_response
 import cv2
 import io
 import numpy as np
@@ -29,66 +29,119 @@ def create_error_image(message, width=640, height=480):
     return jpeg.tobytes()
 
 
-@calibration.route("/")
-def calibration_page():
-    """Renders the camera calibration page."""
-    cameras = [camera.to_dict() for camera in Camera.query.all()]
-    return render_template("pages/calibration.html", cameras=cameras)
+# Calibration page is now served by the React app
 
 
 @calibration.route("/generate_pattern")
 def calibration_generate_pattern():
     """Generates and returns a downloadable chessboard pattern as a PDF."""
     try:
-        rows = int(request.args.get("rows", 7))
-        cols = int(request.args.get("cols", 10))
-        square_size_mm = float(request.args.get("square_size", 20))
+        # Accept parameters matching frontend naming
+        inner_corners_height = int(request.args.get("inner_corners_height", 5))
+        inner_corners_width = int(request.args.get("inner_corners_width", 7))
+        square_size_mm = float(request.args.get("square_size_mm", 25))
     except (ValueError, TypeError):
-        return "Invalid parameters", 400
+        return jsonify({"error": "Invalid parameters"}), 400
+
+    # Validate dimensions for A4 page (210mm x 297mm)
+    board_width_mm = (inner_corners_width + 1) * square_size_mm
+    board_height_mm = (inner_corners_height + 1) * square_size_mm
+
+    if board_width_mm > 210 or board_height_mm > 297:
+        return jsonify({
+            "error": f"Pattern too large for A4 paper. "
+                    f"Board size: {board_width_mm:.0f}mm x {board_height_mm:.0f}mm. "
+                    f"Max for A4: 210mm x 297mm"
+        }), 400
+
+    # Validate minimum dimensions
+    if inner_corners_width < 3 or inner_corners_height < 3:
+        return jsonify({"error": "Minimum 3x3 inner corners required"}), 400
+
+    if square_size_mm < 5 or square_size_mm > 50:
+        return jsonify({"error": "Square size must be between 5mm and 50mm"}), 400
 
     try:
         buffer = io.BytesIO()
-        generate_chessboard_pdf(buffer, rows, cols, square_size_mm)
+        # rows = inner_corners_height, cols = inner_corners_width
+        generate_chessboard_pdf(buffer, inner_corners_height, inner_corners_width, square_size_mm)
         buffer.seek(0)
 
         response = make_response(buffer.getvalue())
         response.headers["Content-Type"] = "application/pdf"
         response.headers["Content-Disposition"] = (
-            f"attachment; filename=chessboard_{cols + 1}x{rows + 1}_{square_size_mm}mm.pdf"
+            f"attachment; filename=chessboard_{inner_corners_width + 1}x{inner_corners_height + 1}_{square_size_mm}mm.pdf"
         )
         return response
 
     except Exception as e:
-        return str(e), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @calibration.route("/generate_charuco_pattern")
 def calibration_generate_charuco_pattern():
     """Generates and returns a downloadable ChAruco board pattern as a PDF."""
     try:
-        params = {
-            "squares_x": int(request.args.get("squares_x")),
-            "squares_y": int(request.args.get("squares_y")),
-            "square_size": float(request.args.get("square_size")),
-            "marker_size": float(request.args.get("marker_size")),
-            "dictionary_name": request.args.get("dictionary_name"),
-        }
-    except (ValueError, TypeError, KeyError):
-        return "Invalid parameters", 400
+        # Accept parameters matching frontend naming
+        inner_corners_width = int(request.args.get("inner_corners_width", 7))
+        inner_corners_height = int(request.args.get("inner_corners_height", 5))
+        square_size_mm = float(request.args.get("square_size_mm", 25))
+        marker_dict = request.args.get("marker_dict", "DICT_6X6_250")
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid parameters"}), 400
+
+    # ChAruco boards need squares, not inner corners
+    # squares = inner_corners + 1
+    squares_x = inner_corners_width + 1
+    squares_y = inner_corners_height + 1
+
+    # Marker size is typically 75% of square size for good detection
+    marker_size_mm = square_size_mm * 0.75
+
+    # Validate dimensions for A4 page (210mm x 297mm)
+    board_width_mm = squares_x * square_size_mm
+    board_height_mm = squares_y * square_size_mm
+
+    if board_width_mm > 210 or board_height_mm > 297:
+        return jsonify({
+            "error": f"ChAruco pattern too large for A4 paper. "
+                    f"Board size: {board_width_mm:.0f}mm x {board_height_mm:.0f}mm. "
+                    f"Max for A4: 210mm x 297mm"
+        }), 400
+
+    # Validate minimum dimensions
+    if inner_corners_width < 3 or inner_corners_height < 3:
+        return jsonify({"error": "Minimum 3x3 inner corners required"}), 400
+
+    if square_size_mm < 5 or square_size_mm > 50:
+        return jsonify({"error": "Square size must be between 5mm and 50mm"}), 400
+
+    # Validate marker dict
+    valid_dicts = ["DICT_4X4_50", "DICT_5X5_50", "DICT_6X6_250", "DICT_7X7_1000"]
+    if marker_dict not in valid_dicts:
+        return jsonify({"error": f"Invalid marker dictionary. Must be one of: {', '.join(valid_dicts)}"}), 400
 
     try:
+        params = {
+            "squares_x": squares_x,
+            "squares_y": squares_y,
+            "square_size": square_size_mm,
+            "marker_size": marker_size_mm,
+            "dictionary_name": marker_dict,
+        }
+
         buffer = io.BytesIO()
         generate_charuco_board_pdf(buffer, params)
         buffer.seek(0)
 
         response = make_response(buffer.getvalue())
         response.headers["Content-Type"] = "application/pdf"
-        filename = f"charuco_{params['squares_x']}x{params['squares_y']}_{params['dictionary_name']}.pdf"
+        filename = f"charuco_{squares_x}x{squares_y}_{marker_dict}.pdf"
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
         return response
 
     except Exception as e:
-        return str(e), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @calibration.route("/start", methods=["POST"])
@@ -96,24 +149,28 @@ def calibration_start():
     """Starts a new calibration session."""
     data = request.get_json()
     if not data:
-        return error_response("Invalid request format.", 400)
+        return jsonify({"success": False, "error": "Invalid request format."}), 400
 
     camera_id = data.get("camera_id")
     pattern_type = data.get("pattern_type")
     pattern_params = data.get("pattern_params")
 
     if not all([camera_id, pattern_type, pattern_params]):
-        return error_response("Missing required parameters.", 400)
+        return jsonify({"success": False, "error": "Missing required parameters."}), 400
 
     try:
         current_app.calibration_manager.start_session(
             int(camera_id), pattern_type, pattern_params
         )
-        return success_response()
+        return jsonify({"success": True})
     except (ValueError, KeyError, AttributeError) as e:
-        return error_response(f"Invalid parameters for {pattern_type}: {e}", 400)
+        return jsonify(
+            {"success": False, "error": f"Invalid parameters for {pattern_type}: {e}"}
+        ), 400
     except Exception as e:
-        return error_response(f"An unexpected error occurred: {e}", 500)
+        return jsonify(
+            {"success": False, "error": f"An unexpected error occurred: {e}"}
+        ), 500
 
 
 @calibration.route("/capture", methods=["POST"])
@@ -122,15 +179,17 @@ def calibration_capture():
     data = request.get_json()
     camera_id = data.get("camera_id")
     if not camera_id:
-        return error_response("Camera ID is required.", 400)
+        return jsonify({"success": False, "error": "Camera ID is required."}), 400
 
     camera = db.session.get(Camera, int(camera_id))
     if not camera:
-        return error_response("Camera not found.", 404)
+        return jsonify({"success": False, "error": "Camera not found."}), 404
 
     frame = camera_stream.get_latest_raw_frame(camera.identifier)
     if frame is None:
-        return error_response("Could not get frame from camera.", 500)
+        return jsonify(
+            {"success": False, "error": "Could not get frame from camera."}
+        ), 500
 
     success, message, _ = current_app.calibration_manager.capture_points(
         int(camera_id), frame
@@ -144,10 +203,9 @@ def calibration_capture():
         else:
             capture_count = len(session.get("img_points", []))
 
-    if success:
-        return success_response({"capture_count": capture_count}, message=message)
-    else:
-        return error_response(message, 400)
+    return jsonify(
+        {"success": success, "message": message, "capture_count": capture_count}
+    )
 
 
 @calibration.route("/calculate", methods=["POST"])
@@ -156,14 +214,10 @@ def calibration_calculate():
     data = request.get_json()
     camera_id = data.get("camera_id")
     if not camera_id:
-        return error_response("Camera ID is required.", 400)
+        return jsonify({"success": False, "error": "Camera ID is required."}), 400
 
     results = current_app.calibration_manager.calculate_calibration(int(camera_id))
-    # Results already contain success/error structure, wrap it
-    if results.get("success"):
-        return success_response(results)
-    else:
-        return error_response(results.get("error", "Calibration failed"), 400)
+    return jsonify(results)
 
 
 @calibration.route("/save", methods=["POST"])
@@ -176,11 +230,11 @@ def calibration_save():
     error = data.get("reprojection_error")
 
     if not all([camera_id, matrix, dist_coeffs, error is not None]):
-        return error_response("Missing required parameters.", 400)
+        return jsonify({"success": False, "error": "Missing required parameters."}), 400
 
     camera = db.session.get(Camera, int(camera_id))
     if not camera:
-        return error_response("Camera not found.", 404)
+        return jsonify({"success": False, "error": "Camera not found."}), 404
     camera.camera_matrix_json = json.dumps(matrix)
     camera.dist_coeffs_json = json.dumps(dist_coeffs)
     camera.reprojection_error = float(error)
@@ -193,7 +247,7 @@ def calibration_save():
         current_app._get_current_object(),
     )
 
-    return success_response()
+    return jsonify({"success": True})
 
 
 @calibration.route("/calibration_feed/<int:camera_id>")

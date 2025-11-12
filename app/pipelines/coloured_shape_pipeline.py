@@ -1,8 +1,3 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
-
 class ColouredShapePipeline:
     """
     A placeholder pipeline for detecting coloured shapes.
@@ -18,7 +13,7 @@ class ColouredShapePipeline:
             config (dict): A dictionary containing configuration options.
         """
         self.config = config
-        logger.info("Coloured Shape pipeline initialized (placeholder)")
+        print("Coloured Shape pipeline initialized (placeholder).")
 
     def process_frame(self, frame, cam_matrix):
         """

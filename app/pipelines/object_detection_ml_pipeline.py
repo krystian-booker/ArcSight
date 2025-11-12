@@ -8,7 +8,6 @@ initialised we fall back to returning no detections while logging the reason.
 
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -23,8 +22,6 @@ from app.pipeline_validators import (
     ONNX_EXECUTION_PROVIDERS,
     TFLITE_DELEGATES,
 )
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -536,12 +533,12 @@ class ObjectDetectionMLPipeline:
         try:
             self.backend = self._create_backend()
             if self.backend:
-                logger.info("Object Detection (ML) pipeline initialised successfully")
+                print("Object Detection (ML) pipeline initialised successfully.")
             else:
-                logger.info("Object Detection (ML) pipeline initialised without backend")
+                print("Object Detection (ML) pipeline initialised without backend.")
         except Exception as exc:
             self._initialisation_error = str(exc)
-            logger.error(f"Failed to initialise Object Detection (ML) pipeline: {exc}")
+            print(f"Failed to initialise Object Detection (ML) pipeline: {exc}")
 
     def _load_labels(self) -> List[str]:
         labels_path = _resolve_path(self.config, self.data_dir, "labels")
@@ -552,7 +549,7 @@ class ObjectDetectionMLPipeline:
             with open(labels_path, "r", encoding="utf-8") as handle:
                 return [line.strip() for line in handle if line.strip()]
         except OSError as exc:
-            logger.error(f"Failed to load labels file '{labels_path}': {exc}")
+            print(f"Failed to load labels file '{labels_path}': {exc}")
             return []
 
     def _create_backend(self) -> Optional[DetectionBackend]:
@@ -580,7 +577,7 @@ class ObjectDetectionMLPipeline:
         if model_type == "tflite":
             model_path = _resolve_path(self.config, self.data_dir, "model")
             if not model_path:
-                logger.info("TFLite model path not configured yet")
+                print("TFLite model path not configured yet.")
                 return None
             return TFLiteBackend(
                 model_path=model_path,
@@ -615,7 +612,7 @@ class ObjectDetectionMLPipeline:
         ) or _resolve_path(self.config, self.data_dir, "model")
 
         if not onnx_path:
-            logger.info("ONNX model path not configured yet")
+            print("ONNX model path not configured yet.")
             return None
 
         return OnnxYoloBackend(
@@ -633,7 +630,7 @@ class ObjectDetectionMLPipeline:
         if not self.backend:
             # Provide diagnostic information if available
             if self._initialisation_error:
-                logger.debug(
+                print(
                     f"Object Detection backend unavailable: {self._initialisation_error}"
                 )
             return []

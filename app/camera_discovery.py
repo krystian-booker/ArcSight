@@ -1,13 +1,7 @@
-import logging
-
 from .drivers.usb_driver import USBDriver
 from .drivers.genicam_driver import GenICamDriver
 from .drivers.oakd_driver import OAKDDriver
 from .drivers.realsense_driver import RealSenseDriver
-from .enums import CameraType
-from .utils.camera_config import CameraConfig
-
-logger = logging.getLogger(__name__)
 
 
 # --- Driver Factory ---
@@ -16,28 +10,23 @@ def get_driver(camera_data):
     Factory function to get the correct driver instance.
 
     Args:
-        camera_data: CameraConfig object, dict, or Camera ORM object.
-                    Non-CameraConfig inputs will be automatically converted.
-
-    Returns:
-        An instance of the appropriate camera driver.
+        camera_data: Either a Camera ORM object or a dict with keys 'camera_type' and 'identifier'
     """
-    # Convert to CameraConfig if not already
-    if not isinstance(camera_data, CameraConfig):
-        camera_config = CameraConfig.from_camera_data(camera_data)
+    # Support both ORM objects and dicts for backwards compatibility
+    if isinstance(camera_data, dict):
+        camera_type = camera_data["camera_type"]
     else:
-        camera_config = camera_data
+        # ORM object
+        camera_type = camera_data.camera_type
 
-    camera_type = camera_config.camera_type
-
-    if camera_type == CameraType.USB.value:
-        return USBDriver(camera_config)
-    elif camera_type == CameraType.GENICAM.value:
-        return GenICamDriver(camera_config)
-    elif camera_type == CameraType.OAKD.value:
-        return OAKDDriver(camera_config)
-    elif camera_type == CameraType.REALSENSE.value:
-        return RealSenseDriver(camera_config)
+    if camera_type == "USB":
+        return USBDriver(camera_data)
+    elif camera_type == "GenICam":
+        return GenICamDriver(camera_data)
+    elif camera_type == "OAK-D":
+        return OAKDDriver(camera_data)
+    elif camera_type == "RealSense":
+        return RealSenseDriver(camera_data)
     else:
         raise ValueError(f"Unknown camera type: {camera_type}")
 
@@ -45,7 +34,7 @@ def get_driver(camera_data):
 # --- Camera Discovery ---
 def discover_cameras(existing_identifiers):
     """Discovers all available cameras by polling the drivers."""
-    logger.info("Discovering cameras...")
+    print("Discovering cameras...")
     usb_cams = [
         c
         for c in USBDriver.list_devices()
@@ -67,13 +56,13 @@ def discover_cameras(existing_identifiers):
         if c["identifier"] not in existing_identifiers
     ]
 
-    logger.info(
+    print(
         f"Found {len(usb_cams)} new USB, {len(genicam_cams)} new GenICam, "
-        f"{len(oakd_cams)} new OAK-D, {len(realsense_cams)} new RealSense cameras"
+        f"{len(oakd_cams)} new OAK-D, {len(realsense_cams)} new RealSense cameras."
     )
     return {
-        CameraType.USB.value: usb_cams,
-        CameraType.GENICAM.value: genicam_cams,
-        CameraType.OAKD.value: oakd_cams,
-        CameraType.REALSENSE.value: realsense_cams,
+        "usb": usb_cams,
+        "genicam": genicam_cams,
+        "oakd": oakd_cams,
+        "realsense": realsense_cams,
     }

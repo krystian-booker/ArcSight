@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/static/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ArcSight Vision</title>
+    {% if react_dev_mode %}
+    <!-- Development mode: Vite dev server on port 8080 -->
+    <script type="module" src="http://localhost:8080/@vite/client"></script>
+    <script type="module" src="http://localhost:8080/src/main.tsx"></script>
+    {% else %}
+    <!-- Production mode: Built assets -->
+    {% for css_file in css_files %}
+    <link rel="stylesheet" href="{{ css_file }}" />
+    {% endfor %}
+    {% endif %}
+  </head>
+  <body>
+    <div id="root"></div>
+    {% if not react_dev_mode %}
+    <!-- Production mode: Built JS -->
+    {% for js_file in js_files %}
+    <script type="module" src="{{ js_file }}"></script>
+    {% endfor %}
+    {% endif %}
+  </body>
+</html>

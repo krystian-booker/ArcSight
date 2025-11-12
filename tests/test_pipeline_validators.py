@@ -21,90 +21,90 @@ def test_apriltag_valid_config():
         "blur": 0.0,
         "refine_edges": True,
     }
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is True
-    assert result.error_message is None
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is True
+    assert error is None
 
 
 def test_apriltag_minimal_config():
     """Test minimal AprilTag configuration."""
     config = {}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is True
-    assert result.error_message is None
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is True
+    assert error is None
 
 
 def test_apriltag_invalid_family():
     """Test AprilTag with invalid family name."""
     config = {"family": "invalid_family"}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "invalid_family" in result.error_message
-    assert "family" in result.error_message
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "invalid_family" in error
+    assert "family" in error
 
 
 def test_apriltag_family_with_prefix():
     """Test AprilTag family name with 'tag' prefix."""
     config = {"family": "tag16h5"}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is True
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is True
 
 
 def test_apriltag_family_without_prefix():
     """Test AprilTag family name without 'tag' prefix."""
     config = {"family": "36h11"}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is True
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is True
 
 
 def test_apriltag_error_correction_out_of_range():
     """Test AprilTag with error_correction out of valid range."""
     config = {"error_correction": 10}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "error_correction" in result.error_message
-    assert "10" in result.error_message
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "error_correction" in error
+    assert "10" in error
 
 
 def test_apriltag_tag_size_too_small():
     """Test AprilTag with tag_size_m too small."""
     config = {"tag_size_m": 0.0001}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "tag_size_m" in result.error_message
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "tag_size_m" in error
 
 
 def test_apriltag_tag_size_too_large():
     """Test AprilTag with tag_size_m too large."""
     config = {"tag_size_m": 100.0}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "tag_size_m" in result.error_message
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "tag_size_m" in error
 
 
 def test_apriltag_invalid_type():
     """Test AprilTag with wrong value type."""
     config = {"threads": "not_a_number"}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "threads" in result.error_message
-    assert "type" in result.error_message.lower()
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "threads" in error
+    assert "type" in error.lower()
 
 
 def test_apriltag_additional_properties_rejected():
     """Test that additional properties are rejected for AprilTag."""
     config = {"unknown_property": "value"}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "unknown_property" in result.error_message
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "unknown_property" in error
 
 
 def test_apriltag_negative_blur():
     """Test AprilTag with negative blur value."""
     config = {"blur": -1.0}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "blur" in result.error_message
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "blur" in error
 
 
 # --- Tests for ML Object Detection Pipeline ---
@@ -118,75 +118,75 @@ def test_ml_detection_valid_config():
         "confidence_threshold": 0.7,
         "target_classes": ["person", "car"],
     }
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is True
-    assert result.error_message is None
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is True
+    assert error is None
 
 
 def test_ml_detection_minimal_config():
     """Test minimal ML detection configuration."""
     config = {}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is True
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is True
 
 
 def test_ml_detection_invalid_filename_pattern():
     """Test ML detection with invalid filename (path traversal attempt)."""
     config = {"model_filename": "../../../etc/passwd"}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "model_filename" in result.error_message
-    assert "pattern" in result.error_message.lower()
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "model_filename" in error
+    assert "pattern" in error.lower()
 
 
 def test_ml_detection_filename_too_long():
     """Test ML detection with filename exceeding max length."""
     config = {"labels_filename": "a" * 300}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "labels_filename" in result.error_message
-    assert "long" in result.error_message.lower()
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "labels_filename" in error
+    assert "long" in error.lower()
 
 
 def test_ml_detection_confidence_out_of_range_low():
     """Test ML detection with confidence_threshold < 0."""
     config = {"confidence_threshold": -0.5}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "confidence_threshold" in result.error_message
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "confidence_threshold" in error
 
 
 def test_ml_detection_confidence_out_of_range_high():
     """Test ML detection with confidence_threshold > 1."""
     config = {"confidence_threshold": 1.5}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "confidence_threshold" in result.error_message
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "confidence_threshold" in error
 
 
 def test_ml_detection_target_classes_too_many():
     """Test ML detection with too many target classes."""
     config = {"target_classes": ["class_" + str(i) for i in range(200)]}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "target_classes" in result.error_message
-    assert "long" in result.error_message.lower()
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "target_classes" in error
+    assert "long" in error.lower()
 
 
 def test_ml_detection_target_classes_invalid_type():
     """Test ML detection with target_classes containing wrong types."""
     config = {"target_classes": [123, 456]}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "target_classes" in result.error_message
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "target_classes" in error
 
 
 def test_ml_detection_additional_properties_rejected():
     """Test that additional properties are rejected for ML detection."""
     config = {"malicious_property": "evil_value"}
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "malicious_property" in result.error_message
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "malicious_property" in error
 
 
 def test_ml_detection_yolo_rejects_tflite_delegate():
@@ -196,9 +196,9 @@ def test_ml_detection_yolo_rejects_tflite_delegate():
         "onnx_provider": "CPUExecutionProvider",
         "tflite_delegate": "CPU",
     }
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "tflite_delegate" in result.error_message
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "tflite_delegate" in error
 
 
 def test_ml_detection_tflite_requires_delegate():
@@ -206,9 +206,9 @@ def test_ml_detection_tflite_requires_delegate():
     config = {
         "model_type": "tflite",
     }
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "tflite_delegate" in result.error_message
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "tflite_delegate" in error
 
 
 def test_ml_detection_tflite_accepts_delegate():
@@ -218,9 +218,9 @@ def test_ml_detection_tflite_accepts_delegate():
         "tflite_delegate": "CPU",
         "confidence_threshold": 0.4,
     }
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is True
-    assert result.error_message is None
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is True
+    assert error is None
 
 
 def test_ml_detection_rknn_requires_paths():
@@ -230,9 +230,9 @@ def test_ml_detection_rknn_requires_paths():
         "onnx_provider": "CPUExecutionProvider",
         "accelerator": "rknn",
     }
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is False
-    assert "rknn_path" in result.error_message
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is False
+    assert "rknn_path" in error
 
 
 def test_ml_detection_rknn_valid():
@@ -244,9 +244,9 @@ def test_ml_detection_rknn_valid():
         "accelerator": "rknn",
         "rknn_path": "/tmp/model.rknn",
     }
-    result = validate_pipeline_config("Object Detection (ML)", config)
-    assert result.is_valid is True
-    assert result.error_message is None
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", config)
+    assert is_valid is True
+    assert error is None
 
 
 # --- Tests for Coloured Shape Pipeline ---
@@ -255,8 +255,8 @@ def test_ml_detection_rknn_valid():
 def test_coloured_shape_accepts_any_config():
     """Test that Coloured Shape pipeline accepts any config (placeholder)."""
     config = {"any_property": "any_value", "nested": {"data": 123}}
-    result = validate_pipeline_config("Coloured Shape", config)
-    assert result.is_valid is True
+    is_valid, error = validate_pipeline_config("Coloured Shape", config)
+    assert is_valid is True
 
 
 # --- Tests for General Validation ---
@@ -265,22 +265,22 @@ def test_coloured_shape_accepts_any_config():
 def test_unknown_pipeline_type():
     """Test validation with unknown pipeline type."""
     config = {}
-    result = validate_pipeline_config("Unknown Pipeline", config)
-    assert result.is_valid is False
-    assert "Unknown pipeline type" in result.error_message
+    is_valid, error = validate_pipeline_config("Unknown Pipeline", config)
+    assert is_valid is False
+    assert "Unknown pipeline type" in error
 
 
 def test_non_dict_config():
     """Test validation with non-dictionary config."""
-    result = validate_pipeline_config("AprilTag", "not a dict")
-    assert result.is_valid is False
-    assert "object" in result.error_message.lower() or "dictionary" in result.error_message.lower()
+    is_valid, error = validate_pipeline_config("AprilTag", "not a dict")
+    assert is_valid is False
+    assert "object" in error.lower() or "dictionary" in error.lower()
 
 
 def test_non_dict_config_list():
     """Test validation with list instead of dictionary."""
-    result = validate_pipeline_config("AprilTag", [1, 2, 3])
-    assert result.is_valid is False
+    is_valid, error = validate_pipeline_config("AprilTag", [1, 2, 3])
+    assert is_valid is False
 
 
 # --- Tests for Default Configs ---
@@ -289,8 +289,8 @@ def test_non_dict_config_list():
 def test_apriltag_default_config():
     """Test AprilTag default configuration is valid."""
     default = get_default_config("AprilTag")
-    result = validate_pipeline_config("AprilTag", default)
-    assert result.is_valid is True
+    is_valid, error = validate_pipeline_config("AprilTag", default)
+    assert is_valid is True
     assert "family" in default
     assert "tag_size_m" in default
     assert "auto_threads" in default
@@ -300,16 +300,16 @@ def test_apriltag_default_config():
 def test_ml_detection_default_config():
     """Test ML detection default configuration is valid."""
     default = get_default_config("Object Detection (ML)")
-    result = validate_pipeline_config("Object Detection (ML)", default)
-    assert result.is_valid is True
+    is_valid, error = validate_pipeline_config("Object Detection (ML)", default)
+    assert is_valid is True
     assert "confidence_threshold" in default
 
 
 def test_coloured_shape_default_config():
     """Test Coloured Shape default configuration."""
     default = get_default_config("Coloured Shape")
-    result = validate_pipeline_config("Coloured Shape", default)
-    assert result.is_valid is True
+    is_valid, error = validate_pipeline_config("Coloured Shape", default)
+    assert is_valid is True
 
 
 def test_unknown_pipeline_default_config():
@@ -332,18 +332,18 @@ def test_recommended_threads_cap_and_floor():
 def test_empty_config_all_pipelines():
     """Test that empty configs are valid for all pipeline types."""
     for pipeline_type in ["AprilTag", "Object Detection (ML)", "Coloured Shape"]:
-        result = validate_pipeline_config(pipeline_type, {})
-        assert result.is_valid is True, f"Empty config should be valid for {pipeline_type}"
+        is_valid, error = validate_pipeline_config(pipeline_type, {})
+        assert is_valid is True, f"Empty config should be valid for {pipeline_type}"
 
 
 def test_apriltag_boolean_as_integer():
     """Test AprilTag validation rejects boolean where integer expected."""
     config = {"threads": True}
-    result = validate_pipeline_config("AprilTag", config)
+    is_valid, error = validate_pipeline_config("AprilTag", config)
     config = {"threads": "not_a_number"}
-    result = validate_pipeline_config("AprilTag", config)
-    assert result.is_valid is False
-    assert "threads" in result.error_message
+    is_valid, error = validate_pipeline_config("AprilTag", config)
+    assert is_valid is False
+    assert "threads" in error
 
 
 def test_security_injection_attempt():
@@ -357,6 +357,6 @@ def test_security_injection_attempt():
 
     for config in malicious_configs:
         # Should either be invalid or properly sanitized
-        result = validate_pipeline_config("AprilTag", config)
+        is_valid, error = validate_pipeline_config("AprilTag", config)
         # Either rejected or handled safely
         assert isinstance(is_valid, bool)
