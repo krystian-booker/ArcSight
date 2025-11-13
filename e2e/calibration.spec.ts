@@ -31,12 +31,14 @@ test.describe('Calibration Page', () => {
 
   test('should load calibration page', async ({ page }) => {
     // Check page title
-    await expect(page.locator('h1')).toContainText('Camera Calibration');
+    await expect(
+      page.getByRole('heading', { name: 'Camera Calibration' })
+    ).toBeVisible();
 
     // Check step indicator
-    await expect(page.locator('text=Setup')).toBeVisible();
-    await expect(page.locator('text=Capture')).toBeVisible();
-    await expect(page.locator('text=Results')).toBeVisible();
+    await expect(page.getByTestId('step-setup')).toBeVisible();
+    await expect(page.getByTestId('step-capture')).toBeVisible();
+    await expect(page.getByTestId('step-results')).toBeVisible();
 
     // Should be on setup step
     await expect(page.locator('text=Calibration Setup')).toBeVisible();
@@ -152,15 +154,15 @@ test.describe('Calibration Page', () => {
 
     // Start calibration
     await page.locator('button:has-text("Start Calibration")').click();
-    await page.waitForTimeout(1000);
+    await page.waitForSelector('[data-testid="capture-summary"]');
 
     // Should move to capture step
-    await expect(page.locator('text=Calibration Feed')).toBeVisible();
-    await expect(page.locator('text=Capture Frames')).toBeVisible();
+    await expect(page.getByTestId('capture-feed-title')).toBeVisible();
+    await expect(page.getByTestId('capture-frames-title')).toBeVisible();
     await expect(page.locator('text=Frames captured')).toBeVisible();
 
     // Should show 0 frames initially
-    await expect(page.locator('text=0').first()).toBeVisible();
+    await expect(page.getByTestId('captured-count')).toHaveText('0');
   });
 
   test('should show capture frame button in capture step', async ({ page }) => {
@@ -168,7 +170,7 @@ test.describe('Calibration Page', () => {
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
     await page.locator('button:has-text("Start Calibration")').click();
-    await page.waitForTimeout(1000);
+    await page.waitForSelector('[data-testid="capture-summary"]');
 
     // Capture button should be visible
     await expect(page.locator('button:has-text("Capture Frame")')).toBeVisible();
@@ -183,7 +185,7 @@ test.describe('Calibration Page', () => {
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
     await page.locator('button:has-text("Start Calibration")').click();
-    await page.waitForTimeout(1000);
+    await page.waitForSelector('[data-testid="capture-summary"]');
 
     // Should show message about capturing more frames
     await expect(page.locator('text=Capture 5 more frames to calculate')).toBeVisible();
@@ -239,17 +241,17 @@ test.describe('Calibration Page', () => {
 
   test('should display step indicator correctly', async ({ page }) => {
     // Step 1 should be highlighted
-    const step1 = page.locator('div:has-text("Setup")').first();
+    const step1 = page.getByTestId('step-setup');
     await expect(step1).toHaveClass(/text-primary/);
 
     // Select camera and start
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
     await page.locator('button:has-text("Start Calibration")').click();
-    await page.waitForTimeout(1000);
+    await page.waitForSelector('[data-testid="capture-summary"]');
 
     // Step 2 should be highlighted
-    const step2 = page.locator('div:has-text("Capture")').first();
+    const step2 = page.getByTestId('step-capture');
     await expect(step2).toHaveClass(/text-primary/);
   });
 
@@ -258,10 +260,10 @@ test.describe('Calibration Page', () => {
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
     await page.locator('button:has-text("Start Calibration")').click();
-    await page.waitForTimeout(1000);
+    await page.waitForSelector('[data-testid="capture-summary"]');
 
     // Should show MJPEG stream component
-    await expect(page.locator('img[alt="Calibration Feed"]')).toBeVisible();
+    await expect(page.getByTestId('calibration-feed')).toBeVisible();
   });
 
   test('should validate input ranges', async ({ page }) => {
@@ -391,11 +393,11 @@ test.describe('Calibration Page', () => {
 
     // Start calibration
     await page.locator('button:has-text("Start Calibration")').click();
-    await page.waitForTimeout(1000);
+    await page.waitForSelector('[data-testid="capture-summary"]');
 
     // Should move to capture step
-    await expect(page.locator('text=Calibration Feed')).toBeVisible();
-    await expect(page.locator('text=Capture Frames')).toBeVisible();
+    await expect(page.getByTestId('capture-feed-title')).toBeVisible();
+    await expect(page.getByTestId('capture-frames-title')).toBeVisible();
   });
 
   test('should use valid ChAruco default values', async ({ page }) => {

@@ -8,7 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -23,11 +26,42 @@ import {
 import { toast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 
+type FieldInfo = {
+  name: string
+  path: string
+  is_default: boolean
+}
+
+type SettingsResponse = {
+  settings: {
+    team_number: string
+    hostname: string
+    ip_mode: 'dhcp' | 'static'
+    genicam_cti_path: string
+  }
+  default_fields: FieldInfo[]
+  user_fields: FieldInfo[]
+  selected_field: string | null
+}
+
+const formatFieldLabel = (name: string) => {
+  if (!name) return ''
+
+  return name
+    .replace(/\.json$/i, '')
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 export default function Settings() {
   const [teamNumber, setTeamNumber] = useState('')
   const [hostname, setHostname] = useState('')
   const [ipMode, setIpMode] = useState<'dhcp' | 'static'>('dhcp')
   const [genicamPath, setGenicamPath] = useState('')
+  const [defaultFields, setDefaultFields] = useState<FieldInfo[]>([])
+  const [userFields, setUserFields] = useState<FieldInfo[]>([])
   const [selectedField, setSelectedField] = useState('')
   const [confirmAction, setConfirmAction] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -36,20 +70,23 @@ export default function Settings() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const data = await api.get<{
-          settings: {
-            team_number: string
-            hostname: string
-            ip_mode: 'dhcp' | 'static'
-            genicam_cti_path: string
-          }
-          selected_field: string
-        }>('/settings/api/settings')
+        const data = await api.get<SettingsResponse>('/settings/api/settings')
         setTeamNumber(data.settings.team_number || '')
         setHostname(data.settings.hostname || '')
         setIpMode(data.settings.ip_mode || 'dhcp')
         setGenicamPath(data.settings.genicam_cti_path || '')
-        setSelectedField(data.selected_field || '')
+        setDefaultFields(data.default_fields ?? [])
+        setUserFields(data.user_fields ?? [])
+
+        const availableFieldNames = new Set(
+          [...(data.default_fields ?? []), ...(data.user_fields ?? [])].map(
+            (field) => field.name,
+          ),
+        )
+        const initialField = data.selected_field || ''
+        setSelectedField(
+          initialField && availableFieldNames.has(initialField) ? initialField : '',
+        )
       } catch (error) {
         console.error('Failed to load settings:', error)
         toast({
@@ -127,16 +164,22 @@ export default function Settings() {
   }
 
   const handleFieldChange = async (fieldName: string) => {
+    const previousField = selectedField
     setSelectedField(fieldName)
     try {
       await api.post('/settings/apriltag/select', {
         field_name: fieldName,
       })
+      const label = fieldName ? formatFieldLabel(fieldName) : 'default layout'
       toast({
         title: 'Field layout updated',
-        description: `Selected ${fieldName}`,
+        description: fieldName
+          ? `Selected ${label}`
+          : 'Field selection cleared',
       })
     } catch (error) {
+      console.error('Failed to save field selection:', error)
+      setSelectedField(previousField)
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -199,6 +242,8 @@ export default function Settings() {
       })
     }
   }
+
+  const hasFieldOptions = defaultFields.length > 0 || userFields.length > 0
 
   return (
     <div className="p-6 space-y-6">
@@ -325,13 +370,46 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="field-select">Active Field Layout</Label>
-                <Select value={selectedField} onValueChange={handleFieldChange}>
+                <Select
+                  value={selectedField || undefined}
+                  onValueChange={handleFieldChange}
+                  disabled={!hasFieldOptions}
+                >
                   <SelectTrigger id="field-select">
                     <SelectValue placeholder="Select field layout" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="2024-crescendo">2024 Crescendo</SelectItem>
-                    <SelectItem value="2023-charged-up">2023 Charged Up</SelectItem>
+                    {hasFieldOptions ? (
+                      <>
+                        {defaultFields.length > 0 && (
+                          <SelectGroup>
+                            <SelectLabel>Default Fields</SelectLabel>
+                            {defaultFields.map((field) => (
+                              <SelectItem key={field.name} value={field.name}>
+                                {formatFieldLabel(field.name)}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
+                        {userFields.length > 0 && (
+                          <>
+                            {defaultFields.length > 0 && <SelectSeparator />}
+                            <SelectGroup>
+                              <SelectLabel>Custom Fields</SelectLabel>
+                              {userFields.map((field) => (
+                                <SelectItem key={field.name} value={field.name}>
+                                  {formatFieldLabel(field.name)}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <SelectItem value="__no-fields" disabled>
+                        No field layouts available
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

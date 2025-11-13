@@ -297,6 +297,7 @@ export default function Cameras() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={`Edit camera ${camera.name}`}
                             onClick={() => openEditModal(camera)}
                           >
                             <Edit2 className="h-4 w-4" />
@@ -304,6 +305,7 @@ export default function Cameras() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={`Delete camera ${camera.name}`}
                             onClick={() => openDeleteModal(camera)}
                           >
                             <Trash2 className="h-4 w-4 text-[var(--color-danger)]" />
@@ -371,7 +373,7 @@ export default function Cameras() {
 
               {availableDevices.length > 0 ? (
                 <Select value={selectedDevice} onValueChange={setSelectedDevice}>
-                  <SelectTrigger>
+                  <SelectTrigger id="available-device" aria-label="Select device">
                     <SelectValue placeholder="Select device" />
                   </SelectTrigger>
                   <SelectContent>

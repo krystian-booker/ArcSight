@@ -147,20 +147,55 @@ def calibration_generate_charuco_pattern():
 @calibration.route("/start", methods=["POST"])
 def calibration_start():
     """Starts a new calibration session."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"success": False, "error": "Invalid request format."}), 400
+    data = request.get_json(silent=True) or {}
 
     camera_id = data.get("camera_id")
     pattern_type = data.get("pattern_type")
     pattern_params = data.get("pattern_params")
 
-    if not all([camera_id, pattern_type, pattern_params]):
+    if not camera_id or not pattern_type:
+        return jsonify({"success": False, "error": "Missing required parameters."}), 400
+
+    # Normalise pattern type from frontend values (e.g. "charuco") to backend expectations
+    pattern_type_normalized = pattern_type
+    if isinstance(pattern_type, str):
+        lowered = pattern_type.lower()
+        if lowered == "charuco":
+            pattern_type_normalized = "ChAruco"
+        elif lowered == "chessboard":
+            pattern_type_normalized = "Chessboard"
+
+    if not pattern_params:
+        try:
+            width = int(data.get("inner_corners_width"))
+            height = int(data.get("inner_corners_height"))
+            square_size = float(data.get("square_size_mm"))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "Missing required parameters."}), 400
+
+        if pattern_type_normalized == "ChAruco":
+            marker_dict = data.get("marker_dict", "DICT_6X6_250")
+            marker_size = square_size * 0.75
+            pattern_params = {
+                "squares_x": width + 1,
+                "squares_y": height + 1,
+                "square_size": square_size,
+                "marker_size": marker_size,
+                "dictionary_name": marker_dict,
+            }
+        else:
+            pattern_params = {
+                "rows": height,
+                "cols": width,
+                "square_size": square_size,
+            }
+
+    if not isinstance(pattern_params, dict):
         return jsonify({"success": False, "error": "Missing required parameters."}), 400
 
     try:
         current_app.calibration_manager.start_session(
-            int(camera_id), pattern_type, pattern_params
+            int(camera_id), pattern_type_normalized, pattern_params
         )
         return jsonify({"success": True})
     except (ValueError, KeyError, AttributeError) as e:

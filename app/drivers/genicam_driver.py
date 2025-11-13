@@ -1,6 +1,16 @@
 import threading
-import cv2
 import os
+
+try:
+    import cv2  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - OpenCV may be absent in tests
+    class _MissingCV2:
+        def __getattr__(self, name):
+            raise ModuleNotFoundError(
+                "OpenCV (cv2) is required for GenICam functionality but is not installed."
+            )
+
+    cv2 = _MissingCV2()  # type: ignore
 from .base_driver import BaseDriver
 
 # Attempt to import Harvesters and GenICam API

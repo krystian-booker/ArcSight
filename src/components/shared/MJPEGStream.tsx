@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, type HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
-interface MJPEGStreamProps {
+interface MJPEGStreamProps
+  extends Omit<HTMLAttributes<HTMLDivElement>, 'onLoad' | 'onError'> {
   src: string
   alt?: string
-  className?: string
   onError?: () => void
   onLoad?: () => void
 }
@@ -19,6 +19,7 @@ export function MJPEGStream({
   className,
   onError,
   onLoad,
+  ...rest
 }: MJPEGStreamProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
@@ -41,6 +42,7 @@ export function MJPEGStream({
         'relative overflow-hidden rounded-md bg-[var(--color-surface)]',
         className
       )}
+      {...rest}
     >
       {isLoading && !hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-surface-alt)]">

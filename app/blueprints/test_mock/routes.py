@@ -2,8 +2,14 @@
 Mock endpoints for E2E testing
 Only enabled when E2E_TESTING environment variable is set
 """
+import base64
 import os
-import cv2
+
+try:
+    import cv2  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - OpenCV may not be installed in tests
+    cv2 = None  # type: ignore
+
 import numpy as np
 from flask import jsonify, Response
 from . import test_mock
@@ -52,6 +58,16 @@ def mock_video_feed(camera_id):
 
     def generate_frames():
         """Generate test pattern frames"""
+        if cv2 is None:
+            import time
+
+            while True:
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + _PLACEHOLDER_JPEG + b"\r\n"
+                )
+                time.sleep(0.1)
+
         frame_count = 0
         while True:
             # Create a test pattern image
@@ -177,3 +193,6 @@ def seed_test_data():
 def health():
     """Health check endpoint for E2E tests"""
     return jsonify({"status": "healthy", "e2e_testing": is_e2e_testing()})
+_PLACEHOLDER_JPEG = base64.b64decode(
+    b'/9j/4AAQSkZJRgABAQEASABIAAD/2wBDABALDA4MChALDg8QEA8QEhASFBcVHRodGR4jLCIjIiYqKSoqKiwtNDY2NjY2ODg4ODg4ODg4ODg4ODg4ODj/2wBDAQQQEhUSEhYVFRYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFj/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAgP/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCfAAf/Z'
+)

@@ -6,7 +6,6 @@ from flask import Flask, render_template, send_from_directory
 from appdirs import user_data_dir
 
 from .extensions import db
-from . import camera_manager
 from .drivers.genicam_driver import GenICamDriver
 from .calibration_utils import CalibrationManager
 from .models import Setting
@@ -86,6 +85,11 @@ def create_app(config_overrides=None):
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(pipelines_blueprint)
     app.register_blueprint(monitoring_blueprint)
+
+    if os.environ.get("E2E_TESTING", "").lower() == "true":
+        from .blueprints.test_mock import test_mock as test_mock_blueprint
+
+        app.register_blueprint(test_mock_blueprint)
 
     # Start Vite dev server in development mode
     # Auto-detect development mode from Flask config
@@ -197,12 +201,16 @@ def create_app(config_overrides=None):
         db.create_all()
         # Only initialize cameras and threads if not disabled
         if app.config.get("CAMERA_THREADS_ENABLED", True):
+            from . import camera_manager
+
             genicam_setting = db.session.get(Setting, "genicam_cti_path")
             cti_path = genicam_setting.value if genicam_setting else ""
             GenICamDriver.initialize(cti_path)
             camera_manager.start_all_camera_threads(app)
 
     if app.config.get("CAMERA_THREADS_ENABLED", True):
+        from . import camera_manager
+
         atexit.register(camera_manager.stop_all_camera_threads)
 
     return app

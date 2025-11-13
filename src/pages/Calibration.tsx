@@ -14,10 +14,32 @@ import {
 import { MJPEGStream } from '@/components/shared'
 import { toast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/useAppStore'
 import type { Camera, CalibrationResult } from '@/types'
 
 type CalibrationStep = 'setup' | 'capture' | 'results'
+
+const SETTINGS_STORAGE_KEY = 'calibration.settings.v1'
+const MIN_CORNERS = 3
+
+const clampIntString = (value: string, min: number, max: number): string => {
+  const parsed = parseInt(value, 10)
+  if (Number.isNaN(parsed)) {
+    return min.toString()
+  }
+  const clamped = Math.min(Math.max(parsed, min), max)
+  return clamped.toString()
+}
+
+const clampFloatString = (value: string, min: number, max: number): string => {
+  const parsed = parseFloat(value)
+  if (Number.isNaN(parsed)) {
+    return min.toString()
+  }
+  const clamped = Math.min(Math.max(parsed, min), max)
+  return clamped.toString()
+}
 
 export default function Calibration() {
   const cameras = useAppStore((state) => state.cameras)
@@ -37,12 +59,12 @@ export default function Calibration() {
 
   // Calculate max dimensions for A4 paper (210mm x 297mm)
   const getMaxWidth = () => {
-    const size = parseFloat(squareSize) || 25
-    return Math.floor(210 / size) - 1
+    const size = Math.max(5, Math.min(50, parseFloat(squareSize) || 25))
+    return Math.max(MIN_CORNERS, Math.floor(210 / size) - 1)
   }
   const getMaxHeight = () => {
-    const size = parseFloat(squareSize) || 25
-    return Math.floor(297 / size) - 1
+    const size = Math.max(5, Math.min(50, parseFloat(squareSize) || 25))
+    return Math.max(MIN_CORNERS, Math.floor(297 / size) - 1)
   }
 
   // Fetch cameras on mount
@@ -61,6 +83,107 @@ export default function Calibration() {
     }
     fetchCameras()
   }, [])
+
+  // Load persisted settings on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+      if (!stored) return
+      const parsed = JSON.parse(stored) as Partial<{
+        patternType: string
+        innerCornersWidth: number
+        innerCornersHeight: number
+        squareSize: number
+        markerDict: string
+      }>
+
+      if (parsed.squareSize) {
+        const clampedSize = clampFloatString(parsed.squareSize.toString(), 5, 50)
+        setSquareSize(clampedSize)
+
+        const numericSize = parseFloat(clampedSize)
+        const widthMax = Math.max(MIN_CORNERS, Math.floor(210 / numericSize) - 1)
+        const heightMax = Math.max(MIN_CORNERS, Math.floor(297 / numericSize) - 1)
+
+        if (parsed.innerCornersWidth) {
+          setInnerCornersWidth(
+            clampIntString(parsed.innerCornersWidth.toString(), MIN_CORNERS, widthMax),
+          )
+        }
+        if (parsed.innerCornersHeight) {
+          setInnerCornersHeight(
+            clampIntString(parsed.innerCornersHeight.toString(), MIN_CORNERS, heightMax),
+          )
+        }
+      }
+
+      if (parsed.patternType === 'chessboard' || parsed.patternType === 'charuco') {
+        setPatternType(parsed.patternType)
+      }
+
+      if (parsed.markerDict) {
+        setMarkerDict(parsed.markerDict)
+      }
+    } catch (error) {
+      console.warn('Failed to load calibration settings', error)
+    }
+  }, [])
+
+  // Persist settings whenever they change
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const widthNum = parseInt(innerCornersWidth, 10)
+    const heightNum = parseInt(innerCornersHeight, 10)
+    const squareNum = parseFloat(squareSize)
+
+    if ([widthNum, heightNum, squareNum].some((v) => Number.isNaN(v))) {
+      return
+    }
+
+    const payload = {
+      patternType,
+      innerCornersWidth: widthNum,
+      innerCornersHeight: heightNum,
+      squareSize: squareNum,
+      markerDict,
+    }
+
+    try {
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload))
+    } catch (error) {
+      console.warn('Failed to persist calibration settings', error)
+    }
+  }, [patternType, innerCornersWidth, innerCornersHeight, squareSize, markerDict])
+
+  // Clamp and normalise inputs whenever they change
+  useEffect(() => {
+    const clampedSize = clampFloatString(squareSize || MIN_CORNERS.toString(), 5, 50)
+    if (clampedSize !== squareSize) {
+      setSquareSize(clampedSize)
+      return
+    }
+
+    const numericSize = parseFloat(clampedSize)
+    if (Number.isNaN(numericSize)) {
+      setSquareSize('25')
+      return
+    }
+
+    const widthMax = Math.max(MIN_CORNERS, Math.floor(210 / numericSize) - 1)
+    const heightMax = Math.max(MIN_CORNERS, Math.floor(297 / numericSize) - 1)
+
+    const clampedWidth = clampIntString(innerCornersWidth || MIN_CORNERS.toString(), MIN_CORNERS, widthMax)
+    if (clampedWidth !== innerCornersWidth) {
+      setInnerCornersWidth(clampedWidth)
+    }
+
+    const clampedHeight = clampIntString(innerCornersHeight || MIN_CORNERS.toString(), MIN_CORNERS, heightMax)
+    if (clampedHeight !== innerCornersHeight) {
+      setInnerCornersHeight(clampedHeight)
+    }
+  }, [squareSize, innerCornersWidth, innerCornersHeight])
 
   const handleDownloadPattern = async () => {
     const endpoint =
@@ -209,27 +332,35 @@ export default function Calibration() {
       </div>
 
       {/* Step indicator */}
-      <div className="flex items-center justify-center gap-4">
-        <div className={`flex items-center gap-2 ${step === 'setup' ? 'text-primary' : 'text-muted'}`}>
-          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'setup' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
-            1
+      <div className="flex items-center justify-center gap-4" data-testid="step-indicator">
+        {(
+          [
+            { id: 'setup', label: 'Setup', index: 1 },
+            { id: 'capture', label: 'Capture', index: 2 },
+            { id: 'results', label: 'Results', index: 3 },
+          ] as const
+        ).map((item, idx, arr) => (
+          <div key={item.id} className="flex items-center gap-4">
+            <div
+              data-testid={`step-${item.id}`}
+              className={cn(
+                'flex items-center gap-2 text-muted-foreground transition-colors',
+                step === item.id && 'text-primary',
+              )}
+            >
+              <div
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-full bg-surface-alt text-sm font-semibold',
+                  step === item.id && 'bg-primary text-primary-foreground',
+                )}
+              >
+                {item.index}
+              </div>
+              <span className="text-sm font-medium">{item.label}</span>
+            </div>
+            {idx < arr.length - 1 && <div className="h-px w-12 bg-border" />}
           </div>
-          <span className="text-sm font-medium">Setup</span>
-        </div>
-        <div className="h-px w-12 bg-border" />
-        <div className={`flex items-center gap-2 ${step === 'capture' ? 'text-primary' : 'text-muted'}`}>
-          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'capture' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
-            2
-          </div>
-          <span className="text-sm font-medium">Capture</span>
-        </div>
-        <div className="h-px w-12 bg-border" />
-        <div className={`flex items-center gap-2 ${step === 'results' ? 'text-primary' : 'text-muted'}`}>
-          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'results' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
-            3
-          </div>
-          <span className="text-sm font-medium">Results</span>
-        </div>
+        ))}
       </div>
 
       {/* Step 1: Setup */}
@@ -277,7 +408,7 @@ export default function Calibration() {
                 <Input
                   id="width"
                   type="number"
-                  min={3}
+                  min={MIN_CORNERS}
                   max={getMaxWidth()}
                   value={innerCornersWidth}
                   onChange={(e) => setInnerCornersWidth(e.target.value)}
@@ -292,7 +423,7 @@ export default function Calibration() {
                 <Input
                   id="height"
                   type="number"
-                  min={3}
+                  min={MIN_CORNERS}
                   max={getMaxHeight()}
                   value={innerCornersHeight}
                   onChange={(e) => setInnerCornersHeight(e.target.value)}
@@ -354,7 +485,7 @@ export default function Calibration() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>Calibration Feed</CardTitle>
+              <CardTitle data-testid="capture-feed-title">Calibration Feed</CardTitle>
               <CardDescription>
                 Position pattern in different angles and distances
               </CardDescription>
@@ -364,20 +495,23 @@ export default function Calibration() {
                 src={`/calibration/calibration_feed/${selectedCamera.id}`}
                 alt="Calibration Feed"
                 className="aspect-video w-full"
+                data-testid="calibration-feed"
               />
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Capture Frames</CardTitle>
+              <CardTitle data-testid="capture-frames-title">Capture Frames</CardTitle>
               <CardDescription>
                 Capture at least 5 frames from different positions
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="text-center py-8">
-                <div className="text-4xl font-bold mb-2">{capturedFrames}</div>
+              <div className="text-center py-8" data-testid="capture-summary">
+                <div className="text-4xl font-bold mb-2" data-testid="captured-count">
+                  {capturedFrames}
+                </div>
                 <p className="text-muted">Frames captured</p>
               </div>
 

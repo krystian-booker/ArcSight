@@ -1,4 +1,3 @@
-import cv2
 import threading
 import time
 import queue
@@ -8,6 +7,19 @@ import logging
 import inspect
 from typing import Dict, Optional
 from numbers import Real
+
+try:
+    import cv2  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - exercised in environments without OpenCV
+    class _MissingCV2:
+        """Minimal proxy that surfaces a clear error when OpenCV is required."""
+
+        def __getattr__(self, name):
+            raise ModuleNotFoundError(
+                "OpenCV (cv2) is required for camera functionality but is not installed."
+            )
+
+    cv2 = _MissingCV2()  # type: ignore
 
 from .pipelines.apriltag_pipeline import AprilTagPipeline
 from .pipelines.coloured_shape_pipeline import ColouredShapePipeline

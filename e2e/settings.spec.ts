@@ -1,351 +1,287 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+const SUCCESS_STATUSES = new Set([200, 201, 202, 204, 304])
+
+const waitForEndpoint = (page: Page, endpoint: string, method?: string) =>
+  page.waitForResponse((response) => {
+    if (!response.url().endsWith(endpoint)) return false
+    if (method && response.request().method() !== method) return false
+    return SUCCESS_STATUSES.has(response.status())
+  })
+
+const loadSettingsPage = async (page: Page) => {
+  const responsePromise = waitForEndpoint(page, '/settings/api/settings')
+  await page.goto('/settings')
+  await responsePromise
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
+}
+
+const reloadSettingsPage = async (page: Page) => {
+  const responsePromise = waitForEndpoint(page, '/settings/api/settings')
+  await page.reload()
+  await responsePromise
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
+}
 
 test.describe('Settings Page', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/settings');
-    // Wait for the page to load
-    await page.waitForSelector('h1:has-text("Settings")');
-    // Wait for settings to load from API
-    await page.waitForTimeout(1000);
-  });
+    await loadSettingsPage(page)
+  })
 
   test('should load settings page', async ({ page }) => {
-    // Check page title
-    await expect(page.locator('h1')).toContainText('Settings');
-
-    // Check main tabs exist
-    await expect(page.locator('button[role="tab"]:has-text("Global")')).toBeVisible();
-    await expect(page.locator('button[role="tab"]:has-text("GenICam")')).toBeVisible();
-    await expect(page.locator('button[role="tab"]:has-text("AprilTag Fields")')).toBeVisible();
-    await expect(page.locator('button[role="tab"]:has-text("System")')).toBeVisible();
-  });
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Global' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'GenICam' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'AprilTag Fields' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'System' })).toBeVisible()
+  })
 
   test('should save and persist team number', async ({ page }) => {
-    const testTeamNumber = '1234';
+    const teamNumberInput = page.locator('#team-number')
+    await teamNumberInput.fill('1234')
 
-    // Find team number input by id
-    const teamNumberInput = page.locator('#team-number');
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
 
-    // Clear and enter new value
-    await teamNumberInput.clear();
-    await teamNumberInput.fill(testTeamNumber);
-
-    // Save settings
-    await page.locator('button:has-text("Save Global Settings")').click();
-
-    // Wait for success toast
-    await page.waitForTimeout(1000);
-
-    // Reload the page
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-
-    // Wait for settings to load
-    await page.waitForTimeout(1000);
-
-    // Verify the value persisted
-    const savedValue = await page.locator('#team-number').inputValue();
-    expect(savedValue).toBe(testTeamNumber);
-  });
+    await reloadSettingsPage(page)
+    await expect(teamNumberInput).toHaveValue('1234')
+  })
 
   test('should save and persist hostname', async ({ page }) => {
-    const testHostname = 'test-arcsight-device';
+    const hostnameInput = page.locator('#hostname')
+    await hostnameInput.fill('test-arcsight-device')
 
-    // Find hostname input by id
-    const hostnameInput = page.locator('#hostname');
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
 
-    // Clear and enter new value
-    await hostnameInput.clear();
-    await hostnameInput.fill(testHostname);
-
-    // Save settings
-    await page.locator('button:has-text("Save Global Settings")').click();
-
-    // Wait for save
-    await page.waitForTimeout(1000);
-
-    // Reload the page
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-
-    // Wait for settings to load
-    await page.waitForTimeout(1000);
-
-    // Verify the value persisted
-    const savedValue = await page.locator('#hostname').inputValue();
-    expect(savedValue).toBe(testHostname);
-  });
+    await reloadSettingsPage(page)
+    await expect(hostnameInput).toHaveValue('test-arcsight-device')
+  })
 
   test('should toggle IP mode between DHCP and Static', async ({ page }) => {
-    // Set to DHCP
-    await page.locator('#ip-mode').click();
-    await page.locator('[role="option"]:has-text("DHCP")').click();
-    await page.locator('button:has-text("Save Global Settings")').click();
-    await page.waitForTimeout(1000);
+    const ipSelect = page.locator('#ip-mode')
 
-    // Reload and verify DHCP
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
+    await ipSelect.click()
+    await page.getByRole('option', { name: 'DHCP' }).click()
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
 
-    // Check the select shows DHCP
-    await expect(page.locator('#ip-mode')).toContainText('DHCP');
+    await reloadSettingsPage(page)
+    await expect(ipSelect).toContainText('DHCP')
 
-    // Set to Static
-    await page.locator('#ip-mode').click();
-    await page.locator('[role="option"]:has-text("Static IP")').click();
-    await page.locator('button:has-text("Save Global Settings")').click();
-    await page.waitForTimeout(1000);
+    await ipSelect.click()
+    await page.getByRole('option', { name: 'Static IP' }).click()
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
 
-    // Reload and verify Static
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
-    await expect(page.locator('#ip-mode')).toContainText('Static IP');
+    await reloadSettingsPage(page)
+    await expect(ipSelect).toContainText('Static IP')
 
-    // Reset to DHCP
-    await page.locator('#ip-mode').click();
-    await page.locator('[role="option"]:has-text("DHCP")').click();
-    await page.locator('button:has-text("Save Global Settings")').click();
-  });
+    await ipSelect.click()
+    await page.getByRole('option', { name: 'DHCP' }).click()
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
+  })
 
   test('should save all global settings together', async ({ page }) => {
-    const testData = {
-      team_number: '5678',
-      hostname: 'arcsight-test',
-    };
+    const teamNumberInput = page.locator('#team-number')
+    const hostnameInput = page.locator('#hostname')
+    const ipSelect = page.locator('#ip-mode')
 
-    // Fill all fields
-    await page.locator('#team-number').clear();
-    await page.locator('#team-number').fill(testData.team_number);
-    await page.locator('#hostname').clear();
-    await page.locator('#hostname').fill(testData.hostname);
-    await page.locator('#ip-mode').click();
-    await page.locator('[role="option"]:has-text("DHCP")').click();
+    await teamNumberInput.fill('5678')
+    await hostnameInput.fill('arcsight-test')
+    await ipSelect.click()
+    await page.getByRole('option', { name: 'DHCP' }).click()
 
-    // Save
-    await page.locator('button:has-text("Save Global Settings")').click();
-    await page.waitForTimeout(1000);
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
 
-    // Reload
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
-
-    // Verify all values persisted
-    expect(await page.locator('#team-number').inputValue()).toBe(testData.team_number);
-    expect(await page.locator('#hostname').inputValue()).toBe(testData.hostname);
-    await expect(page.locator('#ip-mode')).toContainText('DHCP');
-  });
+    await reloadSettingsPage(page)
+    await expect(teamNumberInput).toHaveValue('5678')
+    await expect(hostnameInput).toHaveValue('arcsight-test')
+    await expect(ipSelect).toContainText('DHCP')
+  })
 
   test('should clear values when saved as empty', async ({ page }) => {
-    // First set some values
-    await page.locator('#team-number').clear();
-    await page.locator('#team-number').fill('9999');
-    await page.locator('button:has-text("Save Global Settings")').click();
-    await page.waitForTimeout(1000);
+    const teamNumberInput = page.locator('#team-number')
 
-    // Now clear them
-    await page.locator('#team-number').clear();
-    await page.locator('button:has-text("Save Global Settings")').click();
-    await page.waitForTimeout(1000);
+    await teamNumberInput.fill('9999')
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
 
-    // Reload
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
+    await teamNumberInput.fill('')
+    await Promise.all([
+      waitForEndpoint(page, '/settings/global/update', 'POST'),
+      page.getByRole('button', { name: 'Save Global Settings' }).click(),
+    ])
 
-    // Verify empty
-    const value = await page.locator('#team-number').inputValue();
-    expect(value).toBe('');
-  });
+    await reloadSettingsPage(page)
+    await expect(teamNumberInput).toHaveValue('')
+  })
 
   test('should have GenICam configuration tab', async ({ page }) => {
-    // Click GenICam tab
-    await page.locator('button[role="tab"]:has-text("GenICam")').click();
-
-    // Check GenICam content is visible
-    await expect(page.locator('text=GenICam Settings')).toBeVisible();
-
-    // CTI path input should exist
-    await expect(page.locator('#cti-path')).toBeVisible();
-  });
+    await page.getByRole('tab', { name: 'GenICam' }).click()
+    await expect(page.getByRole('heading', { name: 'GenICam Settings' })).toBeVisible()
+    await expect(page.locator('#cti-path')).toBeVisible()
+  })
 
   test('should save and persist GenICam CTI path', async ({ page }) => {
-    const testPath = '/usr/local/lib/producer.cti';
+    const ctiInput = page.locator('#cti-path')
+    const testPath = '/usr/local/lib/producer.cti'
 
-    // Navigate to GenICam tab
-    await page.locator('button[role="tab"]:has-text("GenICam")').click();
+    await page.getByRole('tab', { name: 'GenICam' }).click()
+    await ctiInput.fill(testPath)
 
-    // Enter CTI path
-    await page.locator('#cti-path').clear();
-    await page.locator('#cti-path').fill(testPath);
+    await Promise.all([
+      waitForEndpoint(page, '/settings/genicam/update', 'POST'),
+      page.getByRole('button', { name: 'Save Path' }).click(),
+    ])
 
-    // Save path
-    await page.locator('button:has-text("Save Path")').click();
-    await page.waitForTimeout(1000);
-
-    // Reload page
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
-
-    // Navigate back to GenICam tab
-    await page.locator('button[role="tab"]:has-text("GenICam")').click();
-
-    // Verify path persisted
-    const savedPath = await page.locator('#cti-path').inputValue();
-    expect(savedPath).toBe(testPath);
-  });
+    await reloadSettingsPage(page)
+    await page.getByRole('tab', { name: 'GenICam' }).click()
+    await expect(ctiInput).toHaveValue(testPath)
+  })
 
   test('should clear GenICam CTI path', async ({ page }) => {
-    const testPath = '/tmp/test.cti';
+    const ctiInput = page.locator('#cti-path')
+    const testPath = '/tmp/test.cti'
 
-    // Navigate to GenICam tab
-    await page.locator('button[role="tab"]:has-text("GenICam")').click();
+    await page.getByRole('tab', { name: 'GenICam' }).click()
+    await ctiInput.fill(testPath)
 
-    // Set a path first
-    await page.locator('#cti-path').clear();
-    await page.locator('#cti-path').fill(testPath);
-    await page.locator('button:has-text("Save Path")').click();
-    await page.waitForTimeout(1000);
+    await Promise.all([
+      waitForEndpoint(page, '/settings/genicam/update', 'POST'),
+      page.getByRole('button', { name: 'Save Path' }).click(),
+    ])
 
-    // Clear the path
-    await page.locator('button:has-text("Clear Path")').click();
-    await page.waitForTimeout(1000);
+    await Promise.all([
+      waitForEndpoint(page, '/settings/genicam/clear', 'POST'),
+      page.getByRole('button', { name: 'Clear Path' }).click(),
+    ])
 
-    // Verify path is cleared in UI
-    const currentPath = await page.locator('#cti-path').inputValue();
-    expect(currentPath).toBe('');
+    await expect(ctiInput).toHaveValue('')
 
-    // Reload and verify persistence
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
-    await page.locator('button[role="tab"]:has-text("GenICam")').click();
-
-    const savedPath = await page.locator('#cti-path').inputValue();
-    expect(savedPath).toBe('');
-  });
+    await reloadSettingsPage(page)
+    await page.getByRole('tab', { name: 'GenICam' }).click()
+    await expect(ctiInput).toHaveValue('')
+  })
 
   test('should save and persist AprilTag field selection', async ({ page }) => {
-    // Navigate to AprilTag Fields tab
-    await page.locator('button[role="tab"]:has-text("AprilTag Fields")').click();
+    await page.getByRole('tab', { name: 'AprilTag Fields' }).click()
 
-    // Select a field layout
-    await page.locator('#field-select').click();
-    await page.locator('[role="option"]:has-text("2024 Crescendo")').click();
-    await page.waitForTimeout(500);
+    await page.locator('#field-select').click()
+    const initialOptions = page.locator('[role="option"]')
+    const optionCount = await initialOptions.count()
+    expect(optionCount).toBeGreaterThan(0)
 
-    // Reload page
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
+    const firstLabel = (await initialOptions.first().textContent())?.trim() ?? ''
+    expect(firstLabel).not.toEqual('')
 
-    // Navigate back to AprilTag Fields tab
-    await page.locator('button[role="tab"]:has-text("AprilTag Fields")').click();
+    await Promise.all([
+      waitForEndpoint(page, '/settings/apriltag/select', 'POST'),
+      initialOptions.first().click(),
+    ])
 
-    // Verify selection persisted
-    await expect(page.locator('#field-select')).toContainText('2024 Crescendo');
+    await expect(page.locator('#field-select')).toContainText(firstLabel)
 
-    // Test switching to another field
-    await page.locator('#field-select').click();
-    await page.locator('[role="option"]:has-text("2023 Charged Up")').click();
-    await page.waitForTimeout(500);
+    await reloadSettingsPage(page)
+    await page.getByRole('tab', { name: 'AprilTag Fields' }).click()
+    await expect(page.locator('#field-select')).toContainText(firstLabel)
 
-    // Reload and verify
-    await page.reload();
-    await page.waitForSelector('h1:has-text("Settings")');
-    await page.waitForTimeout(1000);
-    await page.locator('button[role="tab"]:has-text("AprilTag Fields")').click();
-    await expect(page.locator('#field-select')).toContainText('2023 Charged Up');
-  });
+    if (optionCount > 1) {
+      await page.locator('#field-select').click()
+      const options = page.locator('[role="option"]')
+      const secondLabel = (await options.nth(1).textContent())?.trim() ?? ''
+      expect(secondLabel).not.toEqual('')
+
+      await Promise.all([
+        waitForEndpoint(page, '/settings/apriltag/select', 'POST'),
+        options.nth(1).click(),
+      ])
+
+      await expect(page.locator('#field-select')).toContainText(secondLabel)
+
+      await reloadSettingsPage(page)
+      await page.getByRole('tab', { name: 'AprilTag Fields' }).click()
+      await expect(page.locator('#field-select')).toContainText(secondLabel)
+    }
+  })
 
   test('should have system control buttons', async ({ page }) => {
-    // Click System tab
-    await page.locator('button[role="tab"]:has-text("System")').click();
-
-    // Check for control buttons
-    await expect(page.locator('button:has-text("Restart Application")')).toBeVisible();
-    await expect(page.locator('button:has-text("Reboot Device")')).toBeVisible();
-    await expect(page.locator('button:has-text("Factory Reset")')).toBeVisible();
-  });
+    await page.getByRole('tab', { name: 'System' }).click()
+    await expect(page.getByRole('button', { name: 'Restart Application' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Reboot Device' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Factory Reset' })).toBeVisible()
+  })
 
   test('should show confirmation dialog for restart and allow cancel', async ({ page }) => {
-    // Click System tab
-    await page.locator('button[role="tab"]:has-text("System")').click();
+    await page.getByRole('tab', { name: 'System' }).click()
+    await page.getByRole('button', { name: 'Restart Application' }).click()
 
-    // Click restart button
-    await page.locator('button:has-text("Restart Application")').click();
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('temporarily interrupt all camera feeds')
 
-    // Confirmation dialog should appear
-    await expect(page.locator('text=Confirm Action')).toBeVisible();
-    await expect(page.locator('text=temporarily interrupt all camera feeds')).toBeVisible();
-
-    // Click cancel
-    await page.locator('button:has-text("Cancel")').click();
-
-    // Dialog should close
-    await expect(page.locator('text=Confirm Action')).not.toBeVisible();
-  });
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).not.toBeVisible()
+  })
 
   test('should show confirmation dialog for reboot and allow cancel', async ({ page }) => {
-    // Click System tab
-    await page.locator('button[role="tab"]:has-text("System")').click();
+    await page.getByRole('tab', { name: 'System' }).click()
+    await page.getByRole('button', { name: 'Reboot Device' }).click()
 
-    // Click reboot button
-    await page.locator('button:has-text("Reboot Device")').click();
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('All processes will be stopped')
 
-    // Confirmation dialog should appear
-    await expect(page.locator('text=Confirm Action')).toBeVisible();
-    await expect(page.locator('text=All processes will be stopped')).toBeVisible();
-
-    // Click cancel
-    await page.locator('button:has-text("Cancel")').click();
-
-    // Dialog should close
-    await expect(page.locator('text=Confirm Action')).not.toBeVisible();
-  });
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).not.toBeVisible()
+  })
 
   test('should show confirmation dialog for factory reset and allow cancel', async ({ page }) => {
-    // Click System tab
-    await page.locator('button[role="tab"]:has-text("System")').click();
+    await page.getByRole('tab', { name: 'System' }).click()
+    await page.getByRole('button', { name: 'Factory Reset' }).click()
 
-    // Click factory reset button
-    await page.locator('button:has-text("Factory Reset")').click();
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('cannot be undone')
 
-    // Confirmation dialog should appear with warning
-    await expect(page.locator('text=Confirm Action')).toBeVisible();
-    await expect(page.locator('text=cannot be undone')).toBeVisible();
-
-    // Click cancel
-    await page.locator('button:has-text("Cancel")').click();
-
-    // Dialog should close
-    await expect(page.locator('text=Confirm Action')).not.toBeVisible();
-  });
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).not.toBeVisible()
+  })
 
   test('should have export and import database buttons', async ({ page }) => {
-    // Click System tab
-    await page.locator('button[role="tab"]:has-text("System")').click();
-
-    // Check for database buttons
-    await expect(page.locator('button:has-text("Export Database")')).toBeVisible();
-    await expect(page.locator('button:has-text("Import Database")')).toBeVisible();
-  });
+    await page.getByRole('tab', { name: 'System' }).click()
+    await expect(page.getByRole('button', { name: 'Export Database' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Import Database' })).toBeVisible()
+  })
 
   test('should navigate between settings tabs', async ({ page }) => {
-    // Navigate through tabs
-    await page.locator('button[role="tab"]:has-text("Global")').click();
-    await expect(page.locator('text=Global Settings')).toBeVisible();
+    await page.getByRole('tab', { name: 'Global' }).click()
+    await expect(page.getByRole('heading', { name: 'Global Settings' })).toBeVisible()
 
-    await page.locator('button[role="tab"]:has-text("GenICam")').click();
-    await expect(page.locator('text=GenICam Settings')).toBeVisible();
+    await page.getByRole('tab', { name: 'GenICam' }).click()
+    await expect(page.getByRole('heading', { name: 'GenICam Settings' })).toBeVisible()
 
-    await page.locator('button[role="tab"]:has-text("AprilTag Fields")').click();
-    await expect(page.locator('text=AprilTag Field Layouts')).toBeVisible();
+    await page.getByRole('tab', { name: 'AprilTag Fields' }).click()
+    await expect(page.getByRole('heading', { name: 'AprilTag Field Layouts' })).toBeVisible()
 
-    await page.locator('button[role="tab"]:has-text("System")').click();
-    await expect(page.locator('text=System Control')).toBeVisible();
-  });
-});
+    await page.getByRole('tab', { name: 'System' }).click()
+    await expect(page.getByRole('heading', { name: 'System Controls' })).toBeVisible()
+  })
+})

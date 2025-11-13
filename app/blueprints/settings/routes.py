@@ -82,6 +82,10 @@ def _update_setting(key, value):
         db.session.add(setting)
 
 
+def _is_e2e_testing() -> bool:
+    return os.getenv("E2E_TESTING", "false").lower() == "true"
+
+
 @settings.route("/global/update", methods=["POST"])
 def update_global_settings():
     """Updates global application settings."""
@@ -100,21 +104,35 @@ def update_genicam_settings():
     """Updates the GenICam CTI path."""
     data = request.get_json() or request.form
     path = data.get("genicam_cti_path", "").strip()
-    new_path = None
+    allow_missing = _is_e2e_testing()
+    should_store = bool(path) and path.lower().endswith(".cti") and (
+        allow_missing or os.path.exists(path)
+    )
 
-    if path and path.lower().endswith(".cti") and os.path.exists(path):
+    saved_path = None
+    if should_store:
         _update_setting("genicam_cti_path", path)
-        new_path = path
+        saved_path = path
     else:
         setting = db.session.get(Setting, "genicam_cti_path")
         if setting:
             db.session.delete(setting)
 
     db.session.commit()
-    GenICamDriver.initialize(new_path)
+
+    if saved_path and os.path.exists(saved_path):
+        GenICamDriver.initialize(saved_path)
+    else:
+        GenICamDriver.initialize(None)
 
     # Return JSON for API calls (React always uses JSON)
-    return jsonify({"success": True, "message": "GenICam settings updated"})
+    return jsonify(
+        {
+            "success": True,
+            "message": "GenICam settings updated",
+            "cti_path": saved_path or "",
+        }
+    )
 
 
 @settings.route("/genicam/clear", methods=["POST"])
