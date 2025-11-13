@@ -1,0 +1,45 @@
+# ArcSight Requirements
+# Python 3.11 recommended
+# For conda users, see environment.yml
+
+# Core dependencies
+numpy<2
+psutil
+opencv-python
+
+# Flask
+flask
+flask-sqlalchemy
+
+# Camera/Vision libraries
+harvesters
+genicam
+robotpy-apriltag
+robotpy-wpimath
+depthai
+pyrealsense2
+
+# ML inference and conversion
+onnxruntime
+onnx
+tensorflow
+ultralytics
+pycoral ; sys_platform != 'win32'
+rknn-toolkit2 ; sys_platform == 'linux' and platform_machine == 'aarch64'
+
+# Utilities
+appdirs
+reportlab
+wmi ; sys_platform == 'win32'
+pyudev ; sys_platform == 'linux'
+
+# Testing
+pytest
+pytest-flask
+pytest-cov
+pytest-mock
+pytest-timeout
+
+# Code quality
+ruff
+python-dotenv
