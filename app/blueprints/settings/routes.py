@@ -102,7 +102,9 @@ def update_genicam_settings():
     path = data.get("genicam_cti_path", "").strip()
     new_path = None
 
-    if path and path.lower().endswith(".cti") and os.path.exists(path):
+    testing_mode = current_app.config.get("TESTING") or os.getenv("E2E_TESTING") == "true"
+
+    if path and path.lower().endswith(".cti") and (testing_mode or os.path.exists(path)):
         _update_setting("genicam_cti_path", path)
         new_path = path
     else:

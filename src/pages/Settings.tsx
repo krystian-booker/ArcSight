@@ -330,8 +330,8 @@ export default function Settings() {
                     <SelectValue placeholder="Select field layout" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="2024-crescendo">2024 Crescendo</SelectItem>
-                    <SelectItem value="2023-charged-up">2023 Charged Up</SelectItem>
+                    <SelectItem value="2024-crescendo.json">2024 Crescendo</SelectItem>
+                    <SelectItem value="2023-charged-up.json">2023 Charged Up</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

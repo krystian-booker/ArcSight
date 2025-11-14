@@ -17,6 +17,39 @@ import { api } from '@/lib/api'
 import { useAppStore } from '@/store/useAppStore'
 import type { Camera, CalibrationResult } from '@/types'
 
+const CALIBRATION_STORAGE_KEY = 'calibration:preferences'
+
+const clampIntegerString = (value: string, min: number, max: number) => {
+  if (value === '') {
+    return String(min)
+  }
+
+  const numeric = parseInt(value, 10)
+  if (Number.isNaN(numeric)) {
+    return String(min)
+  }
+
+  const safeMax = Math.max(max, min)
+  const clamped = Math.min(Math.max(numeric, min), safeMax)
+  return clamped.toString()
+}
+
+const clampFloatString = (value: string, min: number, max: number) => {
+  if (value === '') {
+    return String(min)
+  }
+
+  const numeric = parseFloat(value)
+  if (Number.isNaN(numeric)) {
+    return String(min)
+  }
+
+  const safeMax = Math.max(max, min)
+  const clamped = Math.min(Math.max(numeric, min), safeMax)
+  const rounded = Math.round(clamped * 100) / 100
+  return rounded.toString()
+}
+
 type CalibrationStep = 'setup' | 'capture' | 'results'
 
 export default function Calibration() {
@@ -35,14 +68,103 @@ export default function Calibration() {
   const [isSaving, setIsSaving] = useState(false)
   const [calibrationResult, setCalibrationResult] = useState<CalibrationResult | null>(null)
 
+  const resolveSquareSize = () => {
+    const parsed = parseFloat(squareSize)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 25
+  }
+
   // Calculate max dimensions for A4 paper (210mm x 297mm)
   const getMaxWidth = () => {
-    const size = parseFloat(squareSize) || 25
-    return Math.floor(210 / size) - 1
+    const size = resolveSquareSize()
+    const computed = Math.floor(210 / size) - 1
+    return Math.max(computed, 3)
   }
   const getMaxHeight = () => {
-    const size = parseFloat(squareSize) || 25
-    return Math.floor(297 / size) - 1
+    const size = resolveSquareSize()
+    const computed = Math.floor(297 / size) - 1
+    return Math.max(computed, 3)
+  }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const stored = window.localStorage.getItem(CALIBRATION_STORAGE_KEY)
+    if (!stored) {
+      return
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as {
+        patternType?: 'chessboard' | 'charuco'
+        innerCornersWidth?: string
+        innerCornersHeight?: string
+        squareSize?: string
+        markerDict?: string
+      }
+
+      if (parsed.patternType === 'chessboard' || parsed.patternType === 'charuco') {
+        setPatternType(parsed.patternType)
+      }
+
+      if (typeof parsed.innerCornersWidth === 'string') {
+        setInnerCornersWidth(parsed.innerCornersWidth)
+      }
+
+      if (typeof parsed.innerCornersHeight === 'string') {
+        setInnerCornersHeight(parsed.innerCornersHeight)
+      }
+
+      if (typeof parsed.squareSize === 'string') {
+        setSquareSize(parsed.squareSize)
+      }
+
+      if (typeof parsed.markerDict === 'string') {
+        setMarkerDict(parsed.markerDict)
+      }
+    } catch (error) {
+      console.error('Failed to restore calibration preferences', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const payload = {
+      patternType,
+      innerCornersWidth,
+      innerCornersHeight,
+      squareSize,
+      markerDict,
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(payload))
+    }
+  }, [patternType, innerCornersWidth, innerCornersHeight, squareSize, markerDict])
+
+  useEffect(() => {
+    setInnerCornersWidth((current) =>
+      clampIntegerString(current, 3, getMaxWidth())
+    )
+    setInnerCornersHeight((current) =>
+      clampIntegerString(current, 3, getMaxHeight())
+    )
+  }, [squareSize])
+
+  const clampWidthValue = () => {
+    setInnerCornersWidth((current) =>
+      clampIntegerString(current, 3, getMaxWidth())
+    )
+  }
+
+  const clampHeightValue = () => {
+    setInnerCornersHeight((current) =>
+      clampIntegerString(current, 3, getMaxHeight())
+    )
+  }
+
+  const clampSquareSizeValue = () => {
+    setSquareSize((current) => clampFloatString(current, 5, 50))
   }
 
   // Fetch cameras on mount
@@ -92,15 +214,31 @@ export default function Calibration() {
       return
     }
 
+    const width = parseInt(innerCornersWidth)
+    const height = parseInt(innerCornersHeight)
+    const squareSizeValue = parseFloat(squareSize)
+    const isCharuco = patternType === 'charuco'
+
+    const payload = {
+      camera_id: parseInt(selectedCameraId),
+      pattern_type: isCharuco ? 'ChAruco' : 'Chessboard',
+      pattern_params: isCharuco
+        ? {
+            squares_x: width + 1,
+            squares_y: height + 1,
+            square_size: squareSizeValue,
+            marker_size: squareSizeValue * 0.75,
+            dictionary_name: markerDict,
+          }
+        : {
+            cols: width,
+            rows: height,
+            square_size: squareSizeValue,
+          },
+    }
+
     try {
-      await api.post('/calibration/start', {
-        camera_id: parseInt(selectedCameraId),
-        pattern_type: patternType,
-        inner_corners_width: parseInt(innerCornersWidth),
-        inner_corners_height: parseInt(innerCornersHeight),
-        square_size_mm: parseFloat(squareSize),
-        ...(patternType === 'charuco' && { marker_dict: markerDict }),
-      })
+      await api.post('/calibration/start', payload)
 
       setStep('capture')
       setCapturedFrames(0)
@@ -209,22 +347,37 @@ export default function Calibration() {
       </div>
 
       {/* Step indicator */}
-      <div className="flex items-center justify-center gap-4">
-        <div className={`flex items-center gap-2 ${step === 'setup' ? 'text-primary' : 'text-muted'}`}>
+      <div
+        className="flex items-center justify-center gap-4"
+        data-testid="calibration-step-indicator"
+      >
+        <div
+          className={`flex items-center gap-2 ${step === 'setup' ? 'text-primary' : 'text-muted'}`}
+          data-testid="calibration-step-setup"
+          data-active={step === 'setup' ? 'true' : 'false'}
+        >
           <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'setup' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
             1
           </div>
           <span className="text-sm font-medium">Setup</span>
         </div>
         <div className="h-px w-12 bg-border" />
-        <div className={`flex items-center gap-2 ${step === 'capture' ? 'text-primary' : 'text-muted'}`}>
+        <div
+          className={`flex items-center gap-2 ${step === 'capture' ? 'text-primary' : 'text-muted'}`}
+          data-testid="calibration-step-capture"
+          data-active={step === 'capture' ? 'true' : 'false'}
+        >
           <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'capture' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
             2
           </div>
           <span className="text-sm font-medium">Capture</span>
         </div>
         <div className="h-px w-12 bg-border" />
-        <div className={`flex items-center gap-2 ${step === 'results' ? 'text-primary' : 'text-muted'}`}>
+        <div
+          className={`flex items-center gap-2 ${step === 'results' ? 'text-primary' : 'text-muted'}`}
+          data-testid="calibration-step-results"
+          data-active={step === 'results' ? 'true' : 'false'}
+        >
           <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'results' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
             3
           </div>
@@ -234,9 +387,9 @@ export default function Calibration() {
 
       {/* Step 1: Setup */}
       {step === 'setup' && (
-        <Card>
+        <Card data-testid="calibration-setup-card">
           <CardHeader>
-            <CardTitle>Calibration Setup</CardTitle>
+            <CardTitle data-testid="calibration-setup-title">Calibration Configuration</CardTitle>
             <CardDescription>
               Select camera and configure calibration pattern
             </CardDescription>
@@ -281,9 +434,10 @@ export default function Calibration() {
                   max={getMaxWidth()}
                   value={innerCornersWidth}
                   onChange={(e) => setInnerCornersWidth(e.target.value)}
+                  onBlur={clampWidthValue}
                 />
                 <p className="text-xs text-muted">
-                  Max {getMaxWidth()} for {squareSize}mm squares on A4
+                  Max {getMaxWidth()} for {(squareSize || '25')}mm squares on A4
                 </p>
               </div>
 
@@ -296,9 +450,10 @@ export default function Calibration() {
                   max={getMaxHeight()}
                   value={innerCornersHeight}
                   onChange={(e) => setInnerCornersHeight(e.target.value)}
+                  onBlur={clampHeightValue}
                 />
                 <p className="text-xs text-muted">
-                  Max {getMaxHeight()} for {squareSize}mm squares on A4
+                  Max {getMaxHeight()} for {(squareSize || '25')}mm squares on A4
                 </p>
               </div>
 
@@ -312,6 +467,7 @@ export default function Calibration() {
                   step={0.1}
                   value={squareSize}
                   onChange={(e) => setSquareSize(e.target.value)}
+                  onBlur={clampSquareSizeValue}
                 />
                 <p className="text-xs text-muted">
                   5mm - 50mm (affects max board size)
@@ -354,31 +510,35 @@ export default function Calibration() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>Calibration Feed</CardTitle>
+              <CardTitle data-testid="calibration-feed-title">Calibration Feed</CardTitle>
               <CardDescription>
                 Position pattern in different angles and distances
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <MJPEGStream
-                src={`/calibration/calibration_feed/${selectedCamera.id}`}
-                alt="Calibration Feed"
-                className="aspect-video w-full"
-              />
+              <div data-testid="calibration-feed-stream">
+                <MJPEGStream
+                  src={`/calibration/calibration_feed/${selectedCamera.id}`}
+                  alt="Calibration Feed"
+                  className="aspect-video w-full"
+                />
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Capture Frames</CardTitle>
+              <CardTitle data-testid="capture-step-title">Capture Frames</CardTitle>
               <CardDescription>
                 Capture at least 5 frames from different positions
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-center py-8">
-                <div className="text-4xl font-bold mb-2">{capturedFrames}</div>
-                <p className="text-muted">Frames captured</p>
+                <div className="text-4xl font-bold mb-2" data-testid="calibration-frames-count">
+                  {capturedFrames}
+                </div>
+                <p className="text-muted" data-testid="calibration-frames-label">Frames captured</p>
               </div>
 
               <Button
