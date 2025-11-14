@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Settings Page', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/settings');
-    // Wait for the page to load
-    await page.waitForSelector('h1:has-text("Settings")');
-    // Wait for settings to load from API
-    await page.waitForTimeout(1000);
-  });
+test.beforeEach(async ({ page, request }) => {
+  const resetResponse = await request.post('/test/reset-database');
+  expect(resetResponse.ok()).toBeTruthy();
+
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+  await page.waitForTimeout(1000);
+});
 
   test('should load settings page', async ({ page }) => {
     // Check page title
@@ -337,15 +338,15 @@ test.describe('Settings Page', () => {
   test('should navigate between settings tabs', async ({ page }) => {
     // Navigate through tabs
     await page.locator('button[role="tab"]:has-text("Global")').click();
-    await expect(page.locator('text=Global Settings')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Global Settings' })).toBeVisible();
 
     await page.locator('button[role="tab"]:has-text("GenICam")').click();
-    await expect(page.locator('text=GenICam Settings')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GenICam Settings' })).toBeVisible();
 
     await page.locator('button[role="tab"]:has-text("AprilTag Fields")').click();
-    await expect(page.locator('text=AprilTag Field Layouts')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'AprilTag Field Layouts' })).toBeVisible();
 
     await page.locator('button[role="tab"]:has-text("System")').click();
-    await expect(page.locator('text=System Control')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'System Controls' })).toBeVisible();
   });
 });

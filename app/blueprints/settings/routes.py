@@ -99,22 +99,25 @@ def update_global_settings():
 def update_genicam_settings():
     """Updates the GenICam CTI path."""
     data = request.get_json() or request.form
-    path = data.get("genicam_cti_path", "").strip()
-    new_path = None
+    path = (data.get("genicam_cti_path", "") or "").strip()
 
-    if path and path.lower().endswith(".cti") and os.path.exists(path):
-        _update_setting("genicam_cti_path", path)
-        new_path = path
-    else:
-        setting = db.session.get(Setting, "genicam_cti_path")
+    setting = db.session.get(Setting, "genicam_cti_path")
+    if path:
         if setting:
-            db.session.delete(setting)
+            setting.value = path
+        else:
+            db.session.add(Setting(key="genicam_cti_path", value=path))
+    elif setting:
+        db.session.delete(setting)
 
     db.session.commit()
-    GenICamDriver.initialize(new_path)
+
+    # Only attempt driver initialisation when a real path exists on disk
+    initialise_path = path if path and os.path.exists(path) else None
+    GenICamDriver.initialize(initialise_path)
 
     # Return JSON for API calls (React always uses JSON)
-    return jsonify({"success": True, "message": "GenICam settings updated"})
+    return jsonify({"success": True, "message": "GenICam settings updated", "saved_path": path})
 
 
 @settings.route("/genicam/clear", methods=["POST"])
@@ -216,12 +219,6 @@ def factory_reset():
 
     # Return JSON for API calls (React always uses JSON)
     return jsonify({"success": True, "message": "Factory reset complete"})
-
-
-def _is_valid_field_name(name: str) -> bool:
-    return name in {info.name for info in list_all_fields()}
-
-
 def _extract_field_name() -> str:
     if request.is_json:
         payload = request.get_json(silent=True) or {}
@@ -233,8 +230,6 @@ def _extract_field_name() -> str:
 def select_apriltag_field():
     """Persist the selected AprilTag field layout."""
     field_name = _extract_field_name()
-    if field_name and not _is_valid_field_name(field_name):
-        return jsonify({"ok": False, "error": "Unknown field layout"}), 400
 
     setting = db.session.get(Setting, "apriltag_field")
     if field_name:

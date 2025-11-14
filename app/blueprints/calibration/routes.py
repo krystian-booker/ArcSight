@@ -155,8 +155,39 @@ def calibration_start():
     pattern_type = data.get("pattern_type")
     pattern_params = data.get("pattern_params")
 
-    if not all([camera_id, pattern_type, pattern_params]):
+    if not camera_id or not pattern_type:
         return jsonify({"success": False, "error": "Missing required parameters."}), 400
+
+    if pattern_params is None:
+        try:
+            if pattern_type.lower() == "chessboard":
+                rows = int(data.get("inner_corners_height"))
+                cols = int(data.get("inner_corners_width"))
+                square_size = float(data.get("square_size_mm"))
+                pattern_params = {
+                    "rows": rows,
+                    "cols": cols,
+                    "square_size": square_size,
+                }
+            elif pattern_type.lower() == "charuco":
+                width = int(data.get("inner_corners_width"))
+                height = int(data.get("inner_corners_height"))
+                square_size_mm = float(data.get("square_size_mm"))
+                marker_dict = data.get("marker_dict", "DICT_6X6_250")
+                pattern_params = {
+                    "squares_x": width + 1,
+                    "squares_y": height + 1,
+                    "square_size": square_size_mm / 1000.0,
+                    "marker_size": (square_size_mm * 0.75) / 1000.0,
+                    "dictionary_name": marker_dict,
+                }
+            else:
+                return jsonify({"success": False, "error": "Unsupported pattern type."}), 400
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "Invalid calibration parameters."}), 400
+
+    if pattern_params is None:
+        return jsonify({"success": False, "error": "Missing pattern parameters."}), 400
 
     try:
         current_app.calibration_manager.start_session(

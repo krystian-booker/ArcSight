@@ -1,10 +1,19 @@
+import os
 import threading
 import queue
 from typing import List, TypedDict, Optional
 from sqlalchemy.orm import joinedload
 
 from .models import Camera
-from .camera_threads import CameraAcquisitionThread, VisionProcessingThread
+
+CAMERA_THREADS_ENABLED = (
+    os.environ.get("CAMERA_THREADS_ENABLED", "True").lower() == "true"
+)
+
+if CAMERA_THREADS_ENABLED:
+    from .camera_threads import CameraAcquisitionThread, VisionProcessingThread
+else:
+    CameraAcquisitionThread = VisionProcessingThread = None  # type: ignore
 
 
 class PipelineThreadConfig(TypedDict):
@@ -70,6 +79,9 @@ active_camera_threads_lock = threading.Lock()
 # --- Centralized Thread Management ---
 def start_camera_thread(camera_config: CameraThreadConfig, app):
     """Starts acquisition and processing threads for a single camera."""
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; skipping start request.")
+        return
     with active_camera_threads_lock:
         identifier = camera_config["identifier"]
         if identifier not in active_camera_threads:
@@ -127,6 +139,9 @@ def start_camera_thread(camera_config: CameraThreadConfig, app):
 
 def stop_camera_thread(identifier):
     """Stops all threads for a single camera."""
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; skipping stop request.")
+        return
     # Step 1: Mark camera as stopping and copy thread references under lock
     with active_camera_threads_lock:
         if identifier not in active_camera_threads:
@@ -195,6 +210,10 @@ def add_pipeline_to_camera(
         This function accepts primitive values to avoid database I/O in the hot path.
         Callers should pre-fetch data from the database before calling.
     """
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; cannot add pipeline.")
+        return
+
     with active_camera_threads_lock:
         if identifier not in active_camera_threads:
             print(f"Cannot add pipeline to camera {identifier}: camera not running")
@@ -238,6 +257,10 @@ def remove_pipeline_from_camera(identifier, pipeline_id):
         This function accepts primitive values to avoid database I/O in the hot path.
         Callers should pre-fetch the camera identifier before calling.
     """
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; cannot remove pipeline.")
+        return
+
     with active_camera_threads_lock:
         if identifier not in active_camera_threads:
             print(
@@ -279,6 +302,10 @@ def update_pipeline_in_camera(
         This function accepts primitive values to avoid database I/O in the hot path.
         Callers should pre-fetch data from the database before calling.
     """
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; cannot update pipeline.")
+        return
+
     with active_camera_threads_lock:
         if identifier not in active_camera_threads:
             print(f"Cannot update pipeline for camera {identifier}: camera not running")
@@ -324,6 +351,9 @@ def update_pipeline_in_camera(
 
 def start_all_camera_threads(app):
     """Initializes all configured cameras at application startup."""
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; not starting threads.")
+        return
     print("Starting acquisition and processing threads for all configured cameras...")
     with app.app_context():
         camera_configs = [
@@ -336,6 +366,9 @@ def start_all_camera_threads(app):
 
 def stop_all_camera_threads():
     """Gracefully stops all threads at application shutdown."""
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; nothing to stop.")
+        return
     print("Stopping all camera acquisition and processing threads...")
     with active_camera_threads_lock:
         identifiers_to_stop = list(active_camera_threads.keys())
@@ -348,6 +381,8 @@ def stop_all_camera_threads():
 
 def get_camera_pipeline_results(identifier):
     """Gets the latest results from all pipelines for a given camera."""
+    if not CAMERA_THREADS_ENABLED:
+        return None
     with active_camera_threads_lock:
         thread_group = active_camera_threads.get(identifier)
         if not thread_group:
@@ -362,6 +397,8 @@ def get_camera_pipeline_results(identifier):
 
 def is_camera_thread_running(identifier):
     """Checks if a camera's acquisition thread is active."""
+    if not CAMERA_THREADS_ENABLED:
+        return False
     with active_camera_threads_lock:
         thread_group = active_camera_threads.get(identifier)
         if not thread_group:
@@ -374,6 +411,9 @@ def is_camera_thread_running(identifier):
 
 def notify_camera_config_update(identifier, new_orientation):
     """Notifies a camera thread of configuration changes via event signaling."""
+    if not CAMERA_THREADS_ENABLED:
+        print("Camera threads disabled by configuration; cannot notify camera.")
+        return
     with active_camera_threads_lock:
         thread_group = active_camera_threads.get(identifier)
         if thread_group and not thread_group.get("stopping", False):
