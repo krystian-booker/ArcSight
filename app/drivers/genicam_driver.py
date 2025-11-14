@@ -1,7 +1,16 @@
-import threading
-import cv2
 import os
+import threading
+
 from .base_driver import BaseDriver
+
+CAMERA_THREADS_ENABLED = (
+    os.environ.get("CAMERA_THREADS_ENABLED", "True").lower() == "true"
+)
+
+if CAMERA_THREADS_ENABLED:
+    import cv2  # type: ignore  # noqa: F401
+else:  # pragma: no cover - exercised in environments without OpenCV
+    cv2 = None  # type: ignore
 
 # Attempt to import Harvesters and GenICam API
 try:
@@ -118,13 +127,14 @@ class GenICamDriver(BaseDriver):
                 img = component.data.reshape(component.height, component.width)
 
                 # Convert frame to BGR format for consistency with OpenCV.
-                if "Bayer" in component.data_format:
-                    # Example for BayerRG; the specific conversion might need to be configurable.
-                    return cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
-                elif len(img.shape) == 2:  # Grayscale image
-                    return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-                else:
-                    return img  # Assume it's already in a compatible format (e.g., BGR)
+                if cv2 is not None:
+                    if "Bayer" in component.data_format:
+                        # Example for BayerRG; the specific conversion might need to be configurable.
+                        return cv2.cvtColor(img, cv2.COLOR_BayerRG2BGR)
+                    if len(img.shape) == 2:  # Grayscale image
+                        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+                return img  # Assume it's already in a compatible format (e.g., BGR)
         except (genapi.TimeoutException, genapi.LogicalErrorException) as e:
             print(
                 f"Frame acquisition timeout for GenICam {self.identifier}: {e}. Connection may be lost."

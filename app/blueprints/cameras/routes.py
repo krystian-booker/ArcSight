@@ -14,7 +14,7 @@ from . import cameras
 @cameras.route("/add", methods=["POST"])
 def add_camera():
     """Adds a new camera."""
-    data = request.get_json() or request.form
+    data = request.get_json(silent=True) or request.form
 
     name = data.get("name")
     camera_type = data.get("camera_type")
@@ -71,7 +71,7 @@ def add_camera():
 @cameras.route("/update/<int:camera_id>", methods=["POST"])
 def update_camera(camera_id):
     """Updates a camera's settings."""
-    data = request.get_json() or request.form
+    data = request.get_json(silent=True) or request.form
 
     camera = db.session.get(Camera, camera_id)
     if not camera:

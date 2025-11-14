@@ -1,45 +1,45 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Calibration Page', () => {
-  test.beforeEach(async ({ page }) => {
-    // Add a mock camera first for calibration tests
-    await page.goto('/cameras');
-    await page.waitForSelector('h1:has-text("Cameras")');
+test.beforeEach(async ({ page, request }) => {
+  const resetResponse = await request.post('/test/reset-database');
+  expect(resetResponse.ok()).toBeTruthy();
 
-    // Check if we already have a camera
-    const hasCameras = await page.locator('td').count() > 0;
+  // Add a mock camera first for calibration tests
+  await page.goto('/cameras');
+  await expect(page.getByRole('heading', { level: 1, name: 'Cameras' })).toBeVisible();
 
-    if (!hasCameras) {
-      // Add a mock USB camera
-      await page.locator('button:has-text("Add Camera")').first().click();
-      await page.locator('#camera-name').fill('Test Calibration Camera');
-      await page.locator('#camera-type').click();
-      await page.locator('[role="option"]:has-text("USB Camera")').click();
-      await page.locator('button:has-text("Discover")').click();
-      await page.waitForTimeout(1000);
-      await page.locator('button[role="combobox"]:has-text("Select device")').click();
-      await page.locator('[role="option"]:has-text("Mock USB Camera 0")').first().click();
-      // Click the submit button inside the modal (last "Add Camera" button on page)
-      await page.locator('button:has-text("Add Camera")').last().click();
-      await page.waitForTimeout(1500);
-    }
+  const hasCameras = (await page.locator('tbody td').count()) > 0;
 
-    // Navigate to calibration page
-    await page.goto('/calibration');
-    await page.waitForSelector('h1:has-text("Camera Calibration")');
-  });
+  if (!hasCameras) {
+    await page.getByRole('button', { name: 'Add Camera' }).first().click();
+    await page.locator('#camera-name').fill('Test Calibration Camera');
+    await page.locator('#camera-type').click();
+    await page.locator('[role="option"]:has-text("USB Camera")').click();
+    await page.getByRole('button', { name: 'Discover' }).click();
+    await page.waitForTimeout(1000);
+    await page.locator('button[role="combobox"]:has-text("Select device")').click();
+    await page.locator('[role="option"]:has-text("Mock USB Camera 0")').first().click();
+    await page.getByRole('button', { name: 'Add Camera' }).last().click();
+    await page.waitForTimeout(1500);
+  }
+
+  // Navigate to calibration page
+  await page.goto('/calibration');
+  await expect(page.getByRole('heading', { level: 1, name: 'Camera Calibration' })).toBeVisible();
+});
 
   test('should load calibration page', async ({ page }) => {
     // Check page title
     await expect(page.locator('h1')).toContainText('Camera Calibration');
 
     // Check step indicator
-    await expect(page.locator('text=Setup')).toBeVisible();
-    await expect(page.locator('text=Capture')).toBeVisible();
-    await expect(page.locator('text=Results')).toBeVisible();
+    await expect(page.getByText('Setup', { exact: true })).toBeVisible();
+    await expect(page.getByText('Capture', { exact: true })).toBeVisible();
+    await expect(page.getByText('Results', { exact: true })).toBeVisible();
 
     // Should be on setup step
-    await expect(page.locator('text=Calibration Setup')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Calibration Setup' })).toBeVisible();
   });
 
   test('should have valid default pattern values', async ({ page }) => {
@@ -104,7 +104,7 @@ test.describe('Calibration Page', () => {
     await page.locator('[role="option"]:has-text("Test Calibration Camera")').click();
 
     // Start button should become enabled
-    await expect(page.locator('button:has-text("Start Calibration")')).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Start Calibration' })).toBeEnabled();
   });
 
   test('should toggle between chessboard and charuco patterns', async ({ page }) => {
@@ -135,14 +135,14 @@ test.describe('Calibration Page', () => {
 
   test('should require camera selection before starting calibration', async ({ page }) => {
     // Start button should be disabled without camera
-    await expect(page.locator('button:has-text("Start Calibration")')).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Start Calibration' })).toBeDisabled();
 
     // Select camera
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
 
     // Start button should be enabled
-    await expect(page.locator('button:has-text("Start Calibration")')).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Start Calibration' })).toBeEnabled();
   });
 
   test('should start calibration and move to capture step', async ({ page }) => {
@@ -151,13 +151,13 @@ test.describe('Calibration Page', () => {
     await page.locator('[role="option"]').first().click();
 
     // Start calibration
-    await page.locator('button:has-text("Start Calibration")').click();
+    await page.getByRole('button', { name: 'Start Calibration' }).click();
     await page.waitForTimeout(1000);
 
     // Should move to capture step
-    await expect(page.locator('text=Calibration Feed')).toBeVisible();
-    await expect(page.locator('text=Capture Frames')).toBeVisible();
-    await expect(page.locator('text=Frames captured')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 3, name: 'Calibration Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 3, name: 'Capture Frames' })).toBeVisible();
+    await expect(page.getByText('Frames captured', { exact: true })).toBeVisible();
 
     // Should show 0 frames initially
     await expect(page.locator('text=0').first()).toBeVisible();
@@ -167,29 +167,30 @@ test.describe('Calibration Page', () => {
     // Select camera and start
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
-    await page.locator('button:has-text("Start Calibration")').click();
+    await page.getByRole('button', { name: 'Start Calibration' }).click();
     await page.waitForTimeout(1000);
 
     // Capture button should be visible
-    await expect(page.locator('button:has-text("Capture Frame")')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Capture Frame' })).toBeVisible();
 
     // Calculate button should be visible but disabled
-    await expect(page.locator('button:has-text("Calculate Intrinsics")')).toBeVisible();
-    await expect(page.locator('button:has-text("Calculate Intrinsics")')).toBeDisabled();
+    const calculateButton = page.getByRole('button', { name: 'Calculate Intrinsics' })
+    await expect(calculateButton).toBeVisible();
+    await expect(calculateButton).toBeDisabled();
   });
 
   test('should require minimum 5 frames before calculating', async ({ page }) => {
     // Select camera and start
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
-    await page.locator('button:has-text("Start Calibration")').click();
+    await page.getByRole('button', { name: 'Start Calibration' }).click();
     await page.waitForTimeout(1000);
 
     // Should show message about capturing more frames
     await expect(page.locator('text=Capture 5 more frames to calculate')).toBeVisible();
 
     // Calculate button should be disabled
-    await expect(page.locator('button:has-text("Calculate Intrinsics")')).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Calculate Intrinsics' })).toBeDisabled();
   });
 
   test('should have all marker dictionary options for charuco', async ({ page }) => {
@@ -239,17 +240,17 @@ test.describe('Calibration Page', () => {
 
   test('should display step indicator correctly', async ({ page }) => {
     // Step 1 should be highlighted
-    const step1 = page.locator('div:has-text("Setup")').first();
+    const step1 = page.getByTestId('calibration-step-setup');
     await expect(step1).toHaveClass(/text-primary/);
 
     // Select camera and start
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
-    await page.locator('button:has-text("Start Calibration")').click();
+    await page.getByRole('button', { name: 'Start Calibration' }).click();
     await page.waitForTimeout(1000);
 
     // Step 2 should be highlighted
-    const step2 = page.locator('div:has-text("Capture")').first();
+    const step2 = page.getByTestId('calibration-step-capture');
     await expect(step2).toHaveClass(/text-primary/);
   });
 
@@ -257,7 +258,7 @@ test.describe('Calibration Page', () => {
     // Select camera and start
     await page.locator('#camera').click();
     await page.locator('[role="option"]').first().click();
-    await page.locator('button:has-text("Start Calibration")').click();
+    await page.getByRole('button', { name: 'Start Calibration' }).click();
     await page.waitForTimeout(1000);
 
     // Should show MJPEG stream component
@@ -390,12 +391,12 @@ test.describe('Calibration Page', () => {
     await page.locator('[role="option"]').first().click();
 
     // Start calibration
-    await page.locator('button:has-text("Start Calibration")').click();
+    await page.getByRole('button', { name: 'Start Calibration' }).click();
     await page.waitForTimeout(1000);
 
     // Should move to capture step
-    await expect(page.locator('text=Calibration Feed')).toBeVisible();
-    await expect(page.locator('text=Capture Frames')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 3, name: 'Calibration Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 3, name: 'Capture Frames' })).toBeVisible();
   });
 
   test('should use valid ChAruco default values', async ({ page }) => {

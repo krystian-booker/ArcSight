@@ -79,6 +79,7 @@ def create_app(config_overrides=None):
     from .blueprints.settings import settings as settings_blueprint
     from .blueprints.pipelines import pipelines as pipelines_blueprint
     from .blueprints.monitoring import monitoring as monitoring_blueprint
+    from .blueprints.test_mock import test_mock as test_mock_blueprint
 
     app.register_blueprint(dashboard_blueprint)
     app.register_blueprint(cameras_blueprint)
@@ -86,6 +87,9 @@ def create_app(config_overrides=None):
     app.register_blueprint(settings_blueprint)
     app.register_blueprint(pipelines_blueprint)
     app.register_blueprint(monitoring_blueprint)
+
+    if os.environ.get("E2E_TESTING", "false").lower() == "true":
+        app.register_blueprint(test_mock_blueprint)
 
     # Start Vite dev server in development mode
     # Auto-detect development mode from Flask config

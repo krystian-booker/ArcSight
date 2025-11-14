@@ -25,14 +25,17 @@ export default defineConfig({
 
   /* Run Flask backend before starting tests */
   webServer: {
-    command: 'conda run -n ArcSight --no-capture-output python run.py',
+    command: process.env.CONDA_DEFAULT_ENV
+      ? 'conda run -n ArcSight --no-capture-output python run.py'
+      : 'python run.py',
     url: 'http://localhost:8080',
     reuseExistingServer: !process.env.CI,
-    timeout: 60000,  // Increased to 60 seconds for conda environment startup
+    timeout: 60000,  // Increased to 60 seconds for backend startup
     env: {
       FLASK_ENV: 'testing',
       CAMERA_THREADS_ENABLED: 'False',
       SKIP_VITE_START: 'true',  // Don't try to start Vite in testing mode
+      E2E_TESTING: 'true',
     },
   },
 });
