@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Download, Camera as CameraIcon, CheckCircle2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,8 @@ type CalibrationStep = 'setup' | 'capture' | 'results'
 export default function Calibration() {
   const cameras = useAppStore((state) => state.cameras)
 
+  const CALIBRATION_SETTINGS_KEY = 'calibration.settings'
+
   const [step, setStep] = useState<CalibrationStep>('setup')
   const [selectedCameraId, setSelectedCameraId] = useState<string>('')
   const [patternType, setPatternType] = useState<'chessboard' | 'charuco'>('charuco')
@@ -36,14 +38,102 @@ export default function Calibration() {
   const [calibrationResult, setCalibrationResult] = useState<CalibrationResult | null>(null)
 
   // Calculate max dimensions for A4 paper (210mm x 297mm)
-  const getMaxWidth = () => {
-    const size = parseFloat(squareSize) || 25
-    return Math.floor(210 / size) - 1
+  const calculateMaxWidth = (size: number) => Math.max(3, Math.floor(210 / size) - 1)
+  const calculateMaxHeight = (size: number) => Math.max(3, Math.floor(297 / size) - 1)
+
+  const squareSizeValue = useMemo(() => {
+    const parsed = parseFloat(squareSize)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 25
+  }, [squareSize])
+
+  const getMaxWidth = () => calculateMaxWidth(squareSizeValue)
+  const getMaxHeight = () => calculateMaxHeight(squareSizeValue)
+
+  const clampIntegerString = (value: string, min: number, max: number) => {
+    const numeric = parseInt(value, 10)
+    if (Number.isNaN(numeric)) {
+      return Math.min(min, max).toString()
+    }
+    const clamped = Math.min(Math.max(numeric, min), max)
+    return clamped.toString()
   }
-  const getMaxHeight = () => {
-    const size = parseFloat(squareSize) || 25
-    return Math.floor(297 / size) - 1
+
+  const clampDecimalString = (value: string, min: number, max: number) => {
+    const numeric = parseFloat(value)
+    if (Number.isNaN(numeric)) {
+      return min.toString()
+    }
+    const clamped = Math.min(Math.max(numeric, min), max)
+    return Number.isInteger(clamped) ? clamped.toString() : clamped.toFixed(2).replace(/\.00$/, '')
   }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    try {
+      const saved = window.localStorage.getItem(CALIBRATION_SETTINGS_KEY)
+      if (!saved) return
+
+      const parsed = JSON.parse(saved) as Partial<{
+        patternType: string
+        innerCornersWidth: string
+        innerCornersHeight: string
+        squareSize: string
+        markerDict: string
+      }>
+
+      if (parsed.patternType === 'chessboard' || parsed.patternType === 'charuco') {
+        setPatternType(parsed.patternType)
+      }
+
+      if (typeof parsed.innerCornersWidth === 'string') {
+        setInnerCornersWidth(
+          clampIntegerString(parsed.innerCornersWidth, 3, calculateMaxWidth(squareSizeValue))
+        )
+      }
+
+      if (typeof parsed.innerCornersHeight === 'string') {
+        setInnerCornersHeight(
+          clampIntegerString(parsed.innerCornersHeight, 3, calculateMaxHeight(squareSizeValue))
+        )
+      }
+
+      if (typeof parsed.squareSize === 'string') {
+        const formatted = clampDecimalString(parsed.squareSize, 5, 50)
+        setSquareSize(formatted)
+      }
+
+      if (typeof parsed.markerDict === 'string') {
+        setMarkerDict(parsed.markerDict)
+      }
+    } catch (error) {
+      console.warn('Failed to load calibration settings from storage', error)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const payload = {
+      patternType,
+      innerCornersWidth,
+      innerCornersHeight,
+      squareSize,
+      markerDict,
+    }
+
+    try {
+      window.localStorage.setItem(CALIBRATION_SETTINGS_KEY, JSON.stringify(payload))
+    } catch (error) {
+      console.warn('Failed to persist calibration settings', error)
+    }
+  }, [patternType, innerCornersWidth, innerCornersHeight, squareSize, markerDict])
+
+  useEffect(() => {
+    setInnerCornersWidth((prev) => clampIntegerString(prev, 3, getMaxWidth()))
+    setInnerCornersHeight((prev) => clampIntegerString(prev, 3, getMaxHeight()))
+  }, [squareSizeValue])
 
   // Fetch cameras on mount
   useEffect(() => {
@@ -93,13 +183,32 @@ export default function Calibration() {
     }
 
     try {
+      const widthValue = parseInt(innerCornersWidth)
+      const heightValue = parseInt(innerCornersHeight)
+      const squareSizeValue = parseFloat(squareSize)
+
+      const patternParams =
+        patternType === 'charuco'
+          ? {
+              squares_x: widthValue + 1,
+              squares_y: heightValue + 1,
+              square_size: squareSizeValue,
+              marker_size: squareSizeValue * 0.75,
+              dictionary_name: markerDict,
+            }
+          : {
+              rows: heightValue,
+              cols: widthValue,
+              square_size: squareSizeValue,
+            }
+
+      const normalizedPatternType =
+        patternType === 'charuco' ? 'ChAruco' : 'Chessboard'
+
       await api.post('/calibration/start', {
         camera_id: parseInt(selectedCameraId),
-        pattern_type: patternType,
-        inner_corners_width: parseInt(innerCornersWidth),
-        inner_corners_height: parseInt(innerCornersHeight),
-        square_size_mm: parseFloat(squareSize),
-        ...(patternType === 'charuco' && { marker_dict: markerDict }),
+        pattern_type: normalizedPatternType,
+        pattern_params: patternParams,
       })
 
       setStep('capture')
@@ -210,21 +319,39 @@ export default function Calibration() {
 
       {/* Step indicator */}
       <div className="flex items-center justify-center gap-4">
-        <div className={`flex items-center gap-2 ${step === 'setup' ? 'text-primary' : 'text-muted'}`}>
+        <div
+          className={`flex items-center gap-2 ${
+            step === 'setup' ? 'text-primary' : 'text-muted'
+          }`}
+          data-testid="calibration-step-setup"
+          data-active={step === 'setup'}
+        >
           <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'setup' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
             1
           </div>
           <span className="text-sm font-medium">Setup</span>
         </div>
         <div className="h-px w-12 bg-border" />
-        <div className={`flex items-center gap-2 ${step === 'capture' ? 'text-primary' : 'text-muted'}`}>
+        <div
+          className={`flex items-center gap-2 ${
+            step === 'capture' ? 'text-primary' : 'text-muted'
+          }`}
+          data-testid="calibration-step-capture"
+          data-active={step === 'capture'}
+        >
           <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'capture' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
             2
           </div>
           <span className="text-sm font-medium">Capture</span>
         </div>
         <div className="h-px w-12 bg-border" />
-        <div className={`flex items-center gap-2 ${step === 'results' ? 'text-primary' : 'text-muted'}`}>
+        <div
+          className={`flex items-center gap-2 ${
+            step === 'results' ? 'text-primary' : 'text-muted'
+          }`}
+          data-testid="calibration-step-results"
+          data-active={step === 'results'}
+        >
           <div className={`flex h-8 w-8 items-center justify-center rounded-full ${step === 'results' ? 'bg-primary text-white' : 'bg-surface-alt'}`}>
             3
           </div>
@@ -280,7 +407,11 @@ export default function Calibration() {
                   min={3}
                   max={getMaxWidth()}
                   value={innerCornersWidth}
-                  onChange={(e) => setInnerCornersWidth(e.target.value)}
+                  onChange={(e) =>
+                    setInnerCornersWidth(
+                      clampIntegerString(e.target.value, 3, getMaxWidth())
+                    )
+                  }
                 />
                 <p className="text-xs text-muted">
                   Max {getMaxWidth()} for {squareSize}mm squares on A4
@@ -295,7 +426,11 @@ export default function Calibration() {
                   min={3}
                   max={getMaxHeight()}
                   value={innerCornersHeight}
-                  onChange={(e) => setInnerCornersHeight(e.target.value)}
+                  onChange={(e) =>
+                    setInnerCornersHeight(
+                      clampIntegerString(e.target.value, 3, getMaxHeight())
+                    )
+                  }
                 />
                 <p className="text-xs text-muted">
                   Max {getMaxHeight()} for {squareSize}mm squares on A4
@@ -311,7 +446,9 @@ export default function Calibration() {
                   max={50}
                   step={0.1}
                   value={squareSize}
-                  onChange={(e) => setSquareSize(e.target.value)}
+                  onChange={(e) =>
+                    setSquareSize(clampDecimalString(e.target.value, 5, 50))
+                  }
                 />
                 <p className="text-xs text-muted">
                   5mm - 50mm (affects max board size)
@@ -377,7 +514,12 @@ export default function Calibration() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-center py-8">
-                <div className="text-4xl font-bold mb-2">{capturedFrames}</div>
+                <div
+                  className="text-4xl font-bold mb-2"
+                  data-testid="captured-frames-count"
+                >
+                  {capturedFrames}
+                </div>
                 <p className="text-muted">Frames captured</p>
               </div>
 

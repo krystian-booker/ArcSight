@@ -34,9 +34,9 @@ test.describe('Calibration Page', () => {
     await expect(page.locator('h1')).toContainText('Camera Calibration');
 
     // Check step indicator
-    await expect(page.locator('text=Setup')).toBeVisible();
-    await expect(page.locator('text=Capture')).toBeVisible();
-    await expect(page.locator('text=Results')).toBeVisible();
+    await expect(page.getByTestId('calibration-step-setup')).toBeVisible();
+    await expect(page.getByTestId('calibration-step-capture')).toBeVisible();
+    await expect(page.getByTestId('calibration-step-results')).toBeVisible();
 
     // Should be on setup step
     await expect(page.locator('text=Calibration Setup')).toBeVisible();
@@ -155,12 +155,12 @@ test.describe('Calibration Page', () => {
     await page.waitForTimeout(1000);
 
     // Should move to capture step
-    await expect(page.locator('text=Calibration Feed')).toBeVisible();
-    await expect(page.locator('text=Capture Frames')).toBeVisible();
-    await expect(page.locator('text=Frames captured')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Calibration Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Capture Frames' })).toBeVisible();
+    await expect(page.getByText('Frames captured', { exact: true })).toBeVisible();
 
     // Should show 0 frames initially
-    await expect(page.locator('text=0').first()).toBeVisible();
+    await expect(page.getByTestId('captured-frames-count')).toHaveText('0');
   });
 
   test('should show capture frame button in capture step', async ({ page }) => {
@@ -232,15 +232,15 @@ test.describe('Calibration Page', () => {
     await page.waitForSelector('h1:has-text("Camera Calibration")');
 
     // Settings should persist
-    expect(await page.locator('#width').inputValue()).toBe('5');
-    expect(await page.locator('#height').inputValue()).toBe('4');
-    expect(await page.locator('#square-size').inputValue()).toBe('20');
+    await expect(page.locator('#width')).toHaveValue('5');
+    await expect(page.locator('#height')).toHaveValue('4');
+    await expect(page.locator('#square-size')).toHaveValue('20');
   });
 
   test('should display step indicator correctly', async ({ page }) => {
     // Step 1 should be highlighted
-    const step1 = page.locator('div:has-text("Setup")').first();
-    await expect(step1).toHaveClass(/text-primary/);
+    const step1 = page.getByTestId('calibration-step-setup');
+    await expect(step1).toHaveAttribute('data-active', 'true');
 
     // Select camera and start
     await page.locator('#camera').click();
@@ -249,8 +249,8 @@ test.describe('Calibration Page', () => {
     await page.waitForTimeout(1000);
 
     // Step 2 should be highlighted
-    const step2 = page.locator('div:has-text("Capture")').first();
-    await expect(step2).toHaveClass(/text-primary/);
+    const step2 = page.getByTestId('calibration-step-capture');
+    await expect(step2).toHaveAttribute('data-active', 'true');
   });
 
   test('should show camera feed in capture step', async ({ page }) => {
@@ -270,16 +270,14 @@ test.describe('Calibration Page', () => {
     await page.locator('#width').fill('2');
 
     // Input should enforce min=3
-    const widthValue = await page.locator('#width').inputValue();
-    expect(parseInt(widthValue)).toBeGreaterThanOrEqual(3);
+    await expect(page.locator('#width')).toHaveValue('3');
 
     // Try to set square size too high
     await page.locator('#square-size').clear();
     await page.locator('#square-size').fill('100');
 
     // Input should enforce max=50
-    const sizeValue = await page.locator('#square-size').inputValue();
-    expect(parseFloat(sizeValue)).toBeLessThanOrEqual(50);
+    await expect(page.locator('#square-size')).toHaveValue('50');
   });
 
   // ChAruco-specific tests
@@ -394,8 +392,8 @@ test.describe('Calibration Page', () => {
     await page.waitForTimeout(1000);
 
     // Should move to capture step
-    await expect(page.locator('text=Calibration Feed')).toBeVisible();
-    await expect(page.locator('text=Capture Frames')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Calibration Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Capture Frames' })).toBeVisible();
   });
 
   test('should use valid ChAruco default values', async ({ page }) => {

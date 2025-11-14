@@ -245,7 +245,7 @@ export default function Cameras() {
           <h1 className="text-3xl font-semibold mb-2">Cameras</h1>
           <p className="text-muted">Manage camera devices and configuration</p>
         </div>
-        <Button onClick={() => setAddModalOpen(true)}>
+        <Button onClick={() => setAddModalOpen(true)} data-testid="add-camera-button">
           <Plus className="h-4 w-4 mr-2" />
           Add Camera
         </Button>
@@ -260,7 +260,7 @@ export default function Cameras() {
         </CardHeader>
         <CardContent>
           {cameras.length === 0 ? (
-            <div className="text-center py-8">
+            <div className="text-center py-8" data-testid="cameras-empty-state">
               <CameraIcon className="h-12 w-12 text-muted mx-auto mb-4 opacity-50" />
               <p className="text-muted">No cameras configured</p>
               <p className="text-sm text-subtle mt-1">
@@ -298,6 +298,7 @@ export default function Cameras() {
                             variant="ghost"
                             size="icon"
                             onClick={() => openEditModal(camera)}
+                            aria-label={`Edit camera ${camera.name}`}
                           >
                             <Edit2 className="h-4 w-4" />
                           </Button>
@@ -305,6 +306,7 @@ export default function Cameras() {
                             variant="ghost"
                             size="icon"
                             onClick={() => openDeleteModal(camera)}
+                            aria-label={`Delete camera ${camera.name}`}
                           >
                             <Trash2 className="h-4 w-4 text-[var(--color-danger)]" />
                           </Button>
