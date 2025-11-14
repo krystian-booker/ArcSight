@@ -245,7 +245,7 @@ export default function Cameras() {
           <h1 className="text-3xl font-semibold mb-2">Cameras</h1>
           <p className="text-muted">Manage camera devices and configuration</p>
         </div>
-        <Button onClick={() => setAddModalOpen(true)}>
+        <Button data-testid="open-add-camera" onClick={() => setAddModalOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Add Camera
         </Button>
@@ -260,7 +260,7 @@ export default function Cameras() {
         </CardHeader>
         <CardContent>
           {cameras.length === 0 ? (
-            <div className="text-center py-8">
+            <div className="text-center py-8" data-testid="camera-empty-state">
               <CameraIcon className="h-12 w-12 text-muted mx-auto mb-4 opacity-50" />
               <p className="text-muted">No cameras configured</p>
               <p className="text-sm text-subtle mt-1">
@@ -268,25 +268,36 @@ export default function Cameras() {
               </p>
             </div>
           ) : (
-            <Table>
+            <Table data-testid="camera-table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Identifier</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead data-testid="camera-header-name">Name</TableHead>
+                  <TableHead data-testid="camera-header-type">Type</TableHead>
+                  <TableHead data-testid="camera-header-identifier">Identifier</TableHead>
+                  <TableHead data-testid="camera-header-status">Status</TableHead>
+                  <TableHead data-testid="camera-header-actions" className="text-right">
+                    Actions
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cameras.map((camera) => {
                   const status = cameraStatuses[camera.id]
                   return (
-                    <TableRow key={camera.id}>
-                      <TableCell className="font-medium">{camera.name}</TableCell>
-                      <TableCell>{camera.camera_type}</TableCell>
-                      <TableCell className="font-mono text-xs">{camera.identifier}</TableCell>
-                      <TableCell>
+                    <TableRow
+                      key={camera.id}
+                      data-testid="camera-row"
+                      data-camera-id={camera.id}
+                      data-camera-name={camera.name}
+                    >
+                      <TableCell className="font-medium" data-testid="camera-name-cell">
+                        {camera.name}
+                      </TableCell>
+                      <TableCell data-testid="camera-type-cell">{camera.camera_type}</TableCell>
+                      <TableCell className="font-mono text-xs" data-testid="camera-identifier-cell">
+                        {camera.identifier}
+                      </TableCell>
+                      <TableCell data-testid="camera-status-cell">
                         <StatusBadge
                           status={status?.connected ? 'online' : 'offline'}
                           label={status?.connected ? 'Connected' : 'Disconnected'}
@@ -297,6 +308,8 @@ export default function Cameras() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={`Edit ${camera.name}`}
+                            data-testid={`camera-edit-${camera.id}`}
                             onClick={() => openEditModal(camera)}
                           >
                             <Edit2 className="h-4 w-4" />
@@ -304,6 +317,8 @@ export default function Cameras() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={`Delete ${camera.name}`}
+                            data-testid={`camera-delete-${camera.id}`}
                             onClick={() => openDeleteModal(camera)}
                           >
                             <Trash2 className="h-4 w-4 text-[var(--color-danger)]" />
@@ -321,7 +336,7 @@ export default function Cameras() {
 
       {/* Add Camera Modal */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" data-testid="add-camera-dialog">
           <DialogHeader>
             <DialogTitle>Add Camera</DialogTitle>
             <DialogDescription>
@@ -343,7 +358,7 @@ export default function Cameras() {
             <div className="space-y-2">
               <Label htmlFor="camera-type">Camera Type</Label>
               <Select value={newCameraType} onValueChange={setNewCameraType}>
-                <SelectTrigger id="camera-type">
+                <SelectTrigger id="camera-type" data-testid="camera-type-select">
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -363,6 +378,7 @@ export default function Cameras() {
                   size="sm"
                   onClick={handleDiscoverDevices}
                   disabled={!newCameraType || isDiscovering}
+                  data-testid="discover-devices"
                 >
                   <RefreshCw className={`h-4 w-4 mr-2 ${isDiscovering ? 'animate-spin' : ''}`} />
                   {isDiscovering ? 'Discovering...' : 'Discover'}
@@ -371,7 +387,7 @@ export default function Cameras() {
 
               {availableDevices.length > 0 ? (
                 <Select value={selectedDevice} onValueChange={setSelectedDevice}>
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="device-select">
                     <SelectValue placeholder="Select device" />
                   </SelectTrigger>
                   <SelectContent>
@@ -403,7 +419,7 @@ export default function Cameras() {
 
       {/* Edit Camera Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" data-testid="edit-camera-dialog">
           <DialogHeader>
             <DialogTitle>Edit Camera</DialogTitle>
             <DialogDescription>
@@ -436,7 +452,7 @@ export default function Cameras() {
 
       {/* Delete Confirmation Modal */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" data-testid="delete-camera-dialog">
           <DialogHeader>
             <DialogTitle>Delete Camera</DialogTitle>
             <DialogDescription>

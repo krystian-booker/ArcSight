@@ -11,10 +11,19 @@ from . import cameras
 # React handles the UI, this blueprint only provides API endpoints
 
 
+def _get_request_payload():
+    """Safely retrieve JSON or form data without raising 415 errors."""
+
+    if request.form:
+        return request.form
+
+    return request.get_json(silent=True) or {}
+
+
 @cameras.route("/add", methods=["POST"])
 def add_camera():
     """Adds a new camera."""
-    data = request.get_json() or request.form
+    data = _get_request_payload()
 
     name = data.get("name")
     camera_type = data.get("camera_type")
@@ -71,7 +80,7 @@ def add_camera():
 @cameras.route("/update/<int:camera_id>", methods=["POST"])
 def update_camera(camera_id):
     """Updates a camera's settings."""
-    data = request.get_json() or request.form
+    data = _get_request_payload()
 
     camera = db.session.get(Camera, camera_id)
     if not camera:
