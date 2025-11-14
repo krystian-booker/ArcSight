@@ -23,12 +23,27 @@ import {
 import { toast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 
+type FieldOption = {
+  value: string
+  label: string
+  isDefault: boolean
+}
+
+const formatFieldLabel = (name: string) =>
+  name
+    .replace(/\.json$/i, '')
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+
 export default function Settings() {
   const [teamNumber, setTeamNumber] = useState('')
   const [hostname, setHostname] = useState('')
   const [ipMode, setIpMode] = useState<'dhcp' | 'static'>('dhcp')
   const [genicamPath, setGenicamPath] = useState('')
   const [selectedField, setSelectedField] = useState('')
+  const [fieldOptions, setFieldOptions] = useState<FieldOption[]>([])
   const [confirmAction, setConfirmAction] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -44,12 +59,25 @@ export default function Settings() {
             genicam_cti_path: string
           }
           selected_field: string
+          default_fields?: { name: string; is_default: boolean }[]
+          user_fields?: { name: string; is_default: boolean }[]
         }>('/settings/api/settings')
         setTeamNumber(data.settings.team_number || '')
         setHostname(data.settings.hostname || '')
         setIpMode(data.settings.ip_mode || 'dhcp')
         setGenicamPath(data.settings.genicam_cti_path || '')
         setSelectedField(data.selected_field || '')
+
+        const fields = [
+          ...(data.default_fields ?? []),
+          ...(data.user_fields ?? []),
+        ].map<FieldOption>((field) => ({
+          value: field.name,
+          label: formatFieldLabel(field.name),
+          isDefault: field.is_default,
+        }))
+
+        setFieldOptions(fields)
       } catch (error) {
         console.error('Failed to load settings:', error)
         toast({
@@ -127,16 +155,19 @@ export default function Settings() {
   }
 
   const handleFieldChange = async (fieldName: string) => {
+    const previous = selectedField
     setSelectedField(fieldName)
     try {
       await api.post('/settings/apriltag/select', {
         field_name: fieldName,
       })
+      const label = fieldOptions.find((option) => option.value === fieldName)?.label || fieldName
       toast({
         title: 'Field layout updated',
-        description: `Selected ${fieldName}`,
+        description: `Selected ${label}`,
       })
     } catch (error) {
+      setSelectedField(previous)
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -325,15 +356,24 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="field-select">Active Field Layout</Label>
-                <Select value={selectedField} onValueChange={handleFieldChange}>
-                  <SelectTrigger id="field-select">
-                    <SelectValue placeholder="Select field layout" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2024-crescendo">2024 Crescendo</SelectItem>
-                    <SelectItem value="2023-charged-up">2023 Charged Up</SelectItem>
-                  </SelectContent>
-                </Select>
+                {fieldOptions.length > 0 ? (
+                  <Select value={selectedField} onValueChange={handleFieldChange}>
+                    <SelectTrigger id="field-select">
+                      <SelectValue placeholder="Select field layout" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fieldOptions.map((field) => (
+                        <SelectItem key={field.value} value={field.value}>
+                          {field.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-muted">
+                    No field layouts available. Upload a custom layout to begin.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

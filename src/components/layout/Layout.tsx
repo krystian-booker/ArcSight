@@ -42,7 +42,12 @@ export default function Layout() {
           {/* Logo */}
           <div className="flex items-center justify-between p-6 border-b border-border">
             <div>
-              <h1 className="text-xl font-bold text-primary">ArcSight</h1>
+              <Link
+                to="/"
+                className="block text-xl font-bold text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 rounded-sm"
+              >
+                ArcSight
+              </Link>
               <p className="text-xs text-muted">Vision Control</p>
             </div>
             <button

@@ -99,10 +99,20 @@ def update_global_settings():
 def update_genicam_settings():
     """Updates the GenICam CTI path."""
     data = request.get_json() or request.form
-    path = data.get("genicam_cti_path", "").strip()
+    path = (data.get("genicam_cti_path") or "").strip()
+
+    if path and not path.lower().endswith(".cti"):
+        return (
+            jsonify({
+                "success": False,
+                "message": "GenICam CTI path must end with .cti",
+            }),
+            400,
+        )
+
     new_path = None
 
-    if path and path.lower().endswith(".cti") and os.path.exists(path):
+    if path:
         _update_setting("genicam_cti_path", path)
         new_path = path
     else:
@@ -114,7 +124,13 @@ def update_genicam_settings():
     GenICamDriver.initialize(new_path)
 
     # Return JSON for API calls (React always uses JSON)
-    return jsonify({"success": True, "message": "GenICam settings updated"})
+    return jsonify(
+        {
+            "success": True,
+            "message": "GenICam settings updated",
+            "genicam_cti_path": new_path or "",
+        }
+    )
 
 
 @settings.route("/genicam/clear", methods=["POST"])
